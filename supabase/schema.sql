@@ -2053,11 +2053,26 @@ for insert
 with check (public.facility_access_allowed(facility_id));
 
 drop policy if exists "Facility users can update patients" on public.patients;
-create policy "Facility users can update patients"
+create policy "Admins can update patients"
 on public.patients
 for update
-using (public.facility_access_allowed(facility_id))
-with check (public.facility_access_allowed(facility_id));
+using (
+  public.facility_access_allowed(facility_id)
+  and public.current_user_is_admin()
+)
+with check (
+  public.facility_access_allowed(facility_id)
+  and public.current_user_is_admin()
+);
+
+drop policy if exists "Admins can delete patients" on public.patients;
+create policy "Admins can delete patients"
+on public.patients
+for delete
+using (
+  public.facility_access_allowed(facility_id)
+  and public.current_user_is_admin()
+);
 
 drop policy if exists "Facility users can read inventory items" on public.inventory_items;
 create policy "Facility users can read inventory items"

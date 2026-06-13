@@ -1,11 +1,13 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useDeferredValue, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Download,
   FileText,
   Loader2,
+  Printer,
   Search,
   ShieldAlert,
   Wallet
@@ -24,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  buildInvoicePrintHtml,
   formatCurrency,
   formatDate,
   formatDateTime,
@@ -97,6 +100,7 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
 }
 
 export function BillingWorkspace() {
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const { facilityId, loading, role, user } = useAuth();
   const { toast } = useToast();
@@ -115,6 +119,7 @@ export function BillingWorkspace() {
   const [paymentSuccess, setPaymentSuccess] = useState<string | null>(null);
   const [invoiceError, setInvoiceError] = useState<string | null>(null);
   const [invoiceSuccess, setInvoiceSuccess] = useState<string | null>(null);
+  const patientIdFilter = searchParams.get("patientId");
 
   const canAccessBilling = canAccessBillingRole(role);
   const canManageBilling = canManageBillingRole(role);
@@ -138,6 +143,10 @@ export function BillingWorkspace() {
         return false;
       }
 
+      if (patientIdFilter && invoice.orders?.patient_id !== patientIdFilter) {
+        return false;
+      }
+
       if (dateFilter === "today") {
         return isToday(invoice.issued_at);
       }
@@ -151,7 +160,7 @@ export function BillingWorkspace() {
 
       return true;
     });
-  }, [dateFilter, deferredSearch, invoicesQuery.data, statusFilter]);
+  }, [dateFilter, deferredSearch, invoicesQuery.data, patientIdFilter, statusFilter]);
 
   const selectedInvoice = useMemo(
     () =>
@@ -167,6 +176,16 @@ export function BillingWorkspace() {
       setSelectedInvoiceId(filteredInvoices[0].id);
     }
   }, [filteredInvoices, selectedInvoiceId]);
+
+  useEffect(() => {
+    if (!patientIdFilter || filteredInvoices.length === 0) {
+      return;
+    }
+
+    if (!filteredInvoices.some((invoice) => invoice.id === selectedInvoiceId)) {
+      setSelectedInvoiceId(filteredInvoices[0].id);
+    }
+  }, [filteredInvoices, patientIdFilter, selectedInvoiceId]);
 
   useEffect(() => {
     if (!selectedInvoice) {
@@ -212,6 +231,26 @@ export function BillingWorkspace() {
       facilityId: facilityId as string,
       payload: payload as Json
     });
+  };
+
+  const handlePrintInvoice = (invoice: BillingInvoiceRow) => {
+    const printWindow = window.open("", "_blank", "noopener,noreferrer");
+    if (!printWindow) {
+      toast({
+        title: "Print blocked",
+        description: "Allow popups in the browser to print this invoice.",
+        variant: "error"
+      });
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(buildInvoicePrintHtml(invoice));
+    printWindow.document.close();
+    printWindow.focus();
+    window.setTimeout(() => {
+      printWindow.print();
+    }, 250);
   };
 
   const handleInvoiceUpdate = async (event: FormEvent<HTMLFormElement>) => {
@@ -438,7 +477,8 @@ export function BillingWorkspace() {
           <div>
             <CardTitle className="text-slate-950">Invoice and receipt workspace</CardTitle>
             <CardDescription>
-              Automatic invoices are linked to orders and priced from the current test catalogue.
+              Automatic invoices are linked to test requests and priced from the current
+              test catalogue.
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -505,7 +545,9 @@ export function BillingWorkspace() {
 
                 {!invoicesQuery.isLoading && filteredInvoices.length === 0 ? (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
-                    No invoices matched the current filters.
+                    {patientIdFilter
+                      ? "No invoices were found for this patient yet."
+                      : "No invoices matched the current filters."}
                   </div>
                 ) : null}
 
@@ -572,17 +614,27 @@ export function BillingWorkspace() {
                         {selectedInvoice.orders?.patients?.name || "Unknown patient"}
                       </CardDescription>
                     </div>
-                    <Badge
-                      className={
-                        getPaymentStatusTone(selectedInvoice.payment_status) === "paid"
-                          ? "border-transparent bg-emerald-100 text-emerald-700"
-                          : getPaymentStatusTone(selectedInvoice.payment_status) === "partial"
-                            ? "border-transparent bg-amber-100 text-amber-700"
-                            : "border-transparent bg-red-100 text-red-700"
-                      }
-                    >
-                      {selectedInvoice.payment_status}
-                    </Badge>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => handlePrintInvoice(selectedInvoice)}
+                      >
+                        <Printer className="h-4 w-4" />
+                        Print bill
+                      </Button>
+                      <Badge
+                        className={
+                          getPaymentStatusTone(selectedInvoice.payment_status) === "paid"
+                            ? "border-transparent bg-emerald-100 text-emerald-700"
+                            : getPaymentStatusTone(selectedInvoice.payment_status) === "partial"
+                              ? "border-transparent bg-amber-100 text-amber-700"
+                              : "border-transparent bg-red-100 text-red-700"
+                        }
+                      >
+                        {selectedInvoice.payment_status}
+                      </Badge>
+                    </div>
                   </CardHeader>
 
                   <CardContent className="space-y-6">
@@ -842,11 +894,12 @@ export function BillingWorkspace() {
                 </Card>
               </>
             ) : (
-              <Card className="border-slate-200">
-                <CardContent className="p-10 text-center text-sm text-slate-600">
-                  Choose an invoice to review charges, register payments, and generate receipts.
-                </CardContent>
-              </Card>
+                <Card className="border-slate-200">
+                  <CardContent className="p-10 text-center text-sm text-slate-600">
+                    Choose an invoice to review charges, print the bill, register payments,
+                    and generate receipts.
+                  </CardContent>
+                </Card>
             )}
           </div>
         </CardContent>

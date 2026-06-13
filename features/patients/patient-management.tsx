@@ -13,13 +13,16 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
+  CalendarRange,
   ChevronLeft,
   ChevronRight,
   FileSearch,
   Loader2,
-  Phone,
+  PencilLine,
   Search,
   ShieldAlert,
+  ShieldCheck,
+  TestTube2,
   UserPlus
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
@@ -42,8 +45,16 @@ import {
   sexOptions,
   type PatientFormValues
 } from "@/features/patients/schema";
+import {
+  formatPatientAge,
+  formatPatientDate
+} from "@/features/patients/patient-utils";
 import { useToast } from "@/hooks/use-toast";
-import { canAccessPatientsRole, canRegisterPatientsRole } from "@/lib/guards";
+import {
+  canAccessPatientsRole,
+  canManagePatientsRole,
+  canRegisterPatientsRole
+} from "@/lib/guards";
 import { commitLocalMutation, generateLocalId, resolveOfflineQuery } from "@/lib/offline-core";
 import { cachePatients, searchPatientsLocal } from "@/lib/offline-data";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
@@ -60,18 +71,6 @@ const PAGE_SIZE = 10;
 function toNullable(value: string) {
   const trimmed = value.trim();
   return trimmed ? trimmed : null;
-}
-
-function formatDate(value: string | null) {
-  if (!value) {
-    return "Not recorded";
-  }
-
-  return new Intl.DateTimeFormat("en-NG", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric"
-  }).format(new Date(value));
 }
 
 async function fetchPatients(searchTerm: string, page: number) {
@@ -125,8 +124,10 @@ export function PatientManagement() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
 
   const canViewPatients = canAccessPatientsRole(role);
+  const canManagePatients = canManagePatientsRole(role);
   const canRegisterPatients = canRegisterPatientsRole(role);
 
   const patientsQuery = useQuery({
@@ -193,12 +194,29 @@ export function PatientManagement() {
     const rows = patientsQuery.data?.rows ?? [];
 
     return {
+      consented: rows.filter((patient: SearchPatientRow) => patient.ndpr_consent).length,
       totalPatients: filteredPatients.length,
       pagePatients: filteredPatients.length,
       withOrders: rows.filter((patient: SearchPatientRow) => patient.order_count > 0)
         .length
     };
   }, [filteredPatients.length, patientsQuery.data]);
+
+  const suggestedPatients = useMemo(() => {
+    if (!searchFocused || !searchTerm.trim()) {
+      return [];
+    }
+
+    return (patientsQuery.data?.rows ?? [])
+      .filter((patient) =>
+        [patient.name, patient.lab_id, patient.phone]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(searchTerm.trim().toLowerCase())
+      )
+      .slice(0, 6);
+  }, [patientsQuery.data?.rows, searchFocused, searchTerm]);
 
   if (loading) {
     return (
@@ -329,15 +347,38 @@ export function PatientManagement() {
 
   return (
     <div className="space-y-6">
-      <section className="grid gap-4 md:grid-cols-3">
-        <Card className="border-blue-100">
-          <CardHeader className="pb-2">
-            <CardDescription>Total patients</CardDescription>
-            <CardTitle className="text-3xl text-slate-950">
-              {summary.totalPatients}
-            </CardTitle>
-          </CardHeader>
+      <section className="grid gap-4 xl:grid-cols-[1.3fr_repeat(3,minmax(0,0.6fr))]">
+        <Card className="overflow-hidden border-blue-100 bg-[linear-gradient(135deg,rgba(10,92,163,0.98),rgba(56,189,248,0.92))] text-white shadow-soft">
+          <CardContent className="flex h-full flex-col justify-between gap-6 p-6">
+            <div className="space-y-3">
+              <Badge className="w-fit border-white/20 bg-white/10 text-white">
+                Patient directory
+              </Badge>
+              <div>
+                <h2 className="text-2xl font-semibold">Clean, privacy-safe patient lookup</h2>
+                <p className="mt-2 max-w-2xl text-sm text-blue-50">
+                  The directory now keeps sensitive details out of the list view, surfaces
+                  age clearly, and opens a fuller patient profile only when you need it.
+                </p>
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur">
+                <p className="text-xs uppercase tracking-[0.22em] text-blue-50">Patients</p>
+                <p className="mt-2 text-2xl font-semibold">{summary.totalPatients}</p>
+              </div>
+              <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur">
+                <p className="text-xs uppercase tracking-[0.22em] text-blue-50">Test history</p>
+                <p className="mt-2 text-2xl font-semibold">{summary.withOrders}</p>
+              </div>
+              <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur">
+                <p className="text-xs uppercase tracking-[0.22em] text-blue-50">NDPR ready</p>
+                <p className="mt-2 text-2xl font-semibold">{summary.consented}</p>
+              </div>
+            </div>
+          </CardContent>
         </Card>
+
         <Card className="border-blue-100">
           <CardHeader className="pb-2">
             <CardDescription>Visible on this page</CardDescription>
@@ -348,9 +389,17 @@ export function PatientManagement() {
         </Card>
         <Card className="border-blue-100">
           <CardHeader className="pb-2">
-            <CardDescription>Patients with order history</CardDescription>
+            <CardDescription>Patients with tests</CardDescription>
             <CardTitle className="text-3xl text-slate-950">
               {summary.withOrders}
+            </CardTitle>
+          </CardHeader>
+        </Card>
+        <Card className="border-blue-100">
+          <CardHeader className="pb-2">
+            <CardDescription>NDPR consent captured</CardDescription>
+            <CardTitle className="text-3xl text-slate-950">
+              {summary.consented}
             </CardTitle>
           </CardHeader>
         </Card>
@@ -366,7 +415,8 @@ export function PatientManagement() {
                   Patient directory
                 </CardTitle>
                 <CardDescription>
-                  Search by patient name, phone number, or lab ID with facility-aware access.
+                  Search by patient name, phone number, or lab ID. The list keeps contact
+                  details private until a profile is opened.
                 </CardDescription>
               </div>
               <Badge variant="outline">Facility scoped</Badge>
@@ -379,9 +429,39 @@ export function PatientManagement() {
                 <Input
                   className="pl-9"
                   value={searchTerm}
+                  onBlur={() => {
+                    window.setTimeout(() => setSearchFocused(false), 120);
+                  }}
                   onChange={(event) => setSearchTerm(event.target.value)}
-                  placeholder="Search patient name, phone, or lab ID"
+                  onFocus={() => setSearchFocused(true)}
+                  placeholder="Start typing a patient name, phone, or lab ID"
                 />
+                {suggestedPatients.length > 0 ? (
+                  <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-20 rounded-2xl border border-blue-100 bg-white p-2 shadow-2xl">
+                    <p className="px-3 pb-2 pt-1 text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
+                      Suggestions
+                    </p>
+                    <div className="space-y-1">
+                      {suggestedPatients.map((patient) => (
+                        <Link
+                          key={patient.id}
+                          className="flex items-center justify-between rounded-xl px-3 py-3 transition hover:bg-blue-50"
+                          href={`/patients/${patient.id}` as Route}
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-950">
+                              {patient.name}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {patient.lab_id} • {formatPatientAge(patient.dob)}
+                            </p>
+                          </div>
+                          <ArrowRight className="h-4 w-4 text-blue-700" />
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
               <select
                 className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
@@ -402,8 +482,8 @@ export function PatientManagement() {
                 value={historyFilter}
                 onChange={(event) => setHistoryFilter(event.target.value as HistoryFilter)}
               >
-                <option value="all">All history</option>
-                <option value="with_orders">With orders</option>
+                <option value="all">All test history</option>
+                <option value="with_orders">With tests</option>
                 <option value="new">New patients</option>
               </select>
               <select
@@ -449,39 +529,78 @@ export function PatientManagement() {
               {patients.map((patient: SearchPatientRow) => (
                 <div
                   key={patient.id}
-                  className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                  className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:border-blue-200 hover:shadow-md"
                 >
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-base font-semibold text-slate-950">
-                          {patient.name}
+                  <div className="border-b border-slate-100 bg-slate-50/70 px-5 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="secondary">{patient.lab_id}</Badge>
+                      {patient.sex ? <Badge variant="outline">{patient.sex}</Badge> : null}
+                      <Badge variant={patient.ndpr_consent ? "default" : "secondary"}>
+                        {patient.ndpr_consent ? "NDPR consented" : "Consent pending"}
+                      </Badge>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-5 p-5 lg:flex-row lg:items-start lg:justify-between">
+                    <div className="space-y-4">
+                      <div>
+                        <p className="text-lg font-semibold text-slate-950">{patient.name}</p>
+                        <p className="mt-1 text-sm text-slate-500">
+                          Sensitive contact details stay inside the patient profile.
                         </p>
-                        <Badge variant="secondary">{patient.lab_id}</Badge>
-                        {patient.sex ? <Badge variant="outline">{patient.sex}</Badge> : null}
-                        <Badge variant={patient.ndpr_consent ? "default" : "secondary"}>
-                          {patient.ndpr_consent ? "NDPR consented" : "Consent pending"}
-                        </Badge>
                       </div>
-                      <div className="flex flex-wrap gap-4 text-sm text-slate-600">
-                        <span className="inline-flex items-center gap-1">
-                          <Phone className="h-4 w-4 text-blue-700" />
-                          {patient.phone || "No phone number"}
-                        </span>
-                        <span>DOB: {formatDate(patient.dob)}</span>
-                        <span>Orders: {patient.order_count}</span>
+
+                      <div className="grid gap-3 sm:grid-cols-3">
+                        <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                            Estimated age
+                          </p>
+                          <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                            <CalendarRange className="h-4 w-4 text-blue-700" />
+                            {formatPatientAge(patient.dob)}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                            Test history
+                          </p>
+                          <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                            <TestTube2 className="h-4 w-4 text-blue-700" />
+                            {patient.order_count} recorded
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
+                            Registered
+                          </p>
+                          <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-slate-900">
+                            <ShieldCheck className="h-4 w-4 text-blue-700" />
+                            {formatPatientDate(patient.created_at)}
+                          </p>
+                        </div>
                       </div>
-                      <p className="text-sm text-slate-600">
-                        {patient.address || "Address not recorded"}
-                      </p>
                     </div>
 
-                    <Button asChild variant="outline">
-                      <Link href={`/patients/${patient.id}` as Route}>
-                        View history
-                        <ArrowRight className="h-4 w-4" />
-                      </Link>
-                    </Button>
+                    <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
+                      <Button asChild>
+                        <Link href={`/patients/${patient.id}` as Route}>
+                          Open profile
+                          <ArrowRight className="h-4 w-4" />
+                        </Link>
+                      </Button>
+                      {canManagePatients ? (
+                        <Button asChild variant="outline">
+                          <Link
+                            href={{
+                              pathname: `/patients/${patient.id}` as Route,
+                              query: { mode: "edit" }
+                            }}
+                          >
+                            <PencilLine className="h-4 w-4" />
+                            Edit details
+                          </Link>
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -716,14 +835,14 @@ export function PatientManagement() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="notes">Clinical notes</Label>
+                  <Label htmlFor="notes">Clinical signs / notes</Label>
                   <Textarea
                     id="notes"
                     value={formState.notes}
                     onChange={(event) =>
                       handleFieldChange("notes", event.target.value)
                     }
-                    placeholder="Optional context for reception or lab staff"
+                    placeholder="Symptoms, clinical signs, or extra context for the lab team"
                   />
                   {errors.notes ? (
                     <p className="text-xs text-red-700">{errors.notes}</p>

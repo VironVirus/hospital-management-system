@@ -1,7 +1,9 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import {
   useDeferredValue,
+  useEffect,
   useMemo,
   useState,
   type FormEvent
@@ -180,10 +182,13 @@ async function fetchRecentOrders() {
 }
 
 export function OrdersManagement() {
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const { role, loading, facilityId } = useAuth();
   const { toast } = useToast();
-  const [patientSearch, setPatientSearch] = useState("");
+  const patientIdFromQuery = searchParams.get("patientId");
+  const patientSearchFromQuery = searchParams.get("patient") ?? "";
+  const [patientSearch, setPatientSearch] = useState(patientSearchFromQuery);
   const deferredPatientSearch = useDeferredValue(patientSearch);
   const [recentSearch, setRecentSearch] = useState("");
   const deferredRecentSearch = useDeferredValue(recentSearch);
@@ -239,6 +244,34 @@ export function OrdersManagement() {
     [formState.patient_id, patientsQuery.data]
   );
 
+  useEffect(() => {
+    if (!patientSearchFromQuery) {
+      return;
+    }
+
+    setPatientSearch(patientSearchFromQuery);
+  }, [patientSearchFromQuery]);
+
+  useEffect(() => {
+    if (!patientIdFromQuery || !patientsQuery.data?.length) {
+      return;
+    }
+
+    const patient = patientsQuery.data.find((row) => row.id === patientIdFromQuery);
+    if (!patient) {
+      return;
+    }
+
+    setFormState((current) =>
+      current.patient_id === patientIdFromQuery
+        ? current
+        : {
+            ...current,
+            patient_id: patientIdFromQuery
+          }
+    );
+  }, [patientIdFromQuery, patientsQuery.data]);
+
   const filteredRecentOrders = useMemo(() => {
     const needle = deferredRecentSearch.trim().toLowerCase();
 
@@ -273,7 +306,7 @@ export function OrdersManagement() {
       <Card className="border-blue-100">
         <CardContent className="flex items-center gap-3 p-6 text-sm text-slate-600">
           <Loader2 className="h-4 w-4 animate-spin text-blue-700" />
-          Loading orders workspace...
+          Loading tests workspace...
         </CardContent>
       </Card>
     );
@@ -285,10 +318,10 @@ export function OrdersManagement() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-red-900">
             <ShieldAlert className="h-5 w-5" />
-            Order access is restricted
+            Test access is restricted
           </CardTitle>
           <CardDescription className="text-red-800">
-            Your current role does not include order entry or specimen tracking.
+            Your current role does not include test entry or specimen tracking.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -301,7 +334,7 @@ export function OrdersManagement() {
         <CardHeader>
           <CardTitle className="text-amber-950">Facility assignment required</CardTitle>
           <CardDescription className="text-amber-900">
-            Assign a facility to this user before creating or viewing orders.
+            Assign a facility to this user before creating or viewing tests.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -343,7 +376,7 @@ export function OrdersManagement() {
         parsed.data.selected_test_ids.includes(test.id)
       );
       if (selectedTests.length === 0) {
-        setSubmitError("No samples were generated for this order.");
+        setSubmitError("No samples were generated for this test request.");
         return;
       }
 
@@ -371,7 +404,7 @@ export function OrdersManagement() {
         `${created.samples.length} sample label${created.samples.length > 1 ? "s" : ""} generated for ${created.orderNumber}.`
       );
       toast({
-        title: "Order created",
+        title: "Test request created",
         description: `${created.orderNumber} has been queued with ${created.samples.length} sample label(s).`,
         variant: "success"
       });
@@ -383,10 +416,11 @@ export function OrdersManagement() {
         queryClient.invalidateQueries({ queryKey: ["patients"] })
       ]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to create order.";
+      const message =
+        error instanceof Error ? error.message : "Unable to create the test request.";
       setSubmitError(message);
       toast({
-        title: "Order creation failed",
+        title: "Test creation failed",
         description: message,
         variant: "error"
       });
@@ -416,7 +450,7 @@ export function OrdersManagement() {
         </Card>
         <Card className="border-blue-100">
           <CardHeader className="pb-2">
-            <CardDescription>Recent orders</CardDescription>
+            <CardDescription>Recent tests</CardDescription>
             <CardTitle className="text-3xl text-slate-950">
               {recentOrdersQuery.data?.length ?? 0}
             </CardTitle>
@@ -431,10 +465,11 @@ export function OrdersManagement() {
               <div>
                 <CardTitle className="flex items-center gap-2">
                   <ClipboardPlus className="h-5 w-5 text-blue-700" />
-                  Create lab order
+                  Create lab test
                 </CardTitle>
                 <CardDescription>
-                  Select a patient, add multiple tests, and generate sample labels in one step.
+                  Select a patient, add multiple tests, and generate sample labels in one
+                  step.
                 </CardDescription>
               </div>
               <Badge variant="outline">
@@ -445,8 +480,8 @@ export function OrdersManagement() {
           <CardContent>
             {!canCreateOrders ? (
               <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
-                Your role can view orders, but only reception and admin users can create new
-                orders.
+                Your role can view tests, but only reception and admin users can create new
+                test requests.
               </div>
             ) : (
               <form className="space-y-5" onSubmit={handleSubmit}>
@@ -548,7 +583,7 @@ export function OrdersManagement() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="notes">Order notes</Label>
+                  <Label htmlFor="notes">Test notes</Label>
                   <Textarea
                     id="notes"
                     value={formState.notes}
@@ -579,7 +614,7 @@ export function OrdersManagement() {
 
                 <Button type="submit" className="w-full" disabled={creating}>
                   {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {creating ? "Creating order..." : "Create order and generate labels"}
+                  {creating ? "Creating test..." : "Create test request and generate labels"}
                 </Button>
               </form>
             )}
@@ -590,10 +625,10 @@ export function OrdersManagement() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FlaskConical className="h-5 w-5 text-blue-700" />
-              Recent orders
+              Recent tests
             </CardTitle>
             <CardDescription>
-              Latest orders and specimen codes created for this facility.
+              Latest test requests and specimen codes created for this facility.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -604,7 +639,7 @@ export function OrdersManagement() {
                   className="pl-9"
                   value={recentSearch}
                   onChange={(event) => setRecentSearch(event.target.value)}
-                  placeholder="Search order, patient, lab ID, or sample"
+                  placeholder="Search test request, patient, lab ID, or sample"
                 />
               </div>
               <select
@@ -642,7 +677,7 @@ export function OrdersManagement() {
             {recentOrdersQuery.isLoading ? (
               <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600">
                 <Loader2 className="h-4 w-4 animate-spin text-blue-700" />
-                Loading recent orders...
+                Loading recent tests...
               </div>
             ) : null}
 
@@ -656,7 +691,7 @@ export function OrdersManagement() {
             !recentOrdersQuery.isError &&
             (recentOrdersQuery.data ?? []).length === 0 ? (
               <div className="rounded-2xl border border-dashed border-blue-200 bg-blue-50/60 px-5 py-8 text-center text-sm text-slate-600">
-                No orders created yet in this facility.
+                No tests created yet in this facility.
               </div>
             ) : null}
 

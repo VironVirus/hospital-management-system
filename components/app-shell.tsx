@@ -56,7 +56,7 @@ const navigation: NavigationItem[] = [
   },
   {
     href: "/orders",
-    label: "Orders",
+    label: "Tests",
     icon: ClipboardPlus,
     roles: ["Admin", "Receptionist", "LabScientist"] as AppRole[]
   },

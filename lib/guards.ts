@@ -12,6 +12,10 @@ export function canRegisterPatientsRole(role: AppRole | null | undefined) {
   return role === "Admin" || role === "Receptionist";
 }
 
+export function canManagePatientsRole(role: AppRole | null | undefined) {
+  return role === "Admin";
+}
+
 export function canAccessOrdersRole(role: AppRole | null | undefined) {
   return role === "Admin" || role === "Receptionist" || role === "LabScientist";
 }
