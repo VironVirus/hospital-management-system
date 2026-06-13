@@ -61,7 +61,6 @@ import {
 } from "@/lib/guards";
 import { commitLocalMutation, generateLocalId, resolveOfflineQuery } from "@/lib/offline-core";
 import {
-  cacheAuditLogs,
   cacheInventoryItems,
   cacheInventoryTransactions,
   getInventoryItemsLocal,
@@ -237,7 +236,7 @@ export function InventoryManagement() {
       item_id: selectedItem.id,
       unit_cost: Number(selectedItem.unit_cost ?? 0)
     }));
-  }, [selectedItem?.id, selectedItem?.unit_cost]);
+  }, [selectedItem]);
 
   useEffect(() => {
     if (!submitSuccess) {

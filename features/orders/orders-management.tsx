@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  startTransition,
   useDeferredValue,
   useMemo,
   useState,
@@ -61,8 +60,6 @@ import type { Database, Tables } from "@/types/supabase";
 type PatientSearchRow =
   Database["public"]["Functions"]["search_patients"]["Returns"][number];
 type TestRow = Tables<"tests">;
-type CreateOrderRow =
-  Database["public"]["Functions"]["create_order_with_tests"]["Returns"][number];
 type RecentOrderRow = {
   created_at: string;
   id: string;

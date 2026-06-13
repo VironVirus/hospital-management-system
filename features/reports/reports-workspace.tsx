@@ -47,7 +47,6 @@ import {
 import { resolveOfflineQuery } from "@/lib/offline-core";
 import { markReportsReleasedOffline } from "@/lib/offline-mutations";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
-import type { Tables, TablesInsert } from "@/types/supabase";
 
 type ReportStatusFilter = "all" | "ready" | "reported" | "flagged";
 
@@ -88,14 +87,6 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-function getLogoUrl() {
-  if (typeof window === "undefined") {
-    return undefined;
-  }
-
-  return new URL("/icons/icon-192x192.png", window.location.origin).toString();
-}
-
 export function ReportsWorkspace() {
   const queryClient = useQueryClient();
   const { facilityId, loading, role, user } = useAuth();
@@ -119,11 +110,7 @@ export function ReportsWorkspace() {
   });
 
   const branding = useMemo(
-    () =>
-      buildReportBranding(
-        reportsQuery.data?.[0]?.facilities?.name ?? null,
-        getLogoUrl()
-      ),
+    () => buildReportBranding(reportsQuery.data?.[0]?.facilities?.name ?? null),
     [reportsQuery.data]
   );
 

@@ -3,7 +3,6 @@
 import { useDeferredValue, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  CreditCard,
   Download,
   FileText,
   Loader2,
@@ -42,7 +41,7 @@ import { commitLocalMutation, resolveOfflineQuery } from "@/lib/offline-core";
 import { cacheInvoicesWithRelations, getInvoicesLocal } from "@/lib/offline-data";
 import { queueAuditLog, recordInvoicePaymentOffline } from "@/lib/offline-mutations";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
-import type { Json, TablesInsert, TablesUpdate } from "@/types/supabase";
+import type { Json, TablesUpdate } from "@/types/supabase";
 
 type PaymentFormState = {
   amount: number;
@@ -95,14 +94,6 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
   anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(url);
-}
-
-function getLogoUrl() {
-  if (typeof window === "undefined") {
-    return undefined;
-  }
-
-  return new URL("/icons/icon-192x192.png", window.location.origin).toString();
 }
 
 export function BillingWorkspace() {
@@ -188,7 +179,7 @@ export function BillingWorkspace() {
       ...current,
       amount: getBalanceDue(selectedInvoice)
     }));
-  }, [selectedInvoice?.id]);
+  }, [selectedInvoice]);
 
   const summary = useMemo(() => {
     const invoices = invoicesQuery.data ?? [];
@@ -334,7 +325,7 @@ export function BillingWorkspace() {
         import("@/features/billing/receipt-pdf")
       ]);
       const blob = await pdf(
-        <ReceiptDocument invoice={invoice} logoUrl={getLogoUrl()} payment={payment} />
+        <ReceiptDocument invoice={invoice} payment={payment} />
       ).toBlob();
 
       triggerBrowserDownload(
@@ -420,7 +411,7 @@ export function BillingWorkspace() {
         </Card>
         <Card className="border-emerald-100">
           <CardHeader className="pb-3">
-            <CardDescription>Today's revenue</CardDescription>
+            <CardDescription>Today&apos;s revenue</CardDescription>
             <CardTitle className="text-3xl text-slate-950">
               {formatCurrency(summary.todayRevenue)}
             </CardTitle>

@@ -2,16 +2,19 @@
 
 import {
   Document,
-  Image,
+  Image as PdfImage,
   Page,
   StyleSheet,
   Text,
   View
 } from "@react-pdf/renderer";
-import type { ReportBranding, ReportOrderRow } from "@/features/reports/report-utils";
+import type {
+  PatientReportBundle,
+  ReportBranding,
+  ReportOrderRow
+} from "@/features/reports/report-utils";
 import {
-  buildResultRows,
-  calculateOrderTotal,
+  buildPatientReportBundles,
   formatCurrency,
   formatDate
 } from "@/features/reports/report-utils";
@@ -85,7 +88,7 @@ const styles = StyleSheet.create({
     borderColor: "#dbeafe",
     borderRadius: 14,
     borderWidth: 1,
-    minWidth: 180,
+    minWidth: 210,
     padding: 12
   },
   metaLine: {
@@ -138,6 +141,11 @@ const styles = StyleSheet.create({
     fontSize: 8.5,
     padding: 10
   },
+  cellSubtext: {
+    color: "#64748b",
+    fontSize: 7.5,
+    marginTop: 3
+  },
   flagText: {
     color: "#b91c1c",
     fontWeight: 700
@@ -176,20 +184,25 @@ const styles = StyleSheet.create({
 
 function ReportPage({
   branding,
-  order
+  bundle
 }: {
   branding: ReportBranding;
-  order: ReportOrderRow;
+  bundle: PatientReportBundle;
 }) {
-  const patient = order.patients;
-  const facility = order.facilities;
-  const rows = buildResultRows(order);
+  const patient = bundle.patient;
+  const facility = bundle.facility;
+  const orderLabel = bundle.orderNumbers.join(", ");
+  const priorityLabel = bundle.priorities.join(", ");
+  const notesLabel =
+    bundle.notes.length > 0
+      ? bundle.notes.join(" | ")
+      : "No additional notes recorded.";
 
   return (
-    <Page size="A4" style={styles.page}>
+    <Page size="A4" style={styles.page} wrap>
       <View style={styles.header}>
         {branding.logoUrl ? (
-          <Image src={branding.logoUrl} style={styles.logoImage} />
+          <PdfImage src={branding.logoUrl} style={styles.logoImage} />
         ) : (
           <View style={styles.logoFallback}>
             <Text>LN</Text>
@@ -212,10 +225,12 @@ function ReportPage({
           <Text style={styles.title}>Verified laboratory findings</Text>
         </View>
         <View style={styles.metaCard}>
-          <Text style={styles.metaLine}>Order: {order.order_number}</Text>
-          <Text style={styles.metaLine}>Ordered: {formatDate(order.ordered_at)}</Text>
+          <Text style={styles.metaLine}>Orders: {orderLabel}</Text>
           <Text style={styles.metaLine}>
-            Reported: {formatDate(order.reported_at || new Date().toISOString())}
+            Collected: {formatDate(bundle.orderedAt)}
+          </Text>
+          <Text style={styles.metaLine}>
+            Reported: {formatDate(bundle.reportedAt || new Date().toISOString())}
           </Text>
         </View>
       </View>
@@ -236,45 +251,51 @@ function ReportPage({
           <Text style={styles.panelLine}>
             Facility: {facility?.name || branding.labName}
           </Text>
-          <Text style={styles.panelLine}>Priority: {order.priority}</Text>
+          <Text style={styles.panelLine}>Priority: {priorityLabel}</Text>
           <Text style={styles.panelLine}>
-            Total billed: {formatCurrency(calculateOrderTotal(order))}
+            Total billed: {formatCurrency(bundle.totalAmount)}
           </Text>
-          <Text style={styles.panelLine}>
-            Notes: {order.notes || "No additional notes recorded."}
-          </Text>
+          <Text style={styles.panelLine}>Notes: {notesLabel}</Text>
         </View>
       </View>
 
       <View style={styles.table}>
         <View style={styles.tableHeader}>
-          <Text style={[styles.tableHeaderCell, { width: "27%" }]}>Test</Text>
+          <Text style={[styles.tableHeaderCell, { width: "29%" }]}>Test</Text>
+          <Text style={[styles.tableHeaderCell, { width: "19%" }]}>
+            Order / Sample
+          </Text>
           <Text style={[styles.tableHeaderCell, { width: "18%" }]}>Result</Text>
-          <Text style={[styles.tableHeaderCell, { width: "12%" }]}>Unit</Text>
-          <Text style={[styles.tableHeaderCell, { width: "25%" }]}>
+          <Text style={[styles.tableHeaderCell, { width: "22%" }]}>
             Reference range
           </Text>
-          <Text style={[styles.tableHeaderCell, { borderRightWidth: 0, width: "18%" }]}>
+          <Text style={[styles.tableHeaderCell, { borderRightWidth: 0, width: "12%" }]}>
             Flag
           </Text>
         </View>
 
-        {rows.map((row, index) => (
-          <View key={`${order.id}-${row.sampleCode}-${index}`} style={styles.tableRow}>
-            <Text style={[styles.tableCell, { width: "27%" }]}>{row.testName}</Text>
+        {bundle.rows.map((row, index) => (
+          <View key={`${bundle.patientKey}-${row.sampleCode}-${index}`} style={styles.tableRow}>
+            <View style={[styles.tableCell, { width: "29%" }]}>
+              <Text>{row.testName}</Text>
+              <Text style={styles.cellSubtext}>Unit: {row.unit}</Text>
+            </View>
+            <View style={[styles.tableCell, { width: "19%" }]}>
+              <Text>{row.orderNumber}</Text>
+              <Text style={styles.cellSubtext}>{row.sampleCode}</Text>
+            </View>
             <Text style={[styles.tableCell, { width: "18%" }]}>{row.result}</Text>
-            <Text style={[styles.tableCell, { width: "12%" }]}>{row.unit}</Text>
-            <Text style={[styles.tableCell, { width: "25%" }]}>
+            <Text style={[styles.tableCell, { width: "22%" }]}>
               {row.referenceRange}
             </Text>
             <Text
               style={[
                 styles.tableCell,
-                { borderRightWidth: 0, width: "18%" },
+                { borderRightWidth: 0, width: "12%" },
                 row.abnormal ? styles.flagText : styles.normalText
               ]}
             >
-              {row.abnormal ? "High attention" : "Normal"}
+              {row.abnormal ? "Alert" : "Normal"}
             </Text>
           </View>
         ))}
@@ -300,10 +321,12 @@ export function LaboratoryReportDocument({
   branding: ReportBranding;
   orders: ReportOrderRow[];
 }) {
+  const bundles = buildPatientReportBundles(orders);
+
   return (
     <Document title="Laboratory report">
-      {orders.map((order) => (
-        <ReportPage key={order.id} branding={branding} order={order} />
+      {bundles.map((bundle) => (
+        <ReportPage key={bundle.patientKey} branding={branding} bundle={bundle} />
       ))}
     </Document>
   );

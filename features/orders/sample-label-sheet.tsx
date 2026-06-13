@@ -2,10 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Printer } from "lucide-react";
+import Image from "next/image";
+import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatSampleStatus, type SampleStatus } from "@/features/orders/constants";
-import { getSupabaseBrowserClient } from "@/lib/supabase";
+import { commitLocalMutation, generateLocalId } from "@/lib/offline-core";
+import type { Tables } from "@/types/supabase";
 
 type SampleLabel = {
   barcode_value: string;
@@ -84,7 +87,16 @@ function QrPreview({ value }: { value: string }) {
     return <div className="h-24 w-24 rounded-lg bg-slate-100" aria-hidden="true" />;
   }
 
-  return <img src={src} alt={`QR for ${value}`} className="h-24 w-24 rounded-lg" />;
+  return (
+    <Image
+      src={src}
+      alt={`QR for ${value}`}
+      className="h-24 w-24 rounded-lg"
+      height={96}
+      unoptimized
+      width={96}
+    />
+  );
 }
 
 export function SampleLabelSheet({
@@ -97,21 +109,34 @@ export function SampleLabelSheet({
   samples: SampleLabel[];
 }) {
   const [printing, setPrinting] = useState(false);
+  const { facilityId, user } = useAuth();
 
   const handlePrint = async () => {
-    const supabase = getSupabaseBrowserClient();
     setPrinting(true);
 
-    if (supabase) {
-      await supabase.from("sample_custody_logs").insert(
-        samples.map((sample) => ({
-          action: "Label printed",
-          notes: "Printed from order workspace",
-          order_test_id: sample.order_test_id,
-          to_status: sample.sample_status
-        }))
-      );
-    }
+    await Promise.all(
+      samples.map((sample) => {
+        const logId = generateLocalId("custody");
+
+        return commitLocalMutation({
+          action: "insert",
+          entity: "sample_custody_logs",
+          facilityId,
+          payload: {
+            action: "label_printed",
+            actor_id: user?.id ?? null,
+            created_at: new Date().toISOString(),
+            from_status: sample.sample_status,
+            id: logId,
+            notes: "Printed from order workspace.",
+            order_test_id: sample.order_test_id,
+            to_status: sample.sample_status
+          } satisfies Tables<"sample_custody_logs">,
+          recordId: logId,
+          userId: user?.id ?? null
+        });
+      })
+    );
 
     window.print();
     window.setTimeout(() => setPrinting(false), 400);

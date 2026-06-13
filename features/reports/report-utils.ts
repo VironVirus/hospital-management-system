@@ -1,6 +1,4 @@
-import {
-  getReferenceRange
-} from "@/features/results/result-utils";
+import { getReferenceRange } from "@/features/results/result-utils";
 import type { Tables } from "@/types/supabase";
 
 export type ReportOrderTest = Tables<"order_tests"> & {
@@ -31,12 +29,26 @@ export type ReportBranding = {
 export type ReportResultRow = {
   abnormal: boolean;
   abnormalReason: string | null;
+  orderNumber: string;
   referenceRange: string;
   result: string;
   sampleCode: string;
   status: string;
   testName: string;
   unit: string;
+};
+
+export type PatientReportBundle = {
+  facility: ReportOrderRow["facilities"];
+  notes: string[];
+  orderNumbers: string[];
+  orderedAt: string | null;
+  patient: ReportOrderRow["patients"];
+  patientKey: string;
+  priorities: string[];
+  reportedAt: string | null;
+  rows: ReportResultRow[];
+  totalAmount: number;
 };
 
 export function formatCurrency(value: number | null | undefined) {
@@ -171,6 +183,7 @@ export function buildResultRows(order: ReportOrderRow): ReportResultRow[] {
     .map((orderTest) => ({
       abnormal: orderTest.order_test_results?.abnormal_flag ?? false,
       abnormalReason: orderTest.order_test_results?.abnormal_reason ?? null,
+      orderNumber: order.order_number,
       referenceRange: formatReferenceRangeLabel(orderTest.tests),
       result: formatResultValue(orderTest.order_test_results, orderTest.tests),
       sampleCode: orderTest.sample_code,
@@ -185,6 +198,107 @@ export function calculateOrderTotal(order: ReportOrderRow) {
     (sum, orderTest) => sum + (orderTest.tests?.price ?? 0),
     0
   );
+}
+
+function mergeUnique(values: string[], nextValue: string | null | undefined) {
+  if (!nextValue) {
+    return values;
+  }
+
+  return values.includes(nextValue) ? values : [...values, nextValue];
+}
+
+function pickEarliestDate(
+  current: string | null,
+  nextValue: string | null | undefined
+) {
+  if (!nextValue) {
+    return current;
+  }
+
+  if (!current) {
+    return nextValue;
+  }
+
+  return new Date(nextValue).getTime() < new Date(current).getTime()
+    ? nextValue
+    : current;
+}
+
+function pickLatestDate(
+  current: string | null,
+  nextValue: string | null | undefined
+) {
+  if (!nextValue) {
+    return current;
+  }
+
+  if (!current) {
+    return nextValue;
+  }
+
+  return new Date(nextValue).getTime() > new Date(current).getTime()
+    ? nextValue
+    : current;
+}
+
+export function buildPatientReportBundles(
+  orders: ReportOrderRow[]
+): PatientReportBundle[] {
+  const bundles = new Map<string, PatientReportBundle>();
+
+  for (const order of orders) {
+    const rows = buildResultRows(order);
+
+    if (rows.length === 0) {
+      continue;
+    }
+
+    const patientKey = order.patients?.id ?? `order-${order.id}`;
+    const existing = bundles.get(patientKey);
+
+    if (!existing) {
+      bundles.set(patientKey, {
+        facility: order.facilities,
+        notes: order.notes ? [order.notes] : [],
+        orderNumbers: [order.order_number],
+        orderedAt: order.ordered_at,
+        patient: order.patients,
+        patientKey,
+        priorities: [order.priority],
+        reportedAt: order.reported_at,
+        rows,
+        totalAmount: calculateOrderTotal(order)
+      });
+      continue;
+    }
+
+    existing.notes = mergeUnique(existing.notes, order.notes);
+    existing.orderNumbers = mergeUnique(existing.orderNumbers, order.order_number);
+    existing.orderedAt = pickEarliestDate(existing.orderedAt, order.ordered_at);
+    existing.priorities = mergeUnique(existing.priorities, order.priority);
+    existing.reportedAt = pickLatestDate(existing.reportedAt, order.reported_at);
+    existing.rows.push(...rows);
+    existing.totalAmount += calculateOrderTotal(order);
+
+    if (!existing.facility && order.facilities) {
+      existing.facility = order.facilities;
+    }
+
+    if (!existing.patient && order.patients) {
+      existing.patient = order.patients;
+    }
+  }
+
+  return Array.from(bundles.values()).map((bundle) => ({
+    ...bundle,
+    rows: bundle.rows.sort(
+      (left, right) =>
+        left.orderNumber.localeCompare(right.orderNumber) ||
+        left.testName.localeCompare(right.testName) ||
+        left.sampleCode.localeCompare(right.sampleCode)
+    )
+  }));
 }
 
 export function isReportableOrder(order: ReportOrderRow) {
@@ -218,21 +332,32 @@ export function buildPrintHtml(
   orders: ReportOrderRow[],
   branding: ReportBranding
 ) {
-  const pages = orders
-    .map((order) => {
-      const rows = buildResultRows(order);
-      const patient = order.patients;
-      const facility = order.facilities;
+  const pages = buildPatientReportBundles(orders)
+    .map((bundle) => {
+      const patient = bundle.patient;
+      const facility = bundle.facility;
+      const orderLabel = bundle.orderNumbers.join(", ");
+      const priorityLabel = bundle.priorities.join(", ");
+      const notesLabel =
+        bundle.notes.length > 0
+          ? bundle.notes.join(" | ")
+          : "No additional notes recorded.";
 
-      const resultRows = rows
+      const resultRows = bundle.rows
         .map(
           (row) => `
             <tr>
-              <td>${escapeHtml(row.testName)}</td>
+              <td>
+                <strong>${escapeHtml(row.testName)}</strong>
+                <div class="muted">Unit: ${escapeHtml(row.unit)}</div>
+              </td>
+              <td>
+                <strong>${escapeHtml(row.orderNumber)}</strong>
+                <div class="muted">${escapeHtml(row.sampleCode)}</div>
+              </td>
               <td>${escapeHtml(row.result)}</td>
-              <td>${escapeHtml(row.unit)}</td>
               <td>${escapeHtml(row.referenceRange)}</td>
-              <td>${row.abnormal ? "<span class=\"flag\">High attention</span>" : "<span class=\"normal\">Normal</span>"}</td>
+              <td>${row.abnormal ? "<span class=\\\"flag\\\">High attention</span>" : "<span class=\\\"normal\\\">Normal</span>"}</td>
             </tr>
           `
         )
@@ -258,9 +383,9 @@ export function buildPrintHtml(
               <h2>Verified laboratory findings</h2>
             </div>
             <div class="meta-card">
-              <p><strong>Order:</strong> ${escapeHtml(order.order_number)}</p>
-              <p><strong>Collected:</strong> ${escapeHtml(formatDate(order.ordered_at))}</p>
-              <p><strong>Reported:</strong> ${escapeHtml(formatDate(order.reported_at || new Date().toISOString()))}</p>
+              <p><strong>Orders:</strong> ${escapeHtml(orderLabel)}</p>
+              <p><strong>Collected:</strong> ${escapeHtml(formatDate(bundle.orderedAt))}</p>
+              <p><strong>Reported:</strong> ${escapeHtml(formatDate(bundle.reportedAt || new Date().toISOString()))}</p>
             </div>
           </div>
 
@@ -276,9 +401,9 @@ export function buildPrintHtml(
             <div class="panel">
               <p class="eyebrow">Clinical context</p>
               <p><strong>Facility:</strong> ${escapeHtml(facility?.name || branding.labName)}</p>
-              <p><strong>Priority:</strong> ${escapeHtml(order.priority)}</p>
-              <p><strong>Notes:</strong> ${escapeHtml(order.notes || "No additional notes recorded.")}</p>
-              <p><strong>Total:</strong> ${escapeHtml(formatCurrency(calculateOrderTotal(order)))}</p>
+              <p><strong>Priority:</strong> ${escapeHtml(priorityLabel)}</p>
+              <p><strong>Notes:</strong> ${escapeHtml(notesLabel)}</p>
+              <p><strong>Total:</strong> ${escapeHtml(formatCurrency(bundle.totalAmount))}</p>
             </div>
           </div>
 
@@ -286,8 +411,8 @@ export function buildPrintHtml(
             <thead>
               <tr>
                 <th>Test</th>
+                <th>Order / Sample</th>
                 <th>Result</th>
-                <th>Unit</th>
                 <th>Reference range</th>
                 <th>Flag</th>
               </tr>
@@ -335,6 +460,7 @@ export function buildPrintHtml(
           table { width: 100%; border-collapse: collapse; margin-bottom: 28px; }
           th { background: #eff6ff; color: #0f172a; text-align: left; font-size: 12px; padding: 12px; border-bottom: 1px solid #bfdbfe; }
           td { padding: 12px; border-bottom: 1px solid #e2e8f0; font-size: 12px; vertical-align: top; }
+          .muted { color: #64748b; font-size: 11px; margin-top: 3px; }
           .flag { color: #b91c1c; font-weight: 700; }
           .normal { color: #166534; font-weight: 700; }
           .footer { display: flex; justify-content: space-between; gap: 24px; align-items: flex-end; }

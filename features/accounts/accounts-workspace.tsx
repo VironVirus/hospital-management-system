@@ -277,9 +277,9 @@ async function fetchAccountsData(facilityId: string): Promise<AccountsData> {
         cacheInvoicesWithRelations((invoicesResponse.data ?? []) as Record<string, unknown>[]),
         cacheExpenses(
           ((expensesResponse.data ?? []).map((row) => {
-            const expense = row as Record<string, unknown>;
-            const { inventory_items: _inventoryItem, ...rest } = expense;
-            return rest;
+            const expense = { ...(row as Record<string, unknown>) };
+            delete expense.inventory_items;
+            return expense;
           }) ?? []) as Tables<"expenses">[]
         ),
         cacheInventoryTransactions(
