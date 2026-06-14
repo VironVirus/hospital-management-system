@@ -28,6 +28,12 @@ import {
   type TestFormValues
 } from "@/features/tests/schema";
 import {
+  getTestCategoryLabel,
+  normalizeTestCategory,
+  testCategories,
+  type TestCategory
+} from "@/features/tests/categories";
+import {
   formatReferenceRange,
   isStoredReferenceRange,
   type StoredReferenceRange
@@ -37,6 +43,7 @@ import { useToast } from "@/hooks/use-toast";
 type TestRow = Tables<"tests">;
 type FilterStatus = "all" | "active" | "inactive";
 type FilterResultType = "all" | TestRow["result_type"];
+type FilterCategory = "all" | "uncategorized" | TestCategory;
 type FormErrors = Partial<Record<string, string>>;
 
 const initialFormState: TestFormValues = {
@@ -117,20 +124,22 @@ function createBooleanRange(
 
 async function fetchTests({
   query,
+  category,
   status,
   resultType
 }: {
   query: string;
+  category: FilterCategory;
   status: FilterStatus;
   resultType: FilterResultType;
 }) {
   const supabase = getSupabaseBrowserClient();
   return resolveOfflineQuery<TestRow[]>({
-    cacheKey: `tests:${query}:${status}:${resultType}`,
-    offline: () => getTestsLocal({ query, resultType, status }),
+    cacheKey: `tests:${query}:${category}:${status}:${resultType}`,
+    offline: () => getTestsLocal({ category, query, resultType, status }),
     online: async () => {
       if (!supabase) {
-        return getTestsLocal({ query, resultType, status });
+        return getTestsLocal({ category, query, resultType, status });
       }
 
       let request = supabase
@@ -159,8 +168,20 @@ async function fetchTests({
         throw new Error(error.message);
       }
 
-      await cacheTests((data ?? []) as TestRow[]);
-      return (data ?? []) as TestRow[];
+      const rows = (data ?? []) as TestRow[];
+      await cacheTests(rows);
+      return rows.filter((row) => {
+        if (category === "all") {
+          return true;
+        }
+
+        const normalizedCategory = normalizeTestCategory(row.category);
+        if (category === "uncategorized") {
+          return normalizedCategory === null;
+        }
+
+        return normalizedCategory === category;
+      });
     }
   });
 }
@@ -171,6 +192,7 @@ export function TestCatalogueAdmin() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<FilterStatus>("all");
   const [resultType, setResultType] = useState<FilterResultType>("all");
+  const [categoryFilter, setCategoryFilter] = useState<FilterCategory>("all");
   const [formState, setFormState] = useState<TestFormValues>(initialFormState);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [errors, setErrors] = useState<FormErrors>({});
@@ -180,8 +202,8 @@ export function TestCatalogueAdmin() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const testsQuery = useQuery({
-    queryKey: ["tests", query, status, resultType],
-    queryFn: () => fetchTests({ query, status, resultType }),
+    queryKey: ["tests", query, categoryFilter, status, resultType],
+    queryFn: () => fetchTests({ category: categoryFilter, query, status, resultType }),
     enabled: isAdminRole(role),
     staleTime: 60_000,
     gcTime: 5 * 60_000,
@@ -264,7 +286,7 @@ export function TestCatalogueAdmin() {
     setFormState({
       id: test.id,
       name: test.name,
-      category: test.category ?? null,
+      category: normalizeTestCategory(test.category),
       price: test.price,
       result_type: test.result_type as TestFormValues["result_type"],
       unit: test.unit,
@@ -316,7 +338,7 @@ export function TestCatalogueAdmin() {
       ? tests.find((test) => test.id === editingId) ?? null
       : null;
     const payload = {
-      category: parsed.data.category?.trim() ? parsed.data.category.trim() : null,
+      category: parsed.data.category,
       created_at: currentTest?.created_at ?? now,
       id: currentTest?.id ?? generateLocalId("test"),
       is_active: parsed.data.is_active,
@@ -460,14 +482,15 @@ export function TestCatalogueAdmin() {
                   Test catalogue
                 </CardTitle>
                 <CardDescription>
-                  Search, filter, and maintain active laboratory tests.
+                  Search, filter, and maintain active laboratory tests without cluttering
+                  the screen.
                 </CardDescription>
               </div>
               <Badge variant="outline">Admin only</Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-[1fr_auto_auto]">
+            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_220px_220px_220px]">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
                 <Input
@@ -477,6 +500,22 @@ export function TestCatalogueAdmin() {
                   onChange={(event) => setQuery(event.target.value)}
                 />
               </div>
+
+              <select
+                className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
+                value={categoryFilter}
+                onChange={(event) =>
+                  setCategoryFilter(event.target.value as FilterCategory)
+                }
+              >
+                <option value="all">All categories</option>
+                {testCategories.map((category) => (
+                  <option key={category} value={category}>
+                    {category}
+                  </option>
+                ))}
+                <option value="uncategorized">Uncategorized</option>
+              </select>
 
               <select
                 className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
@@ -551,7 +590,7 @@ export function TestCatalogueAdmin() {
                         <td className="px-4 py-3">
                           <div className="font-medium text-slate-900">{test.name}</div>
                           <div className="text-xs text-slate-500">
-                            {(test.category || "Uncategorized") + " • " + (test.unit || "No unit")}
+                            {getTestCategoryLabel(test.category) + " • " + (test.unit || "No unit")}
                           </div>
                         </td>
                         <td className="px-4 py-3 capitalize text-slate-700">
@@ -647,12 +686,24 @@ export function TestCatalogueAdmin() {
 
                 <div className="space-y-2">
                   <Label htmlFor="test-category">Category</Label>
-                  <Input
+                  <select
                     id="test-category"
+                    className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"
                     value={formState.category ?? ""}
-                    onChange={(event) => setField("category", event.target.value || null)}
-                    placeholder="Chemistry, Hematology, Serology"
-                  />
+                    onChange={(event) =>
+                      setField(
+                        "category",
+                        (event.target.value || null) as TestFormValues["category"]
+                      )
+                    }
+                  >
+                    <option value="">Select category</option>
+                    {testCategories.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
                   {errors.category ? (
                     <p className="text-sm text-red-700">{errors.category}</p>
                   ) : null}

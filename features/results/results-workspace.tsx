@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -115,7 +116,7 @@ async function fetchResultsQueue() {
         .select(
           "id, order_id, test_id, sample_code, specimen_label, status, created_at, updated_at, collected_at, collected_by, in_progress_at, results_entered_at, verified_at, reported_at, tests(*), orders(id, facility_id, patient_id, order_number, priority, ordered_at, ordered_by, status, created_at, updated_at, patients(id, name, lab_id, phone)), order_test_results(*)"
         )
-        .in("status", ["Registered", "Collected", "In_Progress", "Results_Entered", "Verified"])
+        .in("status", ["Registered", "Collected", "In_Progress", "Results_Entered", "Verified", "Reported"])
         .order("updated_at", { ascending: false })
         .limit(40);
 
@@ -162,9 +163,12 @@ async function fetchAuditLogs(resultId: string | null) {
 }
 
 export function ResultsWorkspace() {
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const { facilityId, loading, role, user } = useAuth();
   const { toast } = useToast();
+  const sampleIdFromQuery = searchParams.get("sampleId");
+  const orderIdFromQuery = searchParams.get("orderId");
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
   const [queueFilter, setQueueFilter] = useState<QueueFilter>("all");
@@ -203,10 +207,31 @@ export function ResultsWorkspace() {
   });
 
   useEffect(() => {
-    if (!selectedId && (queueQuery.data ?? []).length > 0) {
-      setSelectedId(queueQuery.data?.[0]?.id ?? null);
+    const queue = queueQuery.data ?? [];
+    if (queue.length === 0) {
+      return;
     }
-  }, [queueQuery.data, selectedId]);
+
+    if (sampleIdFromQuery) {
+      const matchedSample = queue.find((sample) => sample.id === sampleIdFromQuery);
+      if (matchedSample && matchedSample.id !== selectedId) {
+        setSelectedId(matchedSample.id);
+      }
+      return;
+    }
+
+    if (orderIdFromQuery) {
+      const matchedOrderSample = queue.find((sample) => sample.order_id === orderIdFromQuery);
+      if (matchedOrderSample && matchedOrderSample.id !== selectedId) {
+        setSelectedId(matchedOrderSample.id);
+      }
+      return;
+    }
+
+    if (!selectedId) {
+      setSelectedId(queue[0]?.id ?? null);
+    }
+  }, [orderIdFromQuery, queueQuery.data, sampleIdFromQuery, selectedId]);
 
   useEffect(() => {
     if (!selectedSample) {
@@ -222,8 +247,13 @@ export function ResultsWorkspace() {
 
   const filteredQueue = useMemo(() => {
     const needle = deferredSearch.trim().toLowerCase();
+    const hasFocusedSelection = Boolean(sampleIdFromQuery || orderIdFromQuery);
 
     return (queueQuery.data ?? []).filter((sample) => {
+      if (!hasFocusedSelection && queueFilter === "all" && sample.status === "Reported") {
+        return false;
+      }
+
       if (
         queueFilter === "pending_entry" &&
         !["Registered", "Collected", "In_Progress"].includes(sample.status)
@@ -256,7 +286,7 @@ export function ResultsWorkspace() {
 
       return haystack.includes(needle);
     });
-  }, [deferredSearch, queueFilter, queueQuery.data]);
+  }, [deferredSearch, orderIdFromQuery, queueFilter, queueQuery.data, sampleIdFromQuery]);
 
   const stats = useMemo(() => {
     const queue = queueQuery.data ?? [];
@@ -666,8 +696,15 @@ export function ResultsWorkspace() {
                 ) : null}
 
                 <div className="space-y-4 rounded-2xl border border-slate-200 p-4">
+                  {["Verified", "Reported"].includes(selectedSample.status) ? (
+                    <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                      Updating this result will reopen it for verification before it can be
+                      reported again.
+                    </div>
+                  ) : null}
+
                   <DynamicResultInput
-                    disabled={!canEnterResults || selectedSample.status === "Verified"}
+                    disabled={!canEnterResults}
                     formValues={formValues}
                     onChange={setFormValues}
                     test={selectedTest}
@@ -677,7 +714,7 @@ export function ResultsWorkspace() {
                     <Label htmlFor="interpretation">Interpretation / comment</Label>
                     <Textarea
                       id="interpretation"
-                      disabled={!canEnterResults || selectedSample.status === "Verified"}
+                      disabled={!canEnterResults}
                       value={formValues.interpretation}
                       onChange={(event) =>
                         setFormValues((current) => ({
@@ -711,10 +748,12 @@ export function ResultsWorkspace() {
                       <Button
                         type="button"
                         onClick={handleSaveResult}
-                        disabled={saving || selectedSample.status === "Verified"}
+                        disabled={saving}
                       >
                         {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                        Save result
+                        {["Verified", "Reported"].includes(selectedSample.status)
+                          ? "Save revised result"
+                          : "Save result"}
                       </Button>
                     ) : null}
 

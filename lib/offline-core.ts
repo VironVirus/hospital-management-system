@@ -202,8 +202,36 @@ export function buildOfflineOrderNumber() {
   return `ORD-OFF-${Date.now().toString().slice(-8)}`;
 }
 
-export function buildOfflineSampleCode(index: number) {
-  return `SMP-OFF-${Date.now().toString().slice(-6)}-${String(index + 1).padStart(2, "0")}`;
+function getLagosSamplePrefix(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    timeZone: "Africa/Lagos"
+  }).formatToParts(date);
+  const day = parts.find((part) => part.type === "day")?.value ?? "01";
+  const month = parts.find((part) => part.type === "month")?.value ?? "01";
+  return `${month}${day}`;
+}
+
+export async function buildOfflineSampleCode(index: number) {
+  const prefix = getLagosSamplePrefix();
+  const rows = await db.order_tests.toArray();
+  const highestSerial = rows.reduce((max, row) => {
+    if (!new RegExp(`^${prefix}\\d{3}$`).test(row.sample_code)) {
+      return max;
+    }
+
+    return Math.max(max, Number(row.sample_code.slice(-3)) || 0);
+  }, 0);
+  const serial = highestSerial + index + 1;
+
+  if (serial > 999) {
+    throw new Error(
+      `Sample ID limit reached for ${prefix}. Archive or widen the format before creating more samples.`
+    );
+  }
+
+  return `${prefix}${String(serial).padStart(3, "0")}`;
 }
 
 export function buildOfflineInvoiceNumber() {
@@ -735,6 +763,150 @@ export async function retryAllQueueConflicts() {
   for (const conflict of conflicts) {
     await retryQueueConflict(conflict.id);
   }
+}
+
+async function applyConflictPayloadToLocalRecord(
+  row: QueueRecord,
+  payload: Json,
+  updatedAt: string
+) {
+  if (row.action === "delete" || !isJsonRecord(payload)) {
+    return;
+  }
+
+  const table = getEntityTable(row.entity);
+  const current = ((await table.get(row.recordId)) as Record<string, unknown> | undefined) ?? {};
+  const nextRow =
+    row.action === "update"
+      ? {
+          ...current,
+          ...payload
+        }
+      : {
+          ...payload
+        };
+
+  if (typeof nextRow.id !== "string") {
+    nextRow.id = row.recordId;
+  }
+
+  if (typeof nextRow.updated_at !== "string") {
+    nextRow.updated_at = updatedAt;
+  }
+
+  await table.put(normalizeUuidReferences(nextRow));
+  await updateRecordSyncState({
+    entity: row.entity,
+    isDeleted: false,
+    isDirty: true,
+    recordId: row.recordId,
+    source: "local"
+  });
+}
+
+export async function updateQueueConflictPayload(conflictId: string, nextPayload: Json) {
+  const conflict = await db.sync_conflicts.get(conflictId);
+  if (!conflict) {
+    throw new Error("Conflict not found.");
+  }
+
+  const queueRow = await db.sync_queue.get(conflict.queueId);
+  if (!queueRow) {
+    throw new Error("The queued mutation for this conflict no longer exists.");
+  }
+
+  const timestamp = toIsoNow();
+  const table = getEntityTable(queueRow.entity);
+
+  await db.transaction(
+    "rw",
+    table,
+    db.record_sync_state,
+    db.sync_conflicts,
+    db.sync_queue,
+    async () => {
+      await db.sync_conflicts.update(conflictId, {
+        localPayload: nextPayload
+      });
+      await db.sync_queue.put({
+        ...queueRow,
+        lastError: null,
+        payload: nextPayload,
+        updatedAt: timestamp
+      });
+      await applyConflictPayloadToLocalRecord(queueRow, nextPayload, timestamp);
+    }
+  );
+}
+
+export async function acceptRemoteConflict(conflictId: string) {
+  const conflict = await db.sync_conflicts.get(conflictId);
+  if (!conflict) {
+    throw new Error("Conflict not found.");
+  }
+
+  const queueRow = await db.sync_queue.get(conflict.queueId);
+  const entity = queueRow?.entity ?? conflict.entity;
+  const recordId = queueRow?.recordId ?? conflict.recordId;
+  const canonicalRecordId = normalizeUuidValue(recordId);
+  const table = getEntityTable(entity);
+  const resolvedAt = toIsoNow();
+
+  await db.transaction(
+    "rw",
+    table,
+    db.record_sync_state,
+    db.sync_conflicts,
+    db.sync_queue,
+    async () => {
+      if (isJsonRecord(conflict.remotePayload)) {
+        const remoteRow = normalizeUuidReferences(conflict.remotePayload);
+        const remoteId =
+          typeof remoteRow.id === "string" ? normalizeUuidValue(remoteRow.id) : canonicalRecordId;
+
+        if (remoteId !== recordId) {
+          await table.delete(recordId);
+          await db.record_sync_state.delete(buildRecordKey(entity, recordId));
+        }
+
+        await table.put(remoteRow);
+        await db.record_sync_state.put({
+          entity,
+          isDeleted: false,
+          isDirty: false,
+          key: buildRecordKey(entity, remoteId),
+          lastModifiedAt: getRowTimestamp(remoteRow) ?? resolvedAt,
+          lastSyncedAt: resolvedAt,
+          recordId: remoteId,
+          source: "remote"
+        });
+      } else {
+        await table.delete(recordId);
+        if (canonicalRecordId !== recordId) {
+          await table.delete(canonicalRecordId);
+          await db.record_sync_state.delete(buildRecordKey(entity, recordId));
+        }
+        await db.record_sync_state.put({
+          entity,
+          isDeleted: true,
+          isDirty: false,
+          key: buildRecordKey(entity, canonicalRecordId),
+          lastModifiedAt: resolvedAt,
+          lastSyncedAt: resolvedAt,
+          recordId: canonicalRecordId,
+          source: "remote"
+        });
+      }
+
+      if (queueRow) {
+        await db.sync_queue.delete(queueRow.id);
+      }
+
+      await db.sync_conflicts.update(conflictId, {
+        resolvedAt
+      });
+    }
+  );
 }
 
 export async function clearResolvedQueueItems() {

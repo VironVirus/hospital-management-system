@@ -225,6 +225,7 @@ function ReportPage({
           <Text style={styles.title}>Verified laboratory findings</Text>
         </View>
         <View style={styles.metaCard}>
+          <Text style={styles.metaLine}>Sample ID: {bundle.sampleCode}</Text>
           <Text style={styles.metaLine}>Orders: {orderLabel}</Text>
           <Text style={styles.metaLine}>
             Collected: {formatDate(bundle.orderedAt)}
@@ -244,6 +245,7 @@ function ReportPage({
           <Text style={styles.panelLine}>Sex: {patient?.sex || "-"}</Text>
           <Text style={styles.panelLine}>DOB: {formatDate(patient?.dob || null)}</Text>
           <Text style={styles.panelLine}>Address: {patient?.address || "-"}</Text>
+          <Text style={styles.panelLine}>Sample ID: {bundle.sampleCode}</Text>
         </View>
 
         <View style={styles.panel}>
@@ -326,7 +328,7 @@ export function LaboratoryReportDocument({
   return (
     <Document title="Laboratory report">
       {bundles.map((bundle) => (
-        <ReportPage key={bundle.patientKey} branding={branding} bundle={bundle} />
+        <ReportPage key={bundle.sampleKey} branding={branding} bundle={bundle} />
       ))}
     </Document>
   );

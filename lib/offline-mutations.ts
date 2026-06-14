@@ -160,7 +160,7 @@ export async function createOfflineOrderBundle(args: {
 
   for (const [index, test] of args.tests.entries()) {
     const orderTestId = generateLocalId("order-test");
-    const sampleCode = buildOfflineSampleCode(index);
+    const sampleCode = await buildOfflineSampleCode(index);
     const sampleRow: Tables<"order_tests"> = {
       barcode_value: sampleCode,
       collected_at: null,

@@ -1,6 +1,7 @@
 import type { Database, Tables } from "@/types/supabase";
 import { db, type SyncedTableName } from "@/lib/dexie";
 import { cacheRows } from "@/lib/offline-core";
+import { normalizeTestCategory } from "@/features/tests/categories";
 
 type SearchPatientRow =
   Database["public"]["Functions"]["search_patients"]["Returns"][number];
@@ -276,6 +277,7 @@ export async function cacheInvoicesWithRelations(rows: Array<Record<string, unkn
 }
 
 export async function getTestsLocal(args: {
+  category?: "all" | "uncategorized" | string;
   query: string;
   resultType: "all" | string;
   status: "all" | "active" | "inactive";
@@ -297,6 +299,17 @@ export async function getTestsLocal(args: {
 
     if (args.resultType !== "all" && row.result_type !== args.resultType) {
       return false;
+    }
+
+    if (args.category && args.category !== "all") {
+      const category = normalizeTestCategory(row.category);
+      if (args.category === "uncategorized") {
+        return category === null;
+      }
+
+      if (category !== args.category) {
+        return false;
+      }
     }
 
     return true;

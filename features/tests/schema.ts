@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { testCategories } from "@/features/tests/categories";
 
 export const resultTypes = ["numeric", "text", "boolean"] as const;
 
@@ -73,7 +74,7 @@ export const testFormSchema = z
   .object({
     id: z.string().uuid().optional(),
     name: z.string().trim().min(2, "Test name is required"),
-    category: z.string().trim().max(80, "Category must be 80 characters or fewer").nullable(),
+    category: z.enum(testCategories).nullable(),
     price: z.coerce.number().min(0, "Price must be zero or higher"),
     result_type: z.enum(resultTypes),
     unit: z.string().trim().max(30, "Unit must be 30 characters or fewer").nullable(),

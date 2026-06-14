@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   useDeferredValue,
@@ -41,6 +42,12 @@ import {
   orderFormSchema,
   type OrderFormValues
 } from "@/features/orders/schema";
+import {
+  getTestCategoryLabel,
+  normalizeTestCategory,
+  testCategories,
+  type TestCategory
+} from "@/features/tests/categories";
 import { useToast } from "@/hooks/use-toast";
 import { SampleLabelSheet } from "@/features/orders/sample-label-sheet";
 import { canAccessOrdersRole, canCreateOrdersRole } from "@/lib/guards";
@@ -89,6 +96,7 @@ type RecentOrderRow = {
 };
 type FormErrors = Partial<Record<keyof OrderFormValues | "form", string>>;
 type RecentOrderFilter = "all" | SampleStatus;
+type TestCategoryOption = TestCategory | "Uncategorized";
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("en-NG", {
@@ -196,6 +204,8 @@ export function OrdersManagement() {
     useState<RecentOrderFilter>("all");
   const [recentPriorityFilter, setRecentPriorityFilter] =
     useState<(typeof priorityOptions)[number] | "all">("all");
+  const [selectedCategory, setSelectedCategory] = useState<TestCategoryOption | "">("");
+  const [selectedCatalogueTestId, setSelectedCatalogueTestId] = useState("");
   const [formState, setFormState] = useState<OrderFormValues>(initialOrderFormState);
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -301,6 +311,71 @@ export function OrdersManagement() {
     });
   }, [deferredRecentSearch, recentOrdersQuery.data, recentPriorityFilter, recentStatusFilter]);
 
+  const testsById = useMemo(
+    () => new Map((testsQuery.data ?? []).map((test) => [test.id, test])),
+    [testsQuery.data]
+  );
+
+  const groupedTests = useMemo(() => {
+    const groups = new Map<TestCategoryOption, TestRow[]>();
+
+    (testsQuery.data ?? []).forEach((test) => {
+      const category = normalizeTestCategory(test.category) ?? "Uncategorized";
+      const current = groups.get(category) ?? [];
+      current.push(test);
+      groups.set(category, current);
+    });
+
+    groups.forEach((tests) => tests.sort((left, right) => left.name.localeCompare(right.name)));
+    return groups;
+  }, [testsQuery.data]);
+
+  const availableCategories = useMemo(() => {
+    const orderedCategories = testCategories.filter((category) => groupedTests.has(category));
+    return groupedTests.has("Uncategorized")
+      ? [...orderedCategories, "Uncategorized" as const]
+      : orderedCategories;
+  }, [groupedTests]);
+
+  const testsInSelectedCategory = useMemo(
+    () => (selectedCategory ? groupedTests.get(selectedCategory) ?? [] : []),
+    [groupedTests, selectedCategory]
+  );
+
+  const selectedTests = useMemo(
+    () =>
+      formState.selected_test_ids
+        .map((testId) => testsById.get(testId) ?? null)
+        .filter((test): test is TestRow => Boolean(test)),
+    [formState.selected_test_ids, testsById]
+  );
+
+  useEffect(() => {
+    if (availableCategories.length === 0) {
+      if (selectedCategory) {
+        setSelectedCategory("");
+      }
+      return;
+    }
+
+    if (!selectedCategory || !availableCategories.includes(selectedCategory)) {
+      setSelectedCategory(availableCategories[0]);
+    }
+  }, [availableCategories, selectedCategory]);
+
+  useEffect(() => {
+    if (testsInSelectedCategory.length === 0) {
+      if (selectedCatalogueTestId) {
+        setSelectedCatalogueTestId("");
+      }
+      return;
+    }
+
+    if (!testsInSelectedCategory.some((test) => test.id === selectedCatalogueTestId)) {
+      setSelectedCatalogueTestId(testsInSelectedCategory[0].id);
+    }
+  }, [selectedCatalogueTestId, testsInSelectedCategory]);
+
   if (loading) {
     return (
       <Card className="border-blue-100">
@@ -348,6 +423,23 @@ export function OrdersManagement() {
         ? current.selected_test_ids.filter((value) => value !== testId)
         : [...current.selected_test_ids, testId]
     }));
+  };
+
+  const handleAddSelectedTest = () => {
+    if (!selectedCatalogueTestId) {
+      return;
+    }
+
+    setFormState((current) => {
+      if (current.selected_test_ids.includes(selectedCatalogueTestId)) {
+        return current;
+      }
+
+      return {
+        ...current,
+        selected_test_ids: [...current.selected_test_ids, selectedCatalogueTestId]
+      };
+    });
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -526,27 +618,95 @@ export function OrdersManagement() {
 
                 <div className="space-y-3">
                   <Label>Tests</Label>
-                  <div className="grid max-h-80 gap-3 overflow-y-auto rounded-2xl border border-slate-200 bg-slate-50 p-3">
-                    {(testsQuery.data ?? []).map((test) => (
-                      <label
-                        key={test.id}
-                        className="flex cursor-pointer items-start gap-3 rounded-xl border border-white bg-white px-3 py-3 shadow-sm"
-                      >
-                        <input
-                          type="checkbox"
-                          className="mt-1 h-4 w-4 rounded border-slate-300 text-blue-600"
-                          checked={formState.selected_test_ids.includes(test.id)}
-                          onChange={() => toggleTestSelection(test.id)}
-                        />
-                        <div className="min-w-0">
-                          <p className="font-medium text-slate-950">{test.name}</p>
-                          <p className="text-sm text-slate-600">
-                            NGN {Number(test.price).toLocaleString("en-NG")}
-                            {test.unit ? ` • ${test.unit}` : ""}
-                          </p>
+                  <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                    <div className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)_auto]">
+                      <div className="space-y-2">
+                        <Label htmlFor="test-category-select">Category</Label>
+                        <select
+                          id="test-category-select"
+                          className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                          value={selectedCategory}
+                          onChange={(event) =>
+                            setSelectedCategory(event.target.value as TestCategoryOption | "")
+                          }
+                        >
+                          {availableCategories.length === 0 ? (
+                            <option value="">No categories available</option>
+                          ) : null}
+                          {availableCategories.map((category) => (
+                            <option key={category} value={category}>
+                              {category} ({groupedTests.get(category)?.length ?? 0})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="test-name-select">Available tests</Label>
+                        <select
+                          id="test-name-select"
+                          className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                          value={selectedCatalogueTestId}
+                          onChange={(event) => setSelectedCatalogueTestId(event.target.value)}
+                        >
+                          {testsInSelectedCategory.length === 0 ? (
+                            <option value="">No tests in this category</option>
+                          ) : null}
+                          {testsInSelectedCategory.map((test) => (
+                            <option key={test.id} value={test.id}>
+                              {test.name} - NGN {Number(test.price).toLocaleString("en-NG")}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="flex items-end">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={!selectedCatalogueTestId}
+                          onClick={handleAddSelectedTest}
+                        >
+                          Add test
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-white bg-white p-3">
+                      {selectedTests.length === 0 ? (
+                        <p className="text-sm text-slate-500">
+                          Add one or more tests to build this request.
+                        </p>
+                      ) : (
+                        <div className="grid gap-3 md:grid-cols-2">
+                          {selectedTests.map((test) => (
+                            <div
+                              key={test.id}
+                              className="flex items-start justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-3"
+                            >
+                              <div className="min-w-0">
+                                <p className="font-medium text-slate-950">{test.name}</p>
+                                <p className="text-xs text-slate-500">
+                                  {getTestCategoryLabel(test.category)}
+                                  {test.unit ? ` • ${test.unit}` : ""}
+                                </p>
+                                <p className="text-sm text-slate-600">
+                                  NGN {Number(test.price).toLocaleString("en-NG")}
+                                </p>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => toggleTestSelection(test.id)}
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                          ))}
                         </div>
-                      </label>
-                    ))}
+                      )}
+                    </div>
                   </div>
                   {errors.selected_test_ids ? (
                     <p className="text-xs text-red-700">{errors.selected_test_ids}</p>
@@ -577,7 +737,7 @@ export function OrdersManagement() {
                   <div className="space-y-2">
                     <Label>Selected tests</Label>
                     <div className="flex h-10 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600">
-                      {formState.selected_test_ids.length} selected
+                      {selectedTests.length} selected
                     </div>
                   </div>
                 </div>
@@ -731,9 +891,12 @@ export function OrdersManagement() {
                         {sample.tests?.name || "Unknown test"}
                       </p>
                       <p className="mt-1 text-sm text-slate-600">{sample.sample_code}</p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {formatSampleStatus(sample.status)}
-                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <Badge variant="outline">{formatSampleStatus(sample.status)}</Badge>
+                        <Button asChild size="sm" variant="ghost">
+                          <Link href={`/results?sampleId=${sample.id}`}>Edit result</Link>
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>

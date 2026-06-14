@@ -193,11 +193,27 @@ $$;
 
 create or replace function public.generate_sample_code()
 returns text
-language sql
+language plpgsql
 volatile
 set search_path = public
 as $$
-  select 'SMP-' || lpad(nextval('public.sample_code_seq')::text, 6, '0');
+declare
+  prefix text := to_char(timezone('Africa/Lagos', now()), 'MMDD');
+  next_serial integer;
+begin
+  perform pg_advisory_xact_lock(hashtext(prefix));
+
+  select coalesce(max(right(sample_code, 3)::integer), 0) + 1
+  into next_serial
+  from public.order_tests
+  where sample_code ~ ('^' || prefix || '[0-9]{3}$');
+
+  if next_serial > 999 then
+    raise exception 'Sample ID limit reached for prefix %', prefix;
+  end if;
+
+  return prefix || lpad(next_serial::text, 3, '0');
+end;
 $$;
 
 create or replace function public.generate_invoice_number()
@@ -463,6 +479,33 @@ create table if not exists public.expenses (
 
 alter table if exists public.tests
   add column if not exists category text;
+
+update public.tests
+set category = case
+  when category is null or btrim(category) = '' then null
+  when lower(btrim(category)) in ('haematology', 'hematology') then 'Haematology'
+  when lower(btrim(category)) in ('blood group serology', 'blood group', 'serology') then 'Blood Group Serology'
+  when lower(btrim(category)) = 'microbiology' then 'Microbiology'
+  when lower(btrim(category)) in ('chemical pathology', 'chemistry', 'clinical chemistry') then 'Chemical Pathology'
+  when lower(btrim(category)) = 'histopathology' then 'Histopathology'
+  else null
+end;
+
+alter table if exists public.tests
+  drop constraint if exists tests_category_allowed;
+
+alter table if exists public.tests
+  add constraint tests_category_allowed
+  check (
+    category is null or
+    category in (
+      'Haematology',
+      'Blood Group Serology',
+      'Microbiology',
+      'Chemical Pathology',
+      'Histopathology'
+    )
+  );
 
 alter table if exists public.inventory_items
   add column if not exists unit_cost numeric(12,2) not null default 0;
@@ -1910,6 +1953,9 @@ create index if not exists order_tests_status_idx
 create index if not exists order_tests_sample_code_idx
   on public.order_tests (sample_code);
 
+create index if not exists tests_category_active_name_idx
+  on public.tests (category, is_active, name);
+
 create index if not exists order_tests_barcode_value_idx
   on public.order_tests (barcode_value);
 
@@ -2053,6 +2099,7 @@ for insert
 with check (public.facility_access_allowed(facility_id));
 
 drop policy if exists "Facility users can update patients" on public.patients;
+drop policy if exists "Admins can update patients" on public.patients;
 create policy "Admins can update patients"
 on public.patients
 for update

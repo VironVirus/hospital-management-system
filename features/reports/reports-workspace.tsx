@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -28,6 +29,7 @@ import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
   buildPrintHtml,
+  buildPatientReportBundles,
   buildReportBranding,
   buildResultRows,
   calculateOrderTotal,
@@ -632,6 +634,9 @@ export function ReportsWorkspace() {
                         </CardDescription>
                       </div>
                       <div className="flex flex-wrap gap-2">
+                        <Button asChild variant="outline">
+                          <Link href={`/results?orderId=${selectedOrder.id}`}>Edit results</Link>
+                        </Button>
                         <Button
                           disabled={busyAction !== null}
                           onClick={() => void handleDownload([selectedOrder])}
@@ -743,45 +748,65 @@ export function ReportsWorkspace() {
                           </div>
                         </div>
 
-                        <div className="mt-6 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                          <div className="grid grid-cols-[1.6fr_1fr_0.7fr_1.2fr_0.8fr] gap-3 bg-blue-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600">
-                            <span>Test</span>
-                            <span>Result</span>
-                            <span>Unit</span>
-                            <span>Reference range</span>
-                            <span>Flag</span>
-                          </div>
-                          {buildResultRows(selectedOrder).map((row, index) => (
+                        <div className="mt-6 space-y-4">
+                          {buildPatientReportBundles([selectedOrder]).map((bundle) => (
                             <div
-                              key={`${selectedOrder.id}-${row.sampleCode}-${index}`}
-                              className="grid grid-cols-[1.6fr_1fr_0.7fr_1.2fr_0.8fr] gap-3 border-t border-slate-100 px-4 py-4 text-sm text-slate-700"
+                              key={bundle.sampleKey}
+                              className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
                             >
-                              <div>
-                                <p className="font-medium text-slate-950">{row.testName}</p>
-                                <p className="mt-1 text-xs text-slate-500">
-                                  Sample {row.sampleCode}
-                                </p>
-                              </div>
-                              <p className="font-medium text-slate-950">{row.result}</p>
-                              <p>{row.unit}</p>
-                              <p>{row.referenceRange}</p>
-                              <div>
-                                <Badge
-                                  className={
-                                    row.abnormal
-                                      ? "border-transparent bg-red-100 text-red-700"
-                                      : ""
-                                  }
-                                  variant="secondary"
-                                >
-                                  {row.abnormal ? "Flagged" : "Normal"}
-                                </Badge>
-                                {row.abnormalReason ? (
-                                  <p className="mt-2 text-xs text-red-700">
-                                    {row.abnormalReason}
+                              <div className="flex flex-wrap items-center justify-between gap-2 bg-blue-50 px-4 py-3">
+                                <div>
+                                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">
+                                    Sample ID
                                   </p>
-                                ) : null}
+                                  <p className="text-sm font-semibold text-slate-950">
+                                    {bundle.sampleCode}
+                                  </p>
+                                </div>
+                                <Badge variant="outline">
+                                  {bundle.rows.length} test{bundle.rows.length === 1 ? "" : "s"}
+                                </Badge>
                               </div>
+                              <div className="grid grid-cols-[1.6fr_1fr_0.7fr_1.2fr_0.8fr] gap-3 border-t border-blue-100 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600">
+                                <span>Test</span>
+                                <span>Result</span>
+                                <span>Unit</span>
+                                <span>Reference range</span>
+                                <span>Flag</span>
+                              </div>
+                              {bundle.rows.map((row, index) => (
+                                <div
+                                  key={`${bundle.sampleKey}-${row.orderTestId}-${index}`}
+                                  className="grid grid-cols-[1.6fr_1fr_0.7fr_1.2fr_0.8fr] gap-3 border-t border-slate-100 px-4 py-4 text-sm text-slate-700"
+                                >
+                                  <div>
+                                    <p className="font-medium text-slate-950">{row.testName}</p>
+                                    <p className="mt-1 text-xs text-slate-500">
+                                      {row.orderNumber}
+                                    </p>
+                                  </div>
+                                  <p className="font-medium text-slate-950">{row.result}</p>
+                                  <p>{row.unit}</p>
+                                  <p>{row.referenceRange}</p>
+                                  <div>
+                                    <Badge
+                                      className={
+                                        row.abnormal
+                                          ? "border-transparent bg-red-100 text-red-700"
+                                          : ""
+                                      }
+                                      variant="secondary"
+                                    >
+                                      {row.abnormal ? "Flagged" : "Normal"}
+                                    </Badge>
+                                    {row.abnormalReason ? (
+                                      <p className="mt-2 text-xs text-red-700">
+                                        {row.abnormalReason}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           ))}
                         </div>

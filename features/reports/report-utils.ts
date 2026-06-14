@@ -30,6 +30,8 @@ export type ReportResultRow = {
   abnormal: boolean;
   abnormalReason: string | null;
   orderNumber: string;
+  orderTestId: string;
+  price: number;
   referenceRange: string;
   result: string;
   sampleCode: string;
@@ -48,6 +50,8 @@ export type PatientReportBundle = {
   priorities: string[];
   reportedAt: string | null;
   rows: ReportResultRow[];
+  sampleCode: string;
+  sampleKey: string;
   totalAmount: number;
 };
 
@@ -184,6 +188,8 @@ export function buildResultRows(order: ReportOrderRow): ReportResultRow[] {
       abnormal: orderTest.order_test_results?.abnormal_flag ?? false,
       abnormalReason: orderTest.order_test_results?.abnormal_reason ?? null,
       orderNumber: order.order_number,
+      orderTestId: orderTest.id,
+      price: Number(orderTest.tests?.price ?? 0),
       referenceRange: formatReferenceRangeLabel(orderTest.tests),
       result: formatResultValue(orderTest.order_test_results, orderTest.tests),
       sampleCode: orderTest.sample_code,
@@ -255,38 +261,45 @@ export function buildPatientReportBundles(
     }
 
     const patientKey = order.patients?.id ?? `order-${order.id}`;
-    const existing = bundles.get(patientKey);
 
-    if (!existing) {
-      bundles.set(patientKey, {
-        facility: order.facilities,
-        notes: order.notes ? [order.notes] : [],
-        orderNumbers: [order.order_number],
-        orderedAt: order.ordered_at,
-        patient: order.patients,
-        patientKey,
-        priorities: [order.priority],
-        reportedAt: order.reported_at,
-        rows,
-        totalAmount: calculateOrderTotal(order)
-      });
-      continue;
-    }
+    for (const row of rows) {
+      const sampleCode = row.sampleCode || "Unassigned";
+      const sampleKey = `${patientKey}:${sampleCode}`;
+      const existing = bundles.get(sampleKey);
 
-    existing.notes = mergeUnique(existing.notes, order.notes);
-    existing.orderNumbers = mergeUnique(existing.orderNumbers, order.order_number);
-    existing.orderedAt = pickEarliestDate(existing.orderedAt, order.ordered_at);
-    existing.priorities = mergeUnique(existing.priorities, order.priority);
-    existing.reportedAt = pickLatestDate(existing.reportedAt, order.reported_at);
-    existing.rows.push(...rows);
-    existing.totalAmount += calculateOrderTotal(order);
+      if (!existing) {
+        bundles.set(sampleKey, {
+          facility: order.facilities,
+          notes: order.notes ? [order.notes] : [],
+          orderNumbers: [order.order_number],
+          orderedAt: order.ordered_at,
+          patient: order.patients,
+          patientKey,
+          priorities: [order.priority],
+          reportedAt: order.reported_at,
+          rows: [row],
+          sampleCode,
+          sampleKey,
+          totalAmount: row.price
+        });
+        continue;
+      }
 
-    if (!existing.facility && order.facilities) {
-      existing.facility = order.facilities;
-    }
+      existing.notes = mergeUnique(existing.notes, order.notes);
+      existing.orderNumbers = mergeUnique(existing.orderNumbers, order.order_number);
+      existing.orderedAt = pickEarliestDate(existing.orderedAt, order.ordered_at);
+      existing.priorities = mergeUnique(existing.priorities, order.priority);
+      existing.reportedAt = pickLatestDate(existing.reportedAt, order.reported_at);
+      existing.rows.push(row);
+      existing.totalAmount += row.price;
 
-    if (!existing.patient && order.patients) {
-      existing.patient = order.patients;
+      if (!existing.facility && order.facilities) {
+        existing.facility = order.facilities;
+      }
+
+      if (!existing.patient && order.patients) {
+        existing.patient = order.patients;
+      }
     }
   }
 
@@ -295,10 +308,14 @@ export function buildPatientReportBundles(
     rows: bundle.rows.sort(
       (left, right) =>
         left.orderNumber.localeCompare(right.orderNumber) ||
-        left.testName.localeCompare(right.testName) ||
-        left.sampleCode.localeCompare(right.sampleCode)
+        left.sampleCode.localeCompare(right.sampleCode) ||
+        left.testName.localeCompare(right.testName)
     )
-  }));
+  })).sort(
+    (left, right) =>
+      (left.patient?.name ?? "").localeCompare(right.patient?.name ?? "") ||
+      left.sampleCode.localeCompare(right.sampleCode)
+  );
 }
 
 export function isReportableOrder(order: ReportOrderRow) {
@@ -383,6 +400,7 @@ export function buildPrintHtml(
               <h2>Verified laboratory findings</h2>
             </div>
             <div class="meta-card">
+              <p><strong>Sample ID:</strong> ${escapeHtml(bundle.sampleCode)}</p>
               <p><strong>Orders:</strong> ${escapeHtml(orderLabel)}</p>
               <p><strong>Collected:</strong> ${escapeHtml(formatDate(bundle.orderedAt))}</p>
               <p><strong>Reported:</strong> ${escapeHtml(formatDate(bundle.reportedAt || new Date().toISOString()))}</p>
@@ -397,6 +415,7 @@ export function buildPrintHtml(
               <p><strong>Phone:</strong> ${escapeHtml(patient?.phone || "-")}</p>
               <p><strong>Sex:</strong> ${escapeHtml(patient?.sex || "-")}</p>
               <p><strong>DOB:</strong> ${escapeHtml(formatDate(patient?.dob || null))}</p>
+              <p><strong>Sample ID:</strong> ${escapeHtml(bundle.sampleCode)}</p>
             </div>
             <div class="panel">
               <p class="eyebrow">Clinical context</p>
