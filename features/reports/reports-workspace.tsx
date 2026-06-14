@@ -41,6 +41,7 @@ import {
   isReportableOrder,
   type ReportOrderRow
 } from "@/features/reports/report-utils";
+import { printHtmlDocument } from "@/lib/print";
 import { useToast } from "@/hooks/use-toast";
 import { canAccessReportsRole } from "@/lib/guards";
 import {
@@ -311,16 +312,7 @@ export function ReportsWorkspace() {
       setBusyAction(bulk ? "bulk-print" : "print");
       setFeedback({ error: null, success: null });
 
-      const printWindow = window.open("", "_blank", "noopener,noreferrer");
-      if (!printWindow) {
-        throw new Error("The print window was blocked by the browser.");
-      }
-
-      printWindow.document.open();
-      printWindow.document.write(buildPrintHtml(orders, branding));
-      printWindow.document.close();
-      printWindow.focus();
-      printWindow.print();
+      printHtmlDocument(buildPrintHtml(orders, branding));
 
       await runReportAudit(orders, "report_printed");
 

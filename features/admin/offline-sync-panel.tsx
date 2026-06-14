@@ -208,6 +208,31 @@ export function OfflineSyncPanel() {
     }
   };
 
+  const handleAcceptAllRemote = async () => {
+    try {
+      setBusy(true);
+      for (const conflict of conflictItems) {
+        await acceptRemoteConflict(conflict.id);
+      }
+      setEditingConflictId(null);
+      toast({
+        title: "Remote versions kept",
+        description:
+          "Visible conflicts were cleared by keeping the Supabase records and dropping stale local edits.",
+        variant: "success"
+      });
+    } catch (error) {
+      toast({
+        title: "Bulk cleanup failed",
+        description:
+          error instanceof Error ? error.message : "Unable to clear visible conflicts.",
+        variant: "error"
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Card className="border-blue-100">
       <CardHeader>
@@ -254,9 +279,22 @@ export function OfflineSyncPanel() {
             <RefreshCw className="h-4 w-4" />
             Retry all conflicts
           </Button>
+          <Button
+            disabled={busy || conflictItems.length === 0}
+            variant="outline"
+            onClick={() => void handleAcceptAllRemote()}
+          >
+            <Trash2 className="h-4 w-4" />
+            Use remote for all visible
+          </Button>
           <Button disabled={busy} variant="outline" onClick={() => void handleClearHistory()}>
             Clear synced history
           </Button>
+        </div>
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Conflicts usually mean a local offline edit was made after the same record had
+          already changed in Supabase. Retry only when you want the local edit to be applied;
+          use the remote copy when Supabase is the correct source of truth.
         </div>
 
         <div className="grid gap-6 xl:grid-cols-2">

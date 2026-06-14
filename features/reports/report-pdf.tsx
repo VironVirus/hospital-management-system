@@ -16,7 +16,8 @@ import type {
 import {
   buildPatientReportBundles,
   formatCurrency,
-  formatDate
+  formatDate,
+  groupReportRowsByCategory
 } from "@/features/reports/report-utils";
 
 const styles = StyleSheet.create({
@@ -117,6 +118,20 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     overflow: "hidden"
+  },
+  categoryBlock: {
+    marginBottom: 14
+  },
+  categoryTitle: {
+    backgroundColor: "#0f4c81",
+    borderTopLeftRadius: 10,
+    borderTopRightRadius: 10,
+    color: "#ffffff",
+    fontSize: 9,
+    fontWeight: 700,
+    letterSpacing: 0.8,
+    padding: 8,
+    textTransform: "uppercase"
   },
   tableHeader: {
     backgroundColor: "#eff6ff",
@@ -261,47 +276,45 @@ function ReportPage({
         </View>
       </View>
 
-      <View style={styles.table}>
-        <View style={styles.tableHeader}>
-          <Text style={[styles.tableHeaderCell, { width: "29%" }]}>Test</Text>
-          <Text style={[styles.tableHeaderCell, { width: "19%" }]}>
-            Order / Sample
-          </Text>
-          <Text style={[styles.tableHeaderCell, { width: "18%" }]}>Result</Text>
-          <Text style={[styles.tableHeaderCell, { width: "22%" }]}>
-            Reference range
-          </Text>
-          <Text style={[styles.tableHeaderCell, { borderRightWidth: 0, width: "12%" }]}>
-            Flag
-          </Text>
-        </View>
+      {groupReportRowsByCategory(bundle.rows).map(([category, rows]) => (
+        <View key={`${bundle.sampleKey}-${category}`} style={styles.categoryBlock}>
+          <Text style={styles.categoryTitle}>{category}</Text>
+          <View style={styles.table}>
+            <View style={styles.tableHeader}>
+              <Text style={[styles.tableHeaderCell, { width: "34%" }]}>Test</Text>
+              <Text style={[styles.tableHeaderCell, { width: "24%" }]}>Result</Text>
+              <Text style={[styles.tableHeaderCell, { width: "30%" }]}>
+                Reference range
+              </Text>
+              <Text style={[styles.tableHeaderCell, { borderRightWidth: 0, width: "12%" }]}>
+                Flag
+              </Text>
+            </View>
 
-        {bundle.rows.map((row, index) => (
-          <View key={`${bundle.patientKey}-${row.sampleCode}-${index}`} style={styles.tableRow}>
-            <View style={[styles.tableCell, { width: "29%" }]}>
-              <Text>{row.testName}</Text>
-              <Text style={styles.cellSubtext}>Unit: {row.unit}</Text>
-            </View>
-            <View style={[styles.tableCell, { width: "19%" }]}>
-              <Text>{row.orderNumber}</Text>
-              <Text style={styles.cellSubtext}>{row.sampleCode}</Text>
-            </View>
-            <Text style={[styles.tableCell, { width: "18%" }]}>{row.result}</Text>
-            <Text style={[styles.tableCell, { width: "22%" }]}>
-              {row.referenceRange}
-            </Text>
-            <Text
-              style={[
-                styles.tableCell,
-                { borderRightWidth: 0, width: "12%" },
-                row.flagCode ? styles.flagText : styles.normalText
-              ]}
-            >
-              {row.flagCode ?? "-"}
-            </Text>
+            {rows.map((row, index) => (
+              <View key={`${bundle.sampleKey}-${row.orderTestId}-${index}`} style={styles.tableRow}>
+                <View style={[styles.tableCell, { width: "34%" }]}>
+                  <Text>{row.testName}</Text>
+                  <Text style={styles.cellSubtext}>Unit: {row.unit}</Text>
+                </View>
+                <Text style={[styles.tableCell, { width: "24%" }]}>{row.result}</Text>
+                <Text style={[styles.tableCell, { width: "30%" }]}>
+                  {row.referenceRange}
+                </Text>
+                <Text
+                  style={[
+                    styles.tableCell,
+                    { borderRightWidth: 0, width: "12%" },
+                    row.flagCode ? styles.flagText : styles.normalText
+                  ]}
+                >
+                  {row.flagCode ?? "-"}
+                </Text>
+              </View>
+            ))}
           </View>
-        ))}
-      </View>
+        </View>
+      ))}
 
       <View style={styles.footer}>
         <Text style={styles.footerNote}>{branding.footerNote}</Text>

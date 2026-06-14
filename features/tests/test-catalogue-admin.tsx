@@ -987,7 +987,7 @@ export function TestCatalogueAdmin() {
                   </div>
                 ) : formState.reference_range.mode === "panel" ? (
                   <div className="space-y-4">
-                    <div className="flex flex-col gap-3 rounded-xl border border-blue-100 bg-blue-50/60 p-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex flex-col gap-3 rounded-xl border border-blue-100 bg-blue-50/60 p-4 lg:flex-row lg:items-center lg:justify-between">
                       <div>
                         <p className="text-sm font-medium text-slate-900">
                           Parameters in this test
@@ -996,15 +996,15 @@ export function TestCatalogueAdmin() {
                           Add each result line that should appear under this test.
                         </p>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-end gap-2">
                         <Label htmlFor="parameter-count" className="text-xs text-slate-600">
-                          Count
+                          Number of parameters
                         </Label>
                         <Input
                           id="parameter-count"
                           type="number"
                           min="1"
-                          className="h-9 w-20"
+                          className="h-10 w-28"
                           value={formState.reference_range.parameters.length}
                           onChange={(event) => {
                             const count = Math.max(1, Number(event.target.value) || 1);
@@ -1029,7 +1029,7 @@ export function TestCatalogueAdmin() {
                     {formState.reference_range.parameters.map((parameter, index) => (
                       <div
                         key={parameter.id}
-                        className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4"
+                        className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
                       >
                         <div className="flex items-start justify-between gap-3">
                           <p className="text-sm font-semibold text-slate-900">
@@ -1045,10 +1045,11 @@ export function TestCatalogueAdmin() {
                           </Button>
                         </div>
 
-                        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_140px_120px]">
+                        <div className="grid gap-3 lg:grid-cols-[minmax(280px,1.5fr)_180px_160px]">
                           <div className="space-y-2">
                             <Label>Parameter name</Label>
                             <Input
+                              className="h-11 text-base"
                               value={parameter.name}
                               onChange={(event) =>
                                 updatePanelParameter(parameter.id, (current) => ({
@@ -1103,49 +1104,56 @@ export function TestCatalogueAdmin() {
 
                         {parameter.reference_range.mode === "numeric" ? (
                           <div className="grid gap-3 md:grid-cols-2">
-                            <Input
-                              type="number"
-                              step="0.01"
-                              value={parameter.reference_range.min ?? ""}
-                              onChange={(event) =>
-                                updatePanelParameter(parameter.id, (current) => ({
-                                  ...current,
-                                  reference_range:
-                                    current.reference_range.mode === "numeric"
-                                      ? createNumericRange(
-                                          event.target.value === ""
-                                            ? null
-                                            : Number(event.target.value),
-                                          current.reference_range.max
-                                        )
-                                      : current.reference_range
-                                }))
-                              }
-                              placeholder="Minimum reference"
-                            />
-                            <Input
-                              type="number"
-                              step="0.01"
-                              value={parameter.reference_range.max ?? ""}
-                              onChange={(event) =>
-                                updatePanelParameter(parameter.id, (current) => ({
-                                  ...current,
-                                  reference_range:
-                                    current.reference_range.mode === "numeric"
-                                      ? createNumericRange(
-                                          current.reference_range.min,
-                                          event.target.value === ""
-                                            ? null
-                                            : Number(event.target.value)
-                                        )
-                                      : current.reference_range
-                                }))
-                              }
-                              placeholder="Maximum reference"
-                            />
+                            <div className="space-y-2">
+                              <Label>Minimum reference</Label>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={parameter.reference_range.min ?? ""}
+                                onChange={(event) =>
+                                  updatePanelParameter(parameter.id, (current) => ({
+                                    ...current,
+                                    reference_range:
+                                      current.reference_range.mode === "numeric"
+                                        ? createNumericRange(
+                                            event.target.value === ""
+                                              ? null
+                                              : Number(event.target.value),
+                                            current.reference_range.max
+                                          )
+                                        : current.reference_range
+                                  }))
+                                }
+                                placeholder="e.g. 36"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Maximum reference</Label>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={parameter.reference_range.max ?? ""}
+                                onChange={(event) =>
+                                  updatePanelParameter(parameter.id, (current) => ({
+                                    ...current,
+                                    reference_range:
+                                      current.reference_range.mode === "numeric"
+                                        ? createNumericRange(
+                                            current.reference_range.min,
+                                            event.target.value === ""
+                                              ? null
+                                              : Number(event.target.value)
+                                          )
+                                        : current.reference_range
+                                  }))
+                                }
+                                placeholder="e.g. 54"
+                              />
+                            </div>
                           </div>
                         ) : parameter.reference_range.mode === "select" ? (
                           <Textarea
+                            className="min-h-28"
                             value={parameter.reference_range.options.join("\n")}
                             onChange={(event) =>
                               updatePanelParameter(parameter.id, (current) => ({
@@ -1203,6 +1211,7 @@ export function TestCatalogueAdmin() {
                           </div>
                         ) : (
                           <Textarea
+                            className="min-h-28"
                             value={parameter.reference_range.text ?? ""}
                             onChange={(event) =>
                               updatePanelParameter(parameter.id, (current) => ({

@@ -13,7 +13,6 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
-  CalendarRange,
   ChevronLeft,
   ChevronRight,
   FileSearch,
@@ -21,8 +20,6 @@ import {
   PencilLine,
   Search,
   ShieldAlert,
-  ShieldCheck,
-  TestTube2,
   UserPlus
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
@@ -66,7 +63,7 @@ type FormErrors = Partial<Record<keyof PatientFormValues | "form", string>>;
 type ConsentFilter = "all" | "consented" | "pending";
 type HistoryFilter = "all" | "with_orders" | "new";
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 20;
 
 function toNullable(value: string) {
   const trimmed = value.trim();
@@ -525,82 +522,61 @@ export function PatientManagement() {
               </div>
             ) : null}
 
-            <div className="space-y-3">
+            <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white">
               {patients.map((patient: SearchPatientRow) => (
                 <div
                   key={patient.id}
-                  className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm transition hover:border-blue-200 hover:shadow-md"
+                  className="grid gap-3 px-4 py-3 transition hover:bg-blue-50/50 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.9fr)_auto]"
                 >
-                  <div className="border-b border-slate-100 bg-slate-50/70 px-5 py-3">
+                  <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="secondary">{patient.lab_id}</Badge>
-                      {patient.sex ? <Badge variant="outline">{patient.sex}</Badge> : null}
-                      <Badge variant={patient.ndpr_consent ? "default" : "secondary"}>
-                        {patient.ndpr_consent ? "NDPR consented" : "Consent pending"}
+                      <p className="truncate text-sm font-semibold text-slate-950">
+                        {patient.name}
+                      </p>
+                      <Badge variant="secondary" className="shrink-0">
+                        {patient.lab_id}
                       </Badge>
                     </div>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Contact details are hidden until the profile is opened.
+                    </p>
                   </div>
-                  <div className="flex flex-col gap-5 p-5 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="space-y-4">
-                      <div>
-                        <p className="text-lg font-semibold text-slate-950">{patient.name}</p>
-                        <p className="mt-1 text-sm text-slate-500">
-                          Sensitive contact details stay inside the patient profile.
-                        </p>
-                      </div>
 
-                      <div className="grid gap-3 sm:grid-cols-3">
-                        <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
-                            Estimated age
-                          </p>
-                          <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                            <CalendarRange className="h-4 w-4 text-blue-700" />
-                            {formatPatientAge(patient.dob)}
-                          </p>
-                        </div>
-                        <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
-                            Test history
-                          </p>
-                          <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                            <TestTube2 className="h-4 w-4 text-blue-700" />
-                            {patient.order_count} recorded
-                          </p>
-                        </div>
-                        <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                          <p className="text-xs uppercase tracking-[0.18em] text-slate-500">
-                            Registered
-                          </p>
-                          <p className="mt-2 flex items-center gap-2 text-sm font-semibold text-slate-900">
-                            <ShieldCheck className="h-4 w-4 text-blue-700" />
-                            {formatPatientDate(patient.created_at)}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 sm:grid-cols-4">
+                    <span className="rounded-lg bg-slate-50 px-2 py-1">
+                      Age: <strong className="text-slate-900">{formatPatientAge(patient.dob)}</strong>
+                    </span>
+                    <span className="rounded-lg bg-slate-50 px-2 py-1">
+                      Sex: <strong className="text-slate-900">{patient.sex || "-"}</strong>
+                    </span>
+                    <span className="rounded-lg bg-slate-50 px-2 py-1">
+                      Tests: <strong className="text-slate-900">{patient.order_count}</strong>
+                    </span>
+                    <span className="rounded-lg bg-slate-50 px-2 py-1">
+                      {patient.ndpr_consent ? "NDPR ok" : "Consent due"}
+                    </span>
+                  </div>
 
-                    <div className="flex flex-col gap-2 sm:flex-row lg:flex-col">
-                      <Button asChild>
-                        <Link href={`/patients/${patient.id}` as Route}>
-                          Open profile
-                          <ArrowRight className="h-4 w-4" />
+                  <div className="flex items-center gap-2 lg:justify-end">
+                    <Button asChild size="sm">
+                      <Link href={`/patients/${patient.id}` as Route}>
+                        Open
+                        <ArrowRight className="h-4 w-4" />
+                      </Link>
+                    </Button>
+                    {canManagePatients ? (
+                      <Button asChild variant="outline" size="sm">
+                        <Link
+                          href={{
+                            pathname: `/patients/${patient.id}` as Route,
+                            query: { mode: "edit" }
+                          }}
+                        >
+                          <PencilLine className="h-4 w-4" />
+                          Edit
                         </Link>
                       </Button>
-                      {canManagePatients ? (
-                        <Button asChild variant="outline">
-                          <Link
-                            href={{
-                              pathname: `/patients/${patient.id}` as Route,
-                              query: { mode: "edit" }
-                            }}
-                          >
-                            <PencilLine className="h-4 w-4" />
-                            Edit details
-                          </Link>
-                        </Button>
-                      ) : null}
-                    </div>
+                    ) : null}
                   </div>
                 </div>
               ))}

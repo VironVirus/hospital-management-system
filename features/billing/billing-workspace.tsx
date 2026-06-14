@@ -39,6 +39,7 @@ import {
   type InvoicePaymentStatus
 } from "@/features/billing/billing-utils";
 import { useToast } from "@/hooks/use-toast";
+import { printHtmlDocument } from "@/lib/print";
 import { canAccessBillingRole, canManageBillingRole } from "@/lib/guards";
 import { commitLocalMutation, resolveOfflineQuery } from "@/lib/offline-core";
 import { cacheInvoicesWithRelations, getInvoicesLocal } from "@/lib/offline-data";
@@ -239,23 +240,16 @@ export function BillingWorkspace() {
   };
 
   const handlePrintInvoice = (invoice: BillingInvoiceRow) => {
-    const printWindow = window.open("", "_blank", "noopener,noreferrer");
-    if (!printWindow) {
+    try {
+      printHtmlDocument(buildInvoicePrintHtml(invoice));
+    } catch (error) {
       toast({
         title: "Print blocked",
-        description: "Allow popups in the browser to print this invoice.",
+        description:
+          error instanceof Error ? error.message : "Unable to print this invoice.",
         variant: "error"
       });
-      return;
     }
-
-    printWindow.document.open();
-    printWindow.document.write(buildInvoicePrintHtml(invoice));
-    printWindow.document.close();
-    printWindow.focus();
-    window.setTimeout(() => {
-      printWindow.print();
-    }, 250);
   };
 
   const handleInvoiceUpdate = async (event: FormEvent<HTMLFormElement>) => {

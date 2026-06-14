@@ -34,6 +34,7 @@ export type ReportBranding = {
 export type ReportResultRow = {
   abnormal: boolean;
   abnormalReason: string | null;
+  category: string;
   orderNumber: string;
   orderTestId: string;
   flagCode: ResultFlagCode;
@@ -194,14 +195,11 @@ export function formatReferenceRangeLabel(test: Tables<"tests"> | null) {
 
 export function buildResultRows(order: ReportOrderRow): ReportResultRow[] {
   return (order.order_tests ?? [])
-    .filter(
-      (orderTest) =>
-        Boolean(orderTest.order_test_results?.verified_at) ||
-        orderTest.status === "Reported"
-    )
+    .filter((orderTest) => Boolean(orderTest.order_test_results?.verified_at))
     .map((orderTest) => ({
       abnormal: orderTest.order_test_results?.abnormal_flag ?? false,
       abnormalReason: orderTest.order_test_results?.abnormal_reason ?? null,
+      category: orderTest.tests?.category ?? "Uncategorized",
       flagCode: getResultFlagCode(orderTest.order_test_results, orderTest.tests),
       orderNumber: order.order_number,
       orderTestId: orderTest.id,
@@ -278,44 +276,42 @@ export function buildPatientReportBundles(
 
     const patientKey = order.patients?.id ?? `order-${order.id}`;
 
-    for (const row of rows) {
-      const sampleCode = row.sampleCode || "Unassigned";
-      const sampleKey = `${patientKey}:${sampleCode}`;
-      const existing = bundles.get(sampleKey);
+    const sampleCode = order.order_number || rows[0]?.sampleCode || "Unassigned";
+    const sampleKey = `${patientKey}:${order.id}`;
+    const existing = bundles.get(sampleKey);
 
-      if (!existing) {
-        bundles.set(sampleKey, {
-          facility: order.facilities,
-          notes: order.notes ? [order.notes] : [],
-          orderNumbers: [order.order_number],
-          orderedAt: order.ordered_at,
-          patient: order.patients,
-          patientKey,
-          priorities: [order.priority],
-          reportedAt: order.reported_at,
-          rows: [row],
-          sampleCode,
-          sampleKey,
-          totalAmount: row.price
-        });
-        continue;
-      }
+    if (!existing) {
+      bundles.set(sampleKey, {
+        facility: order.facilities,
+        notes: order.notes ? [order.notes] : [],
+        orderNumbers: [order.order_number],
+        orderedAt: order.ordered_at,
+        patient: order.patients,
+        patientKey,
+        priorities: [order.priority],
+        reportedAt: order.reported_at,
+        rows,
+        sampleCode,
+        sampleKey,
+        totalAmount: rows.reduce((sum, row) => sum + row.price, 0)
+      });
+      continue;
+    }
 
-      existing.notes = mergeUnique(existing.notes, order.notes);
-      existing.orderNumbers = mergeUnique(existing.orderNumbers, order.order_number);
-      existing.orderedAt = pickEarliestDate(existing.orderedAt, order.ordered_at);
-      existing.priorities = mergeUnique(existing.priorities, order.priority);
-      existing.reportedAt = pickLatestDate(existing.reportedAt, order.reported_at);
-      existing.rows.push(row);
-      existing.totalAmount += row.price;
+    existing.notes = mergeUnique(existing.notes, order.notes);
+    existing.orderNumbers = mergeUnique(existing.orderNumbers, order.order_number);
+    existing.orderedAt = pickEarliestDate(existing.orderedAt, order.ordered_at);
+    existing.priorities = mergeUnique(existing.priorities, order.priority);
+    existing.reportedAt = pickLatestDate(existing.reportedAt, order.reported_at);
+    existing.rows.push(...rows);
+    existing.totalAmount += rows.reduce((sum, row) => sum + row.price, 0);
 
-      if (!existing.facility && order.facilities) {
-        existing.facility = order.facilities;
-      }
+    if (!existing.facility && order.facilities) {
+      existing.facility = order.facilities;
+    }
 
-      if (!existing.patient && order.patients) {
-        existing.patient = order.patients;
-      }
+    if (!existing.patient && order.patients) {
+      existing.patient = order.patients;
     }
   }
 
@@ -324,7 +320,7 @@ export function buildPatientReportBundles(
     rows: bundle.rows.sort(
       (left, right) =>
         left.orderNumber.localeCompare(right.orderNumber) ||
-        left.sampleCode.localeCompare(right.sampleCode) ||
+        left.category.localeCompare(right.category) ||
         left.testName.localeCompare(right.testName)
     )
   })).sort(
@@ -341,14 +337,25 @@ export function isReportableOrder(order: ReportOrderRow) {
 
 export function isFullyReported(order: ReportOrderRow) {
   const reportableTests = (order.order_tests ?? []).filter(
-    (orderTest) =>
-      Boolean(orderTest.order_test_results?.verified_at) ||
-      orderTest.status === "Reported"
+    (orderTest) => Boolean(orderTest.order_test_results?.verified_at)
   );
 
   return (
     reportableTests.length > 0 &&
     reportableTests.every((orderTest) => orderTest.status === "Reported")
+  );
+}
+
+export function groupReportRowsByCategory(rows: ReportResultRow[]) {
+  const grouped = new Map<string, ReportResultRow[]>();
+
+  for (const row of rows) {
+    const category = row.category || "Uncategorized";
+    grouped.set(category, [...(grouped.get(category) ?? []), row]);
+  }
+
+  return Array.from(grouped.entries()).sort(([left], [right]) =>
+    left.localeCompare(right)
   );
 }
 
@@ -376,19 +383,17 @@ export function buildPrintHtml(
           ? bundle.notes.join(" | ")
           : "No additional notes recorded.";
 
-      const resultRows = bundle.rows
-        .map(
-          (row) => `
+      const categoryTables = groupReportRowsByCategory(bundle.rows)
+        .map(([category, rows]) => {
+          const resultRows = rows
+            .map(
+              (row) => `
             <tr>
               <td>
                 <strong>${escapeHtml(row.testName)}</strong>
                 <div class="muted">Unit: ${escapeHtml(row.unit)}</div>
               </td>
-              <td>
-                <strong>${escapeHtml(row.orderNumber)}</strong>
-                <div class="muted">${escapeHtml(row.sampleCode)}</div>
-              </td>
-              <td>${escapeHtml(row.result)}</td>
+              <td class="result-cell">${escapeHtml(row.result)}</td>
               <td>${escapeHtml(row.referenceRange)}</td>
               <td>${
                 row.flagCode
@@ -397,7 +402,26 @@ export function buildPrintHtml(
               }</td>
             </tr>
           `
-        )
+            )
+            .join("");
+
+          return `
+            <section class="category-block">
+              <h3>${escapeHtml(category)}</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Test</th>
+                    <th>Result</th>
+                    <th>Reference range</th>
+                    <th>Flag</th>
+                  </tr>
+                </thead>
+                <tbody>${resultRows}</tbody>
+              </table>
+            </section>
+          `;
+        })
         .join("");
 
       return `
@@ -446,18 +470,7 @@ export function buildPrintHtml(
             </div>
           </div>
 
-          <table>
-            <thead>
-              <tr>
-                <th>Test</th>
-                <th>Order / Sample</th>
-                <th>Result</th>
-                <th>Reference range</th>
-                <th>Flag</th>
-              </tr>
-            </thead>
-            <tbody>${resultRows}</tbody>
-          </table>
+          ${categoryTables}
 
           <footer class="footer">
             <div>
@@ -496,9 +509,12 @@ export function buildPrintHtml(
           .meta-card, .panel { border: 1px solid #dbeafe; border-radius: 16px; padding: 16px; background: #f8fbff; }
           .meta-card p, .panel p { margin: 6px 0; font-size: 13px; }
           .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+          .category-block { break-inside: avoid; margin-bottom: 18px; }
+          .category-block h3 { background: #0f4c81; border-radius: 10px 10px 0 0; color: white; font-size: 13px; letter-spacing: 0.08em; margin: 0; padding: 10px 12px; text-transform: uppercase; }
           table { width: 100%; border-collapse: collapse; margin-bottom: 28px; }
           th { background: #eff6ff; color: #0f172a; text-align: left; font-size: 12px; padding: 12px; border-bottom: 1px solid #bfdbfe; }
           td { padding: 12px; border-bottom: 1px solid #e2e8f0; font-size: 12px; vertical-align: top; }
+          .result-cell { white-space: pre-line; }
           .muted { color: #64748b; font-size: 11px; margin-top: 3px; }
           .flag { color: #b91c1c; font-weight: 800; font-size: 14px; }
           .normal { color: #64748b; font-weight: 700; }
