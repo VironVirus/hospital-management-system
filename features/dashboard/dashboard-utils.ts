@@ -428,6 +428,36 @@ export async function exportWorklistCsv(rows: ReturnType<typeof buildTodayWorkli
   downloadBlob(blob, `lims-worklist-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
+function escapeSpreadsheetValue(value: unknown) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function buildSpreadsheetTable(title: string, rows: Array<Record<string, unknown>>) {
+  const headers = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+  const body =
+    rows.length === 0
+      ? `<tr><td>No records</td></tr>`
+      : [
+          `<tr>${headers.map((header) => `<th>${escapeSpreadsheetValue(header)}</th>`).join("")}</tr>`,
+          ...rows.map(
+            (row) =>
+              `<tr>${headers
+                .map((header) => `<td>${escapeSpreadsheetValue(row[header])}</td>`)
+                .join("")}</tr>`
+          )
+        ].join("");
+
+  return `
+    <h2>${escapeSpreadsheetValue(title)}</h2>
+    <table>${body}</table>
+  `;
+}
+
 export async function exportDashboardWorkbook(args: {
   paymentMethods: Array<{ amount: number; method: string }>;
   revenueSummary: ReturnType<typeof buildRevenueSummary>;
@@ -438,42 +468,43 @@ export async function exportDashboardWorkbook(args: {
   volumeTrend: Array<{ label: string; routine: number; total: number; urgent: number }>;
   worklistRows: ReturnType<typeof buildTodayWorklistRows>;
 }) {
-  const XLSX = await import("xlsx");
-
-  const workbook = XLSX.utils.book_new();
-  const summarySheet = XLSX.utils.json_to_sheet([
+  const summaryRows = [
     {
-      "Total Billed": args.revenueSummary.billed,
-      "Total Collected": args.revenueSummary.collected,
+      "Fully Paid Invoices": args.revenueSummary.paidInvoices,
       "Outstanding Balance": args.revenueSummary.outstanding,
-      "Fully Paid Invoices": args.revenueSummary.paidInvoices
+      "Total Billed": args.revenueSummary.billed,
+      "Total Collected": args.revenueSummary.collected
     }
-  ]);
-  const worklistSheet = XLSX.utils.json_to_sheet(args.worklistRows);
-  const volumeSheet = XLSX.utils.json_to_sheet(args.volumeTrend);
-  const topTestsSheet = XLSX.utils.json_to_sheet(args.topTests);
-  const tatSheet = XLSX.utils.json_to_sheet(args.tatTrend);
-  const tatStageSheet = XLSX.utils.json_to_sheet(args.tatStages);
-  const revenueSheet = XLSX.utils.json_to_sheet(args.revenueTrend);
-  const paymentMethodSheet = XLSX.utils.json_to_sheet(args.paymentMethods);
-
-  XLSX.utils.book_append_sheet(workbook, summarySheet, "Summary");
-  XLSX.utils.book_append_sheet(workbook, worklistSheet, "Today Worklist");
-  XLSX.utils.book_append_sheet(workbook, volumeSheet, "Volume Trend");
-  XLSX.utils.book_append_sheet(workbook, topTestsSheet, "Top Tests");
-  XLSX.utils.book_append_sheet(workbook, tatSheet, "TAT Trend");
-  XLSX.utils.book_append_sheet(workbook, tatStageSheet, "TAT Stages");
-  XLSX.utils.book_append_sheet(workbook, revenueSheet, "Revenue Trend");
-  XLSX.utils.book_append_sheet(workbook, paymentMethodSheet, "Payment Methods");
-
-  const workbookBytes = XLSX.write(workbook, {
-    bookType: "xlsx",
-    type: "array"
+  ];
+  const sections = [
+    buildSpreadsheetTable("Summary", summaryRows),
+    buildSpreadsheetTable("Today Worklist", args.worklistRows),
+    buildSpreadsheetTable("Volume Trend", args.volumeTrend),
+    buildSpreadsheetTable("Top Tests", args.topTests),
+    buildSpreadsheetTable("TAT Trend", args.tatTrend),
+    buildSpreadsheetTable("TAT Stages", args.tatStages),
+    buildSpreadsheetTable("Revenue Trend", args.revenueTrend),
+    buildSpreadsheetTable("Payment Methods", args.paymentMethods)
+  ];
+  const html = `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <style>
+          body { font-family: Arial, sans-serif; }
+          h2 { color: #0f4c81; margin-top: 28px; }
+          table { border-collapse: collapse; margin-bottom: 24px; width: 100%; }
+          th { background: #eaf5ff; color: #0f172a; font-weight: 700; }
+          th, td { border: 1px solid #cbd5e1; padding: 8px; text-align: left; }
+        </style>
+      </head>
+      <body>${sections.join("")}</body>
+    </html>
+  `;
+  const blob = new Blob([html], {
+    type: "application/vnd.ms-excel;charset=utf-8;"
   });
 
-  const blob = new Blob([workbookBytes], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-  });
-
-  downloadBlob(blob, `lims-dashboard-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  downloadBlob(blob, `lims-dashboard-${new Date().toISOString().slice(0, 10)}.xls`);
 }

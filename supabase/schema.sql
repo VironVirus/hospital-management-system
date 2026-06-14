@@ -289,22 +289,6 @@ as $$
   );
 $$;
 
-create or replace function public.legacy_order_in_current_facility(target_order_id uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1
-    from public.test_orders o
-    join public.patients p on p.id = o.patient_id
-    where o.id = target_order_id
-      and public.facility_access_allowed(p.facility_id)
-  );
-$$;
-
 create table if not exists public.tests (
   id uuid primary key default gen_random_uuid(),
   name text not null unique,
@@ -317,6 +301,50 @@ create table if not exists public.tests (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+do $$
+begin
+  if to_regclass('public.test_catalog') is not null then
+    insert into public.tests (
+      id,
+      name,
+      price,
+      result_type,
+      reference_range,
+      unit,
+      is_active,
+      created_at,
+      updated_at
+    )
+    select
+      id,
+      name,
+      price_ngn,
+      'text',
+      jsonb_build_object(
+        'mode', 'text',
+        'text', coalesce(description, ''),
+        'min', null,
+        'max', null
+      ),
+      null,
+      is_active,
+      created_at,
+      updated_at
+    from public.test_catalog
+    on conflict (id) do update
+    set
+      name = excluded.name,
+      price = excluded.price,
+      is_active = excluded.is_active,
+      updated_at = excluded.updated_at;
+  end if;
+end $$;
+
+drop table if exists public.test_results cascade;
+drop table if exists public.test_orders cascade;
+drop table if exists public.test_catalog cascade;
+drop function if exists public.legacy_order_in_current_facility(uuid) cascade;
 
 create table if not exists public.inventory_items (
   id uuid primary key default gen_random_uuid(),
@@ -841,47 +869,6 @@ begin
     inserted_transaction.created_at;
 end;
 $$;
-
-create table if not exists public.test_catalog (
-  id uuid primary key default gen_random_uuid(),
-  code text not null unique,
-  name text not null,
-  description text,
-  specimen_type text,
-  turnaround_time_hours integer,
-  price_ngn numeric(12,2) not null default 0,
-  is_active boolean not null default true,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table if not exists public.test_orders (
-  id uuid primary key default gen_random_uuid(),
-  order_number text not null unique,
-  patient_id uuid not null references public.patients(id) on delete cascade,
-  status text not null default 'ordered',
-  priority text not null default 'routine',
-  notes text,
-  created_by uuid references auth.users(id) on delete set null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table if not exists public.test_results (
-  id uuid primary key default gen_random_uuid(),
-  order_id uuid not null references public.test_orders(id) on delete cascade,
-  test_id uuid not null,
-  value text,
-  unit text,
-  result_text text,
-  interpretation text,
-  analyzer_reference text,
-  reviewed_by uuid references auth.users(id) on delete set null,
-  reviewed_at timestamptz,
-  created_by uuid references auth.users(id) on delete set null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -1754,47 +1741,6 @@ alter table public.patients
 alter table public.patients
   alter column ndpr_consent set not null;
 
-insert into public.tests (
-  id,
-  name,
-  price,
-  result_type,
-  reference_range,
-  unit,
-  is_active,
-  created_at,
-  updated_at
-)
-select
-  id,
-  name,
-  price_ngn,
-  'text',
-  jsonb_build_object(
-    'mode', 'text',
-    'text', coalesce(description, ''),
-    'min', null,
-    'max', null
-  ),
-  null,
-  is_active,
-  created_at,
-  updated_at
-from public.test_catalog
-on conflict (id) do update
-set
-  name = excluded.name,
-  price = excluded.price,
-  is_active = excluded.is_active,
-  updated_at = excluded.updated_at;
-
-alter table public.test_results
-drop constraint if exists test_results_test_id_fkey;
-
-alter table public.test_results
-add constraint test_results_test_id_fkey
-foreign key (test_id) references public.tests(id) on delete restrict;
-
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
 after insert on auth.users
@@ -1900,24 +1846,9 @@ create trigger set_order_test_results_updated_at
 before update on public.order_test_results
 for each row execute procedure public.set_updated_at();
 
-drop trigger if exists set_test_catalog_updated_at on public.test_catalog;
-create trigger set_test_catalog_updated_at
-before update on public.test_catalog
-for each row execute procedure public.set_updated_at();
-
 drop trigger if exists set_tests_updated_at on public.tests;
 create trigger set_tests_updated_at
 before update on public.tests
-for each row execute procedure public.set_updated_at();
-
-drop trigger if exists set_test_orders_updated_at on public.test_orders;
-create trigger set_test_orders_updated_at
-before update on public.test_orders
-for each row execute procedure public.set_updated_at();
-
-drop trigger if exists set_test_results_updated_at on public.test_results;
-create trigger set_test_results_updated_at
-before update on public.test_results
 for each row execute procedure public.set_updated_at();
 
 create index if not exists profiles_facility_id_idx
@@ -1974,9 +1905,6 @@ create index if not exists audit_logs_facility_id_idx
 create index if not exists audit_logs_entity_idx
   on public.audit_logs (entity_table, entity_id, created_at desc);
 
-create index if not exists test_orders_patient_id_idx
-  on public.test_orders (patient_id);
-
 create index if not exists inventory_items_facility_name_idx
   on public.inventory_items (facility_id, name);
 
@@ -2030,10 +1958,7 @@ alter table public.order_tests enable row level security;
 alter table public.sample_custody_logs enable row level security;
 alter table public.order_test_results enable row level security;
 alter table public.audit_logs enable row level security;
-alter table public.test_catalog enable row level security;
 alter table public.tests enable row level security;
-alter table public.test_orders enable row level security;
-alter table public.test_results enable row level security;
 
 drop policy if exists "Authenticated can read facilities" on public.facilities;
 create policy "Authenticated can read facilities"
@@ -2355,19 +2280,6 @@ on public.audit_logs
 for insert
 with check (public.facility_access_allowed(facility_id));
 
-drop policy if exists "Authenticated can read test catalog" on public.test_catalog;
-create policy "Authenticated can read test catalog"
-on public.test_catalog
-for select
-using (auth.role() = 'authenticated');
-
-drop policy if exists "Authenticated can manage test catalog" on public.test_catalog;
-create policy "Authenticated can manage test catalog"
-on public.test_catalog
-for all
-using (auth.role() = 'authenticated')
-with check (auth.role() = 'authenticated');
-
 drop policy if exists "Authenticated can read tests" on public.tests;
 create policy "Authenticated can read tests"
 on public.tests
@@ -2380,29 +2292,3 @@ on public.tests
 for all
 using (public.current_user_is_admin())
 with check (public.current_user_is_admin());
-
-drop policy if exists "Facility users can read test orders" on public.test_orders;
-create policy "Facility users can read test orders"
-on public.test_orders
-for select
-using (public.patient_in_current_facility(patient_id));
-
-drop policy if exists "Facility users can manage test orders" on public.test_orders;
-create policy "Facility users can manage test orders"
-on public.test_orders
-for all
-using (public.patient_in_current_facility(patient_id))
-with check (public.patient_in_current_facility(patient_id));
-
-drop policy if exists "Facility users can read test results" on public.test_results;
-create policy "Facility users can read test results"
-on public.test_results
-for select
-using (public.legacy_order_in_current_facility(order_id));
-
-drop policy if exists "Facility users can manage test results" on public.test_results;
-create policy "Facility users can manage test results"
-on public.test_results
-for all
-using (public.legacy_order_in_current_facility(order_id))
-with check (public.legacy_order_in_current_facility(order_id));
