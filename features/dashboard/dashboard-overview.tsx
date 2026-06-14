@@ -7,11 +7,13 @@ import type { LucideIcon } from "lucide-react";
 import {
   Activity,
   AlertTriangle,
+  CheckCircle2,
   Clock3,
   Download,
   FileSpreadsheet,
   FlaskConical,
   Loader2,
+  UserPlus,
   Wallet
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
@@ -28,8 +30,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   formatInventoryDate,
   getAlertSummary,
-  getExpiryState,
-  isLowStock,
   type InventoryItemRow
 } from "@/features/inventory/inventory-utils";
 import {
@@ -38,6 +38,7 @@ import {
   buildRevenueTrend,
   buildTatStageMetrics,
   buildTatTrend,
+  buildTodayOperationalSummary,
   buildTodayWorklistRows,
   buildTopTests,
   buildVolumeTrend,
@@ -46,6 +47,7 @@ import {
   exportWorklistCsv,
   formatCurrency,
   type DashboardInvoiceRow,
+  type DashboardPatientRow,
   type DashboardPaymentRow,
   type DashboardWorklistRow
 } from "@/features/dashboard/dashboard-utils";
@@ -53,7 +55,8 @@ import { db } from "@/lib/dexie";
 import {
   cacheInventoryItems,
   cacheInvoicesWithRelations,
-  cacheOrderTestsWithRelations
+  cacheOrderTestsWithRelations,
+  cachePatients
 } from "@/lib/offline-data";
 import { resolveOfflineQuery } from "@/lib/offline-core";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
@@ -61,6 +64,7 @@ import { getSupabaseBrowserClient } from "@/lib/supabase";
 type DashboardData = {
   inventoryItems: InventoryItemRow[];
   invoices: DashboardInvoiceRow[];
+  patients: DashboardPatientRow[];
   payments: DashboardPaymentRow[];
   worklist: DashboardWorklistRow[];
 };
@@ -109,7 +113,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
   return resolveOfflineQuery<DashboardData>({
     cacheKey: "dashboard-overview",
     offline: async () => {
-      const [orderTests, invoices, payments, inventoryItems] = await Promise.all([
+      const [orderTests, invoices, payments, inventoryItems, patientsForWindow] = await Promise.all([
         db.order_tests.where("created_at").aboveOrEqual(startIso).reverse().limit(320).toArray(),
         db.invoices.where("issued_at").aboveOrEqual(startIso).reverse().limit(240).toArray(),
         db.invoice_payments
@@ -118,7 +122,8 @@ async function fetchDashboardData(): Promise<DashboardData> {
           .reverse()
           .limit(320)
           .toArray(),
-        db.inventory_items.orderBy("updated_at").reverse().limit(120).toArray()
+        db.inventory_items.orderBy("updated_at").reverse().limit(120).toArray(),
+        db.patients.where("created_at").aboveOrEqual(startIso).reverse().limit(240).toArray()
       ]);
 
       const uniqueOrderIds = [...new Set(orderTests.map((row) => row.order_id))];
@@ -164,6 +169,10 @@ async function fetchDashboardData(): Promise<DashboardData> {
             payment_method: payment.payment_method,
             received_at: payment.received_at
           })),
+        patients: patientsForWindow.map((patient) => ({
+          created_at: patient.created_at,
+          id: patient.id
+        })),
         worklist: orderTests
           .map((row) => {
             const order = orderMap.get(row.order_id) ?? null;
@@ -206,7 +215,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
         throw new Error("Supabase is not configured.");
       }
 
-      const [worklistResponse, invoicesResponse, paymentsResponse, inventoryResponse] =
+      const [worklistResponse, invoicesResponse, paymentsResponse, inventoryResponse, patientsResponse] =
         await Promise.all([
           supabase
             .from("order_tests")
@@ -233,7 +242,13 @@ async function fetchDashboardData(): Promise<DashboardData> {
             .select("*")
             .eq("is_active", true)
             .order("updated_at", { ascending: false })
-            .limit(80)
+            .limit(80),
+          supabase
+            .from("patients")
+            .select("id, created_at")
+            .gte("created_at", startIso)
+            .order("created_at", { ascending: false })
+            .limit(240)
         ]);
 
       if (worklistResponse.error) {
@@ -252,6 +267,10 @@ async function fetchDashboardData(): Promise<DashboardData> {
         throw new Error(inventoryResponse.error.message);
       }
 
+      if (patientsResponse.error) {
+        throw new Error(patientsResponse.error.message);
+      }
+
       await Promise.all([
         cacheOrderTestsWithRelations((worklistResponse.data ?? []) as Record<string, unknown>[]),
         cacheInvoicesWithRelations(
@@ -264,12 +283,14 @@ async function fetchDashboardData(): Promise<DashboardData> {
             orders: null
           })) as Record<string, unknown>[]
         ),
-        cacheInventoryItems((inventoryResponse.data ?? []) as InventoryItemRow[])
+        cacheInventoryItems((inventoryResponse.data ?? []) as InventoryItemRow[]),
+        cachePatients((patientsResponse.data ?? []) as Array<DashboardPatientRow & { id: string }>)
       ]);
 
       return {
         inventoryItems: (inventoryResponse.data ?? []) as InventoryItemRow[],
         invoices: (invoicesResponse.data ?? []) as DashboardInvoiceRow[],
+        patients: (patientsResponse.data ?? []) as DashboardPatientRow[],
         payments: (paymentsResponse.data ?? []) as DashboardPaymentRow[],
         worklist: (worklistResponse.data ?? []) as DashboardWorklistRow[]
       };
@@ -381,6 +402,7 @@ export function DashboardOverview() {
   const analytics = useMemo(() => {
     const worklist = dashboardQuery.data?.worklist ?? [];
     const invoices = dashboardQuery.data?.invoices ?? [];
+    const patients = dashboardQuery.data?.patients ?? [];
     const payments = dashboardQuery.data?.payments ?? [];
     const inventoryItems = dashboardQuery.data?.inventoryItems ?? [];
     const activeWorklist = worklist.filter((item) => item.status !== "Reported");
@@ -398,6 +420,7 @@ export function DashboardOverview() {
       });
 
     const revenueSummary = buildRevenueSummary(invoices, payments);
+    const todayOperationalSummary = buildTodayOperationalSummary(worklist, patients);
     const worklistSummary = buildWorklistSummary(activeWorklist);
     const tatStageMetrics = buildTatStageMetrics(worklist);
     const tatTrend = buildTatTrend(worklist, 14);
@@ -420,6 +443,7 @@ export function DashboardOverview() {
       revenueTrend,
       tatStageMetrics,
       tatTrend,
+      todayOperationalSummary,
       todayRevenue,
       todayWorklistRows,
       topTests,
@@ -431,32 +455,32 @@ export function DashboardOverview() {
   const summaryCards = useMemo(
     () => [
       {
-        hint: "Samples created today and still moving through the bench.",
+        hint: "Samples physically collected today.",
         icon: FlaskConical,
-        label: "Today's worklist",
+        label: "Samples collected today",
         tone: "blue" as const,
-        value: String(analytics.todayWorklistRows.length)
+        value: String(analytics.todayOperationalSummary.samplesCollected)
       },
       {
-        hint: "Open samples across registration, processing, and reporting.",
-        icon: Activity,
-        label: "Active samples",
+        hint: "Patient records opened today.",
+        icon: UserPlus,
+        label: "Patients registered today",
         tone: "blue" as const,
-        value: String(analytics.worklistSummary.active)
+        value: String(analytics.todayOperationalSummary.patientsRegistered)
       },
       {
-        hint: "Samples ready for verifier sign-off.",
-        icon: Clock3,
-        label: "Awaiting verification",
+        hint: "Tests verified today and ready for reporting.",
+        icon: CheckCircle2,
+        label: "Tests verified today",
         tone: "amber" as const,
-        value: String(analytics.worklistSummary.awaitingVerification)
+        value: String(analytics.todayOperationalSummary.testsVerified)
       },
       {
-        hint: "Average hours from registration to report release.",
-        icon: Clock3,
-        label: "Average reporting TAT",
+        hint: "Tests released as reports today.",
+        icon: Activity,
+        label: "Tests reported today",
         tone: "emerald" as const,
-        value: `${analytics.averageReportingTat.toFixed(1)} hrs`
+        value: String(analytics.todayOperationalSummary.testsReported)
       },
       {
         hint: "Payments received since midnight.",
@@ -466,13 +490,11 @@ export function DashboardOverview() {
         value: formatCurrency(analytics.todayRevenue)
       },
       {
-        hint: `${analytics.inventoryItems.filter(isLowStock).length} low stock and ${
-          analytics.inventoryItems.filter((item) => getExpiryState(item) !== "ok").length
-        } expiry alerts.`,
-        icon: AlertTriangle,
-        label: "Inventory alerts",
-        tone: "amber" as const,
-        value: String(analytics.alertItems.length)
+        hint: "Average hours from registration to report release.",
+        icon: Clock3,
+        label: "Average reporting TAT",
+        tone: "emerald" as const,
+        value: `${analytics.averageReportingTat.toFixed(1)} hrs`
       }
     ],
     [analytics]

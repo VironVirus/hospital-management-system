@@ -1,4 +1,4 @@
-import { getReferenceRange } from "@/features/results/result-utils";
+import { getReferenceRange, getResultFlagCode, type ResultFlagCode } from "@/features/results/result-utils";
 import type { Tables } from "@/types/supabase";
 
 export type ReportOrderTest = Tables<"order_tests"> & {
@@ -31,6 +31,7 @@ export type ReportResultRow = {
   abnormalReason: string | null;
   orderNumber: string;
   orderTestId: string;
+  flagCode: ResultFlagCode;
   price: number;
   referenceRange: string;
   result: string;
@@ -187,6 +188,7 @@ export function buildResultRows(order: ReportOrderRow): ReportResultRow[] {
     .map((orderTest) => ({
       abnormal: orderTest.order_test_results?.abnormal_flag ?? false,
       abnormalReason: orderTest.order_test_results?.abnormal_reason ?? null,
+      flagCode: getResultFlagCode(orderTest.order_test_results, orderTest.tests),
       orderNumber: order.order_number,
       orderTestId: orderTest.id,
       price: Number(orderTest.tests?.price ?? 0),
@@ -374,7 +376,11 @@ export function buildPrintHtml(
               </td>
               <td>${escapeHtml(row.result)}</td>
               <td>${escapeHtml(row.referenceRange)}</td>
-              <td>${row.abnormal ? "<span class=\\\"flag\\\">High attention</span>" : "<span class=\\\"normal\\\">Normal</span>"}</td>
+              <td>${
+                row.flagCode
+                  ? `<span class=\\\"flag\\\">${escapeHtml(row.flagCode)}</span>`
+                  : "<span class=\\\"normal\\\">-</span>"
+              }</td>
             </tr>
           `
         )
@@ -480,8 +486,8 @@ export function buildPrintHtml(
           th { background: #eff6ff; color: #0f172a; text-align: left; font-size: 12px; padding: 12px; border-bottom: 1px solid #bfdbfe; }
           td { padding: 12px; border-bottom: 1px solid #e2e8f0; font-size: 12px; vertical-align: top; }
           .muted { color: #64748b; font-size: 11px; margin-top: 3px; }
-          .flag { color: #b91c1c; font-weight: 700; }
-          .normal { color: #166534; font-weight: 700; }
+          .flag { color: #b91c1c; font-weight: 800; font-size: 14px; }
+          .normal { color: #64748b; font-weight: 700; }
           .footer { display: flex; justify-content: space-between; gap: 24px; align-items: flex-end; }
           .footer p { margin: 4px 0; font-size: 12px; }
           .signature { min-width: 240px; text-align: center; }

@@ -37,6 +37,8 @@ export type DashboardPaymentRow = Pick<
   "amount" | "payment_method" | "received_at"
 >;
 
+export type DashboardPatientRow = Pick<Tables<"patients">, "created_at" | "id">;
+
 export type DashboardInventoryAlertRow = Pick<
   Tables<"inventory_items">,
   "expiry_date" | "id" | "is_active" | "lot_number" | "name" | "quantity" | "reorder_level" | "unit"
@@ -144,6 +146,24 @@ export function buildWorklistSummary(worklist: DashboardWorklistRow[]) {
     awaitingVerification,
     todayItems: todayItems.length,
     urgent
+  };
+}
+
+export function buildTodayOperationalSummary(
+  worklist: DashboardWorklistRow[],
+  patients: DashboardPatientRow[]
+) {
+  const today = new Date();
+  const happenedToday = (value: string | null | undefined) => {
+    const date = parseDate(value);
+    return date ? isSameCalendarDay(date, today) : false;
+  };
+
+  return {
+    patientsRegistered: patients.filter((patient) => happenedToday(patient.created_at)).length,
+    samplesCollected: worklist.filter((item) => happenedToday(item.collected_at)).length,
+    testsReported: worklist.filter((item) => happenedToday(item.reported_at)).length,
+    testsVerified: worklist.filter((item) => happenedToday(item.verified_at)).length
   };
 }
 

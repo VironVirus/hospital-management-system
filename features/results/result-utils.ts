@@ -29,6 +29,8 @@ export type ResultEvaluation = {
   >;
 };
 
+export type ResultFlagCode = "H" | "L" | null;
+
 export function getReferenceRange(
   referenceRange: Tables<"tests">["reference_range"]
 ): StoredReferenceRange | null {
@@ -91,6 +93,45 @@ export function formatExistingResult(result: Tables<"order_test_results"> | null
   }
 
   return result.value_text ?? "";
+}
+
+export function getResultFlagCode(
+  result: Tables<"order_test_results"> | null,
+  test: TestDefinition | null
+): ResultFlagCode {
+  if (!result) {
+    return null;
+  }
+
+  const referenceRange = test ? getReferenceRange(test.reference_range) : null;
+  if (referenceRange?.mode === "numeric" && typeof result.value_numeric === "number") {
+    if (referenceRange.max !== null && result.value_numeric > referenceRange.max) {
+      return "H";
+    }
+
+    if (referenceRange.min !== null && result.value_numeric < referenceRange.min) {
+      return "L";
+    }
+  }
+
+  const reason = result.abnormal_reason?.toLowerCase() ?? "";
+  if (reason.includes("above") || reason.includes("high")) {
+    return "H";
+  }
+
+  if (reason.includes("below") || reason.includes("low")) {
+    return "L";
+  }
+
+  return null;
+}
+
+export function getResultFlagLabel(
+  result: Tables<"order_test_results"> | null,
+  test: TestDefinition | null
+) {
+  const flagCode = getResultFlagCode(result, test);
+  return flagCode ?? "";
 }
 
 export function evaluateResult(

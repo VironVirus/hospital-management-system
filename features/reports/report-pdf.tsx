@@ -148,10 +148,10 @@ const styles = StyleSheet.create({
   },
   flagText: {
     color: "#b91c1c",
-    fontWeight: 700
+    fontWeight: 800
   },
   normalText: {
-    color: "#166534",
+    color: "#64748b",
     fontWeight: 700
   },
   footer: {
@@ -294,10 +294,10 @@ function ReportPage({
               style={[
                 styles.tableCell,
                 { borderRightWidth: 0, width: "12%" },
-                row.abnormal ? styles.flagText : styles.normalText
+                row.flagCode ? styles.flagText : styles.normalText
               ]}
             >
-              {row.abnormal ? "Alert" : "Normal"}
+              {row.flagCode ?? "-"}
             </Text>
           </View>
         ))}

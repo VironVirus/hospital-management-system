@@ -31,6 +31,7 @@ import { DynamicResultInput } from "@/features/results/dynamic-result-input";
 import {
   evaluateResult,
   formatExistingResult,
+  getResultFlagCode,
   getReferenceRange,
   type ResultFormValues
 } from "@/features/results/result-utils";
@@ -445,13 +446,13 @@ export function ResultsWorkspace() {
 
       setActionSuccess(
         evaluation.payload.abnormal_flag
-          ? `Result saved and flagged abnormal: ${evaluation.payload.abnormal_reason}`
+          ? `Result saved with out-of-range flag: ${evaluation.payload.abnormal_reason}`
           : "Result saved and sent for verification."
       );
       toast({
-        title: evaluation.payload.abnormal_flag ? "Abnormal result saved" : "Result saved",
+        title: evaluation.payload.abnormal_flag ? "Out-of-range result saved" : "Result saved",
         description: evaluation.payload.abnormal_flag
-          ? evaluation.payload.abnormal_reason ?? "This result was flagged for verifier review."
+          ? evaluation.payload.abnormal_reason ?? "This result was marked for verifier review."
           : `${selectedSample.sample_code} is ready for verification.`,
         variant: evaluation.payload.abnormal_flag ? "info" : "success"
       });
@@ -524,7 +525,7 @@ export function ResultsWorkspace() {
         </Card>
         <Card className="border-blue-100">
           <CardHeader className="pb-2">
-            <CardDescription>Abnormal flagged</CardDescription>
+            <CardDescription>Out of range</CardDescription>
             <CardTitle className="text-3xl text-slate-950">{stats.abnormal}</CardTitle>
           </CardHeader>
         </Card>
@@ -560,7 +561,7 @@ export function ResultsWorkspace() {
                 <option value="all">All queue states</option>
                 <option value="pending_entry">Pending entry</option>
                 <option value="pending_verification">Pending verification</option>
-                <option value="abnormal">Abnormal only</option>
+                <option value="abnormal">Out of range only</option>
               </select>
             </div>
 
@@ -664,7 +665,9 @@ export function ResultsWorkspace() {
                     {selectedSample.orders?.priority || "routine"}
                   </Badge>
                   {selectedResult?.abnormal_flag ? (
-                    <Badge variant="secondary">Abnormal flagged</Badge>
+                    <Badge className="border-transparent bg-red-100 text-red-700" variant="secondary">
+                      {getResultFlagCode(selectedResult, selectedTest) ?? "Review"}
+                    </Badge>
                   ) : null}
                 </div>
 
@@ -684,11 +687,13 @@ export function ResultsWorkspace() {
                 </div>
 
                 {selectedResult?.abnormal_flag ? (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-900">
                     <div className="flex items-start gap-3">
                       <AlertTriangle className="mt-0.5 h-4 w-4" />
                       <div>
-                        <p className="font-medium">Abnormal result flagged</p>
+                        <p className="font-medium">
+                          Out-of-range flag {getResultFlagCode(selectedResult, selectedTest) ?? ""}
+                        </p>
                         <p>{selectedResult.abnormal_reason || "Review recommended."}</p>
                       </div>
                     </div>

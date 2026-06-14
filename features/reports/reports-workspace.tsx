@@ -168,6 +168,25 @@ export function ReportsWorkspace() {
     [filteredOrders, selectedIds]
   );
 
+  const selectedReportDateGroups = useMemo(() => {
+    if (!selectedOrder) {
+      return [];
+    }
+
+    const groups = new Map<string, ReturnType<typeof buildPatientReportBundles>>();
+    buildPatientReportBundles([selectedOrder]).forEach((bundle) => {
+      const dateLabel = formatDate(bundle.orderedAt);
+      const current = groups.get(dateLabel) ?? [];
+      current.push(bundle);
+      groups.set(dateLabel, current);
+    });
+
+    return Array.from(groups.entries()).map(([dateLabel, bundles]) => ({
+      bundles,
+      dateLabel
+    }));
+  }, [selectedOrder]);
+
   const stats = useMemo(() => {
     const orders = reportsQuery.data ?? [];
 
@@ -426,7 +445,7 @@ export function ReportsWorkspace() {
         </Card>
         <Card className="border-amber-100 bg-white/95">
           <CardHeader className="pb-3">
-            <CardDescription>Flagged findings</CardDescription>
+            <CardDescription>Out-of-range findings</CardDescription>
             <CardTitle className="text-3xl text-slate-950">{stats.flagged}</CardTitle>
           </CardHeader>
         </Card>
@@ -467,7 +486,7 @@ export function ReportsWorkspace() {
                         ? "Ready"
                         : filter === "reported"
                           ? "Reported"
-                          : "Flagged"}
+                          : "Out of range"}
                   </Button>
                 )
               )}
@@ -601,7 +620,7 @@ export function ReportsWorkspace() {
                           <Badge variant="outline">{rows.length} results</Badge>
                           {flagged ? (
                             <Badge className="border-transparent bg-red-100 text-red-700">
-                              Flagged
+                              Out of range
                             </Badge>
                           ) : null}
                         </div>
@@ -749,62 +768,78 @@ export function ReportsWorkspace() {
                         </div>
 
                         <div className="mt-6 space-y-4">
-                          {buildPatientReportBundles([selectedOrder]).map((bundle) => (
-                            <div
-                              key={bundle.sampleKey}
-                              className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
-                            >
-                              <div className="flex flex-wrap items-center justify-between gap-2 bg-blue-50 px-4 py-3">
-                                <div>
-                                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">
-                                    Sample ID
-                                  </p>
-                                  <p className="text-sm font-semibold text-slate-950">
-                                    {bundle.sampleCode}
-                                  </p>
-                                </div>
+                          {selectedReportDateGroups.map((group) => (
+                            <div key={group.dateLabel} className="space-y-3">
+                              <div className="flex items-center justify-between gap-3">
+                                <p className="text-sm font-semibold text-slate-950">
+                                  {group.dateLabel}
+                                </p>
                                 <Badge variant="outline">
-                                  {bundle.rows.length} test{bundle.rows.length === 1 ? "" : "s"}
+                                  {group.bundles.length} sample
+                                  {group.bundles.length === 1 ? "" : "s"}
                                 </Badge>
                               </div>
-                              <div className="grid grid-cols-[1.6fr_1fr_0.7fr_1.2fr_0.8fr] gap-3 border-t border-blue-100 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600">
-                                <span>Test</span>
-                                <span>Result</span>
-                                <span>Unit</span>
-                                <span>Reference range</span>
-                                <span>Flag</span>
-                              </div>
-                              {bundle.rows.map((row, index) => (
+                              {group.bundles.map((bundle) => (
                                 <div
-                                  key={`${bundle.sampleKey}-${row.orderTestId}-${index}`}
-                                  className="grid grid-cols-[1.6fr_1fr_0.7fr_1.2fr_0.8fr] gap-3 border-t border-slate-100 px-4 py-4 text-sm text-slate-700"
+                                  key={bundle.sampleKey}
+                                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
                                 >
-                                  <div>
-                                    <p className="font-medium text-slate-950">{row.testName}</p>
-                                    <p className="mt-1 text-xs text-slate-500">
-                                      {row.orderNumber}
-                                    </p>
-                                  </div>
-                                  <p className="font-medium text-slate-950">{row.result}</p>
-                                  <p>{row.unit}</p>
-                                  <p>{row.referenceRange}</p>
-                                  <div>
-                                    <Badge
-                                      className={
-                                        row.abnormal
-                                          ? "border-transparent bg-red-100 text-red-700"
-                                          : ""
-                                      }
-                                      variant="secondary"
-                                    >
-                                      {row.abnormal ? "Flagged" : "Normal"}
-                                    </Badge>
-                                    {row.abnormalReason ? (
-                                      <p className="mt-2 text-xs text-red-700">
-                                        {row.abnormalReason}
+                                  <div className="flex flex-wrap items-center justify-between gap-2 bg-blue-50 px-4 py-3">
+                                    <div>
+                                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-700">
+                                        Sample ID
                                       </p>
-                                    ) : null}
+                                      <p className="text-sm font-semibold text-slate-950">
+                                        {bundle.sampleCode}
+                                      </p>
+                                    </div>
+                                    <Badge variant="outline">
+                                      {bundle.rows.length} test
+                                      {bundle.rows.length === 1 ? "" : "s"}
+                                    </Badge>
                                   </div>
+                                  <div className="grid grid-cols-[1.6fr_1fr_0.7fr_1.2fr_0.8fr] gap-3 border-t border-blue-100 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600">
+                                    <span>Test</span>
+                                    <span>Result</span>
+                                    <span>Unit</span>
+                                    <span>Reference range</span>
+                                    <span>Flag</span>
+                                  </div>
+                                  {bundle.rows.map((row, index) => (
+                                    <div
+                                      key={`${bundle.sampleKey}-${row.orderTestId}-${index}`}
+                                      className="grid grid-cols-[1.6fr_1fr_0.7fr_1.2fr_0.8fr] gap-3 border-t border-slate-100 px-4 py-4 text-sm text-slate-700"
+                                    >
+                                      <div>
+                                        <p className="font-medium text-slate-950">
+                                          {row.testName}
+                                        </p>
+                                        <p className="mt-1 text-xs text-slate-500">
+                                          {row.orderNumber}
+                                        </p>
+                                      </div>
+                                      <p className="font-medium text-slate-950">{row.result}</p>
+                                      <p>{row.unit}</p>
+                                      <p>{row.referenceRange}</p>
+                                      <div>
+                                        <Badge
+                                          className={
+                                            row.flagCode
+                                              ? "border-transparent bg-red-100 text-red-700"
+                                              : ""
+                                          }
+                                          variant="secondary"
+                                        >
+                                          {row.flagCode ?? "-"}
+                                        </Badge>
+                                        {row.abnormalReason ? (
+                                          <p className="mt-2 text-xs text-red-700">
+                                            {row.abnormalReason}
+                                          </p>
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                  ))}
                                 </div>
                               ))}
                             </div>
