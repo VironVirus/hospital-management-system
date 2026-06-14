@@ -223,7 +223,44 @@ function downloadBlob(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-export async function exportAccountsWorkbook(args: {
+function escapeSpreadsheetValue(value: string | number | null | undefined) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function buildSpreadsheetTable(
+  title: string,
+  rows: Array<Record<string, string | number>>
+) {
+  const headers = rows[0] ? Object.keys(rows[0]) : [];
+  const headerMarkup = headers
+    .map((header) => `<th>${escapeSpreadsheetValue(header)}</th>`)
+    .join("");
+  const bodyMarkup = rows
+    .map(
+      (row) => `
+        <tr>
+          ${headers
+            .map((header) => `<td>${escapeSpreadsheetValue(row[header])}</td>`)
+            .join("")}
+        </tr>
+      `
+    )
+    .join("");
+
+  return `
+    <h2>${escapeSpreadsheetValue(title)}</h2>
+    <table>
+      <thead><tr>${headerMarkup}</tr></thead>
+      <tbody>${bodyMarkup || `<tr><td>No records</td></tr>`}</tbody>
+    </table>
+  `;
+}
+
+export function exportAccountsWorkbook(args: {
   expenseRows: Array<Record<string, string | number>>;
   incomeByCategory: IncomeByCategoryRow[];
   incomeByTest: IncomeByTestRow[];
@@ -232,48 +269,64 @@ export async function exportAccountsWorkbook(args: {
   monthKey: string;
   summary: ReturnType<typeof buildAccountsSummary>;
 }) {
-  const XLSX = await import("xlsx");
-  const workbook = XLSX.utils.book_new();
-
-  const summarySheet = XLSX.utils.json_to_sheet([
+  const summaryRows = [
     {
-      "Month": args.monthKey,
+      Month: args.monthKey,
       "Total Billed": args.summary.billed,
       "Total Collected": args.summary.collected,
-      "Outstanding": args.summary.outstanding,
+      Outstanding: args.summary.outstanding,
       "Manual Expenses": args.summary.manualExpenses,
       "Inventory Purchase Cost": args.summary.inventoryPurchaseCost,
       "Inventory Usage Cost": args.summary.inventoryUsageCost,
       "Total Cost": args.summary.totalCost,
       "Net Cashflow": args.summary.netCashflow
     }
-  ]);
+  ];
 
-  XLSX.utils.book_append_sheet(workbook, summarySheet, "Summary");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(args.invoiceRows), "Invoices");
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(args.incomeByTest), "Income By Test");
-  XLSX.utils.book_append_sheet(
-    workbook,
-    XLSX.utils.json_to_sheet(args.incomeByCategory),
-    "Income By Category"
-  );
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(args.expenseRows), "Expenses");
-  XLSX.utils.book_append_sheet(
-    workbook,
-    XLSX.utils.json_to_sheet(args.inventoryCostRows),
-    "Inventory Costs"
-  );
+  const workbookHtml = `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <style>
+          body { font-family: Arial, sans-serif; }
+          h2 { margin: 24px 0 8px; }
+          table { border-collapse: collapse; margin-bottom: 24px; }
+          th, td { border: 1px solid #9ca3af; padding: 6px 8px; text-align: left; }
+          th { background: #e0f2fe; font-weight: 700; }
+        </style>
+      </head>
+      <body>
+        ${buildSpreadsheetTable("Summary", summaryRows)}
+        ${buildSpreadsheetTable("Invoices", args.invoiceRows)}
+        ${buildSpreadsheetTable(
+          "Income By Test",
+          args.incomeByTest.map((row) => ({
+            Category: row.category,
+            Test: row.testName,
+            Quantity: row.quantity,
+            Revenue: row.revenue
+          }))
+        )}
+        ${buildSpreadsheetTable(
+          "Income By Category",
+          args.incomeByCategory.map((row) => ({
+            Category: row.category,
+            Tests: row.tests,
+            Revenue: row.revenue
+          }))
+        )}
+        ${buildSpreadsheetTable("Expenses", args.expenseRows)}
+        ${buildSpreadsheetTable("Inventory Costs", args.inventoryCostRows)}
+      </body>
+    </html>
+  `;
 
-  const workbookBytes = XLSX.write(workbook, {
-    bookType: "xlsx",
-    type: "array"
+  const blob = new Blob([workbookHtml], {
+    type: "application/vnd.ms-excel;charset=utf-8;"
   });
 
-  const blob = new Blob([workbookBytes], {
-    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-  });
-
-  downloadBlob(blob, `lims-accounts-${args.monthKey}.xlsx`);
+  downloadBlob(blob, `lims-accounts-${args.monthKey}.xls`);
 }
 
 export function buildInvoiceExportRows(invoices: AccountInvoiceRow[]) {
