@@ -120,7 +120,7 @@ export class LimsDatabase extends Dexie {
   constructor() {
     super("lims-offline-db");
 
-    this.version(3).stores({
+    this.version(4).stores({
       audit_logs: "id, facility_id, entity_table, entity_id, created_at",
       expenses: "id, facility_id, expense_date, category, source, updated_at",
       facilities: "id, code, name, updated_at",
@@ -143,7 +143,7 @@ export class LimsDatabase extends Dexie {
       sync_conflicts: "id, queueId, entity, recordId, createdAt, resolvedAt",
       sync_queue: "id, status, entity, recordId, createdAt, updatedAt, facilityId",
       sync_state: "key, updatedAt",
-      tests: "id, name, category, is_active, result_type, updated_at"
+      tests: "id, test_code, name, category, is_active, result_type, updated_at"
     });
   }
 }

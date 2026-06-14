@@ -4,7 +4,6 @@ import {
   buildOfflineInvoiceNumber,
   buildOfflineOrderNumber,
   buildOfflineReceiptNumber,
-  buildOfflineSampleCode,
   commitLocalMutation,
   generateLocalId,
   putLocalOnlyRow
@@ -158,9 +157,9 @@ export async function createOfflineOrderBundle(args: {
     test_name: string;
   }>;
 
-  for (const [index, test] of args.tests.entries()) {
+  for (const test of args.tests) {
     const orderTestId = generateLocalId("order-test");
-    const sampleCode = await buildOfflineSampleCode(index);
+    const sampleCode = orderNumber;
     const sampleRow: Tables<"order_tests"> = {
       barcode_value: sampleCode,
       collected_at: null,
@@ -230,6 +229,121 @@ export async function createOfflineOrderBundle(args: {
     orderId,
     orderNumber,
     patientName: args.patient.name,
+    samples
+  };
+}
+
+export async function addOfflineTestsToOrder(args: {
+  facilityId: string;
+  order: Pick<Tables<"orders">, "id" | "order_number" | "patient_id">;
+  patientName: string;
+  tests: Array<Pick<Tables<"tests">, "id" | "name" | "price">>;
+  userId?: string | null;
+}) {
+  const now = new Date().toISOString();
+  const existingOrderTests = await db.order_tests
+    .where("order_id")
+    .equals(args.order.id)
+    .toArray();
+  const existingTestIds = new Set(existingOrderTests.map((row) => row.test_id));
+  const newTests = args.tests.filter((test) => !existingTestIds.has(test.id));
+
+  if (newTests.length === 0) {
+    return {
+      orderId: args.order.id,
+      orderNumber: args.order.order_number,
+      samples: [] as Awaited<ReturnType<typeof createOfflineOrderBundle>>["samples"]
+    };
+  }
+
+  const invoice = (await db.invoices.toArray()).find(
+    (row) => row.order_id === args.order.id
+  );
+  const samples = [] as Awaited<ReturnType<typeof createOfflineOrderBundle>>["samples"];
+
+  for (const test of newTests) {
+    const orderTestId = generateLocalId("order-test");
+    const sampleRow: Tables<"order_tests"> = {
+      barcode_value: args.order.order_number,
+      collected_at: null,
+      collected_by: null,
+      created_at: now,
+      id: orderTestId,
+      in_progress_at: null,
+      order_id: args.order.id,
+      qr_value: args.order.order_number,
+      reported_at: null,
+      results_entered_at: null,
+      sample_code: args.order.order_number,
+      specimen_label: test.name,
+      status: "Registered",
+      test_id: test.id,
+      updated_at: now,
+      verified_at: null
+    };
+
+    await commitLocalMutation({
+      action: "insert",
+      entity: "order_tests",
+      facilityId: args.facilityId,
+      payload: sampleRow,
+      recordId: orderTestId,
+      userId: args.userId ?? null
+    });
+
+    if (invoice) {
+      await putLocalOnlyRow("invoice_items", {
+        created_at: now,
+        id: generateLocalId("invoice-item"),
+        invoice_id: invoice.id,
+        line_total: Number(test.price),
+        order_test_id: orderTestId,
+        quantity: 1,
+        test_name: test.name,
+        unit_price: Number(test.price)
+      } satisfies Tables<"invoice_items">);
+    }
+
+    samples.push({
+      barcode_value: sampleRow.barcode_value,
+      order_number: args.order.order_number,
+      order_test_id: orderTestId,
+      patient_name: args.patientName,
+      qr_value: sampleRow.qr_value,
+      sample_code: sampleRow.sample_code,
+      sample_status: sampleRow.status,
+      test_name: test.name
+    });
+  }
+
+  if (invoice) {
+    const addedSubtotal = newTests.reduce((sum, test) => sum + Number(test.price), 0);
+    const nextSubtotal = Number(invoice.subtotal) + addedSubtotal;
+    const nextTotal = Math.max(nextSubtotal - Number(invoice.discount_amount), 0);
+
+    await commitLocalMutation({
+      action: "update",
+      entity: "invoices",
+      facilityId: args.facilityId,
+      payload: {
+        subtotal: nextSubtotal,
+        total_amount: nextTotal,
+        payment_status:
+          Number(invoice.amount_paid) <= 0
+            ? "Unpaid"
+            : Number(invoice.amount_paid) < nextTotal
+              ? "Partial"
+              : "Paid",
+        updated_at: now
+      } satisfies Partial<Tables<"invoices">>,
+      recordId: invoice.id,
+      userId: args.userId ?? null
+    });
+  }
+
+  return {
+    orderId: args.order.id,
+    orderNumber: args.order.order_number,
     samples
   };
 }

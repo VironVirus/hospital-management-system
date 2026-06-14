@@ -36,6 +36,7 @@ import {
 import {
   formatReferenceRange,
   isStoredReferenceRange,
+  type SimpleReferenceRange,
   type StoredReferenceRange
 } from "@/features/tests/reference-range";
 import { useToast } from "@/hooks/use-toast";
@@ -47,6 +48,7 @@ type FilterCategory = "all" | "uncategorized" | TestCategory;
 type FormErrors = Partial<Record<string, string>>;
 
 const initialFormState: TestFormValues = {
+  test_code: "",
   name: "",
   category: null,
   price: 0,
@@ -64,10 +66,39 @@ const initialFormState: TestFormValues = {
   }
 };
 
+function createPanelParameter(index: number) {
+  return {
+    id: `param-${Date.now()}-${index}`,
+    name: "",
+    result_type: "numeric" as const,
+    unit: null,
+    reference_range: createNumericRange()
+  };
+}
+
+function createPanelRange(count = 1): StoredReferenceRange {
+  return {
+    mode: "panel",
+    min: null,
+    max: null,
+    text: null,
+    options: null,
+    positive_label: null,
+    negative_label: null,
+    parameters: Array.from({ length: Math.max(1, count) }, (_, index) =>
+      createPanelParameter(index)
+    )
+  };
+}
+
+function buildLocalTestCode() {
+  return `T${Date.now().toString().slice(-5)}`;
+}
+
 function createNumericRange(
   min: number | null = null,
   max: number | null = null
-): StoredReferenceRange {
+): SimpleReferenceRange {
   return {
     mode: "numeric",
     min,
@@ -79,7 +110,7 @@ function createNumericRange(
   };
 }
 
-function createTextRange(text = ""): StoredReferenceRange {
+function createTextRange(text = ""): SimpleReferenceRange {
   return {
     mode: "text",
     min: null,
@@ -94,7 +125,7 @@ function createTextRange(text = ""): StoredReferenceRange {
 function createSelectRange(
   options: string[] = ["Positive", "Negative"],
   text: string | null = null
-): StoredReferenceRange {
+): SimpleReferenceRange {
   return {
     mode: "select",
     min: null,
@@ -110,7 +141,7 @@ function createBooleanRange(
   positiveLabel = "Positive",
   negativeLabel = "Negative",
   text: string | null = null
-): StoredReferenceRange {
+): SimpleReferenceRange {
   return {
     mode: "boolean",
     min: null,
@@ -148,7 +179,8 @@ async function fetchTests({
         .order("name", { ascending: true });
 
       if (query.trim()) {
-        request = request.ilike("name", `%${query.trim()}%`);
+        const searchTerm = query.trim().replaceAll(",", " ");
+        request = request.or(`name.ilike.%${searchTerm}%,test_code.ilike.%${searchTerm}%`);
       }
 
       if (status === "active") {
@@ -271,6 +303,52 @@ export function TestCatalogueAdmin() {
     }));
   };
 
+  const updatePanelParameter = (
+    parameterId: string,
+    updater: (
+      parameter: Extract<StoredReferenceRange, { mode: "panel" }>["parameters"][number]
+    ) => Extract<StoredReferenceRange, { mode: "panel" }>["parameters"][number]
+  ) => {
+    setReferenceRange((current) =>
+      current.mode === "panel"
+        ? {
+            ...current,
+            parameters: current.parameters.map((parameter) =>
+              parameter.id === parameterId ? updater(parameter) : parameter
+            )
+          }
+        : current
+    );
+  };
+
+  const addPanelParameter = () => {
+    setReferenceRange((current) =>
+      current.mode === "panel"
+        ? {
+            ...current,
+            parameters: [
+              ...current.parameters,
+              createPanelParameter(current.parameters.length)
+            ]
+          }
+        : current
+    );
+  };
+
+  const removePanelParameter = (parameterId: string) => {
+    setReferenceRange((current) =>
+      current.mode === "panel"
+        ? {
+            ...current,
+            parameters:
+              current.parameters.length > 1
+                ? current.parameters.filter((parameter) => parameter.id !== parameterId)
+                : current.parameters
+          }
+        : current
+    );
+  };
+
   const resetForm = () => {
     setEditingId(null);
     setFormState(initialFormState);
@@ -285,6 +363,7 @@ export function TestCatalogueAdmin() {
     setSubmitSuccess(null);
     setFormState({
       id: test.id,
+      test_code: test.test_code,
       name: test.name,
       category: normalizeTestCategory(test.category),
       price: test.price,
@@ -298,7 +377,9 @@ export function TestCatalogueAdmin() {
                 test.reference_range.min,
                 test.reference_range.max
               )
-            : test.reference_range.mode === "text"
+            : test.reference_range.mode === "panel"
+              ? test.reference_range
+              : test.reference_range.mode === "text"
               ? createTextRange(test.reference_range.text)
               : test.reference_range.mode === "select"
                 ? createSelectRange(
@@ -346,6 +427,10 @@ export function TestCatalogueAdmin() {
       price: parsed.data.price,
       result_type: parsed.data.result_type,
       reference_range: parsed.data.reference_range,
+      test_code:
+        parsed.data.test_code?.trim() ||
+        currentTest?.test_code ||
+        buildLocalTestCode(),
       unit: parsed.data.unit?.trim() ? parsed.data.unit.trim() : null,
       updated_at: now
     } satisfies TestRow;
@@ -363,6 +448,7 @@ export function TestCatalogueAdmin() {
               price: payload.price,
               reference_range: payload.reference_range,
               result_type: payload.result_type,
+              test_code: payload.test_code,
               unit: payload.unit,
               updated_at: payload.updated_at
             }
@@ -565,6 +651,7 @@ export function TestCatalogueAdmin() {
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50">
                     <tr className="text-left text-slate-500">
+                      <th className="px-4 py-3 font-medium">Test ID</th>
                       <th className="px-4 py-3 font-medium">Name</th>
                       <th className="px-4 py-3 font-medium">Type</th>
                       <th className="px-4 py-3 font-medium">Reference range</th>
@@ -577,7 +664,7 @@ export function TestCatalogueAdmin() {
                     {tests.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={6}
+                          colSpan={7}
                           className="px-4 py-8 text-center text-slate-500"
                         >
                           No tests matched the current search or filters.
@@ -587,6 +674,9 @@ export function TestCatalogueAdmin() {
 
                     {tests.map((test) => (
                       <tr key={test.id}>
+                        <td className="px-4 py-3 font-semibold text-slate-700">
+                          {test.test_code}
+                        </td>
                         <td className="px-4 py-3">
                           <div className="font-medium text-slate-900">{test.name}</div>
                           <div className="text-xs text-slate-500">
@@ -600,7 +690,7 @@ export function TestCatalogueAdmin() {
                           {formatReferenceRange(test.reference_range)}
                         </td>
                         <td className="px-4 py-3 text-slate-700">
-                          NGN {test.price.toLocaleString()}
+                        N{test.price.toLocaleString()}
                         </td>
                         <td className="px-4 py-3">
                           <Badge variant={test.is_active ? "default" : "secondary"}>
@@ -656,6 +746,19 @@ export function TestCatalogueAdmin() {
           <CardContent>
             <form className="space-y-4" onSubmit={handleSubmit}>
               <div className="space-y-2">
+                <Label htmlFor="test-code">Test ID</Label>
+                <Input
+                  id="test-code"
+                  value={formState.test_code ?? ""}
+                  onChange={(event) => setField("test_code", event.target.value)}
+                  placeholder="Auto-generated if left blank"
+                />
+                {errors.test_code ? (
+                  <p className="text-sm text-red-700">{errors.test_code}</p>
+                ) : null}
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="test-name">Test name</Label>
                 <Input
                   id="test-name"
@@ -670,7 +773,7 @@ export function TestCatalogueAdmin() {
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="space-y-2">
-                  <Label htmlFor="test-price">Price (NGN)</Label>
+                  <Label htmlFor="test-price">Price (N)</Label>
                   <Input
                     id="test-price"
                     type="number"
@@ -732,6 +835,11 @@ export function TestCatalogueAdmin() {
                         return;
                       }
 
+                      if (nextType === "panel") {
+                        setReferenceRange(() => createPanelRange(1));
+                        return;
+                      }
+
                       if (
                         formState.reference_range.mode !== "text" &&
                         formState.reference_range.mode !== "select"
@@ -784,6 +892,9 @@ export function TestCatalogueAdmin() {
                     ) : null}
                     {formState.result_type === "boolean" ? (
                       <option value="boolean">Positive / negative labels</option>
+                    ) : null}
+                    {formState.result_type === "panel" ? (
+                      <option value="panel">Multiple parameters</option>
                     ) : null}
                   </select>
                 </div>
@@ -873,6 +984,240 @@ export function TestCatalogueAdmin() {
                     <p className="text-xs text-slate-500">
                       Enter one option per line for dropdown-style result entry.
                     </p>
+                  </div>
+                ) : formState.reference_range.mode === "panel" ? (
+                  <div className="space-y-4">
+                    <div className="flex flex-col gap-3 rounded-xl border border-blue-100 bg-blue-50/60 p-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-slate-900">
+                          Parameters in this test
+                        </p>
+                        <p className="text-xs text-slate-600">
+                          Add each result line that should appear under this test.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="parameter-count" className="text-xs text-slate-600">
+                          Count
+                        </Label>
+                        <Input
+                          id="parameter-count"
+                          type="number"
+                          min="1"
+                          className="h-9 w-20"
+                          value={formState.reference_range.parameters.length}
+                          onChange={(event) => {
+                            const count = Math.max(1, Number(event.target.value) || 1);
+                            setReferenceRange((current) =>
+                              current.mode === "panel"
+                                ? {
+                                    ...current,
+                                    parameters: Array.from({ length: count }, (_, index) =>
+                                      current.parameters[index] ?? createPanelParameter(index)
+                                    )
+                                  }
+                                : current
+                            );
+                          }}
+                        />
+                        <Button type="button" variant="outline" onClick={addPanelParameter}>
+                          Add parameter
+                        </Button>
+                      </div>
+                    </div>
+
+                    {formState.reference_range.parameters.map((parameter, index) => (
+                      <div
+                        key={parameter.id}
+                        className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="text-sm font-semibold text-slate-900">
+                            Parameter {index + 1}
+                          </p>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removePanelParameter(parameter.id)}
+                          >
+                            Remove
+                          </Button>
+                        </div>
+
+                        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_140px_120px]">
+                          <div className="space-y-2">
+                            <Label>Parameter name</Label>
+                            <Input
+                              value={parameter.name}
+                              onChange={(event) =>
+                                updatePanelParameter(parameter.id, (current) => ({
+                                  ...current,
+                                  name: event.target.value
+                                }))
+                              }
+                              placeholder="Packed cell volume"
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Type</Label>
+                            <select
+                              className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                              value={parameter.result_type}
+                              onChange={(event) => {
+                                const nextType = event.target.value as typeof parameter.result_type;
+                                updatePanelParameter(parameter.id, (current) => ({
+                                  ...current,
+                                  result_type: nextType,
+                                  reference_range:
+                                    nextType === "numeric"
+                                      ? createNumericRange()
+                                      : nextType === "boolean"
+                                        ? createBooleanRange()
+                                        : nextType === "select"
+                                          ? createSelectRange()
+                                          : createTextRange("")
+                                }));
+                              }}
+                            >
+                              <option value="numeric">Number</option>
+                              <option value="text">Text</option>
+                              <option value="select">Dropdown</option>
+                              <option value="boolean">Positive/Negative</option>
+                            </select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Unit</Label>
+                            <Input
+                              value={parameter.unit ?? ""}
+                              onChange={(event) =>
+                                updatePanelParameter(parameter.id, (current) => ({
+                                  ...current,
+                                  unit: event.target.value || null
+                                }))
+                              }
+                              placeholder="g/dL"
+                            />
+                          </div>
+                        </div>
+
+                        {parameter.reference_range.mode === "numeric" ? (
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={parameter.reference_range.min ?? ""}
+                              onChange={(event) =>
+                                updatePanelParameter(parameter.id, (current) => ({
+                                  ...current,
+                                  reference_range:
+                                    current.reference_range.mode === "numeric"
+                                      ? createNumericRange(
+                                          event.target.value === ""
+                                            ? null
+                                            : Number(event.target.value),
+                                          current.reference_range.max
+                                        )
+                                      : current.reference_range
+                                }))
+                              }
+                              placeholder="Minimum reference"
+                            />
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={parameter.reference_range.max ?? ""}
+                              onChange={(event) =>
+                                updatePanelParameter(parameter.id, (current) => ({
+                                  ...current,
+                                  reference_range:
+                                    current.reference_range.mode === "numeric"
+                                      ? createNumericRange(
+                                          current.reference_range.min,
+                                          event.target.value === ""
+                                            ? null
+                                            : Number(event.target.value)
+                                        )
+                                      : current.reference_range
+                                }))
+                              }
+                              placeholder="Maximum reference"
+                            />
+                          </div>
+                        ) : parameter.reference_range.mode === "select" ? (
+                          <Textarea
+                            value={parameter.reference_range.options.join("\n")}
+                            onChange={(event) =>
+                              updatePanelParameter(parameter.id, (current) => ({
+                                ...current,
+                                reference_range:
+                                  current.reference_range.mode === "select"
+                                    ? createSelectRange(
+                                        event.target.value
+                                          .split("\n")
+                                          .map((value) => value.trim())
+                                          .filter(Boolean),
+                                        current.reference_range.text
+                                      )
+                                    : current.reference_range
+                              }))
+                            }
+                            placeholder={"Positive\nNegative"}
+                          />
+                        ) : parameter.reference_range.mode === "boolean" ? (
+                          <div className="grid gap-3 md:grid-cols-2">
+                            <Input
+                              value={parameter.reference_range.positive_label}
+                              onChange={(event) =>
+                                updatePanelParameter(parameter.id, (current) => ({
+                                  ...current,
+                                  reference_range:
+                                    current.reference_range.mode === "boolean"
+                                      ? createBooleanRange(
+                                          event.target.value,
+                                          current.reference_range.negative_label,
+                                          current.reference_range.text
+                                        )
+                                      : current.reference_range
+                                }))
+                              }
+                              placeholder="Positive"
+                            />
+                            <Input
+                              value={parameter.reference_range.negative_label}
+                              onChange={(event) =>
+                                updatePanelParameter(parameter.id, (current) => ({
+                                  ...current,
+                                  reference_range:
+                                    current.reference_range.mode === "boolean"
+                                      ? createBooleanRange(
+                                          current.reference_range.positive_label,
+                                          event.target.value,
+                                          current.reference_range.text
+                                        )
+                                      : current.reference_range
+                                }))
+                              }
+                              placeholder="Negative"
+                            />
+                          </div>
+                        ) : (
+                          <Textarea
+                            value={parameter.reference_range.text ?? ""}
+                            onChange={(event) =>
+                              updatePanelParameter(parameter.id, (current) => ({
+                                ...current,
+                                reference_range:
+                                  current.reference_range.mode === "text"
+                                    ? createTextRange(event.target.value)
+                                    : current.reference_range
+                              }))
+                            }
+                            placeholder="Reference guidance"
+                          />
+                        )}
+                      </div>
+                    ))}
                   </div>
                 ) : (
                   <div className="grid gap-4 md:grid-cols-2">

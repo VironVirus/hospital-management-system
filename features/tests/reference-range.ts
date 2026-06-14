@@ -2,7 +2,7 @@ import type { Tables } from "@/types/supabase";
 
 type ReferenceRange = Tables<"tests">["reference_range"];
 
-export type StoredReferenceRange =
+export type SimpleReferenceRange =
   | {
       mode: "numeric";
       min: number | null;
@@ -40,6 +40,25 @@ export type StoredReferenceRange =
       negative_label: string;
     };
 
+export type StoredReferenceRange =
+  | SimpleReferenceRange
+  | {
+      mode: "panel";
+      min: null;
+      max: null;
+      text: string | null;
+      options: null;
+      positive_label: null;
+      negative_label: null;
+      parameters: Array<{
+        id: string;
+        name: string;
+        result_type: "numeric" | "text" | "boolean" | "select";
+        unit: string | null;
+        reference_range: SimpleReferenceRange;
+      }>;
+    };
+
 export function isStoredReferenceRange(
   value: ReferenceRange
 ): value is StoredReferenceRange {
@@ -72,6 +91,10 @@ export function isStoredReferenceRange(
     );
   }
 
+  if (value.mode === "panel") {
+    return Array.isArray(value.parameters);
+  }
+
   return false;
 }
 
@@ -92,6 +115,12 @@ export function formatReferenceRange(referenceRange: ReferenceRange) {
 
   if (referenceRange.mode === "boolean") {
     return `${referenceRange.positive_label} / ${referenceRange.negative_label}`;
+  }
+
+  if (referenceRange.mode === "panel") {
+    return `${referenceRange.parameters.length} parameter${
+      referenceRange.parameters.length === 1 ? "" : "s"
+    }`;
   }
 
   const min = referenceRange.min;

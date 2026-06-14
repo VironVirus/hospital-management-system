@@ -71,12 +71,12 @@ export function formatQuantity(quantity: number, unit: string | null) {
 }
 
 export function formatInventoryCurrency(value: number | null | undefined) {
-  return new Intl.NumberFormat("en-NG", {
-    style: "currency",
-    currency: "NGN",
+  const amount = new Intl.NumberFormat("en-NG", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   }).format(value ?? 0);
+
+  return `N${amount}`;
 }
 
 export function getDaysUntilExpiry(expiryDate: string | null) {

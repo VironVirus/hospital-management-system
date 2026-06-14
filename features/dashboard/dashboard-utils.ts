@@ -80,12 +80,12 @@ function round(value: number, digits = 1) {
 }
 
 export function formatCurrency(value: number) {
-  return new Intl.NumberFormat("en-NG", {
-    style: "currency",
-    currency: "NGN",
+  const amount = new Intl.NumberFormat("en-NG", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   }).format(value);
+
+  return `N${amount}`;
 }
 
 export function formatDate(value: string | null | undefined) {

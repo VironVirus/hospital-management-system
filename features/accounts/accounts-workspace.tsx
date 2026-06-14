@@ -986,7 +986,7 @@ export function AccountsWorkspace() {
                   ) : null}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="expense-amount">Amount (NGN)</Label>
+                  <Label htmlFor="expense-amount">Amount (N)</Label>
                   <Input
                     id="expense-amount"
                     type="number"

@@ -199,7 +199,9 @@ export function generateLocalId(_prefix: string) {
 }
 
 export function buildOfflineOrderNumber() {
-  return `ORD-OFF-${Date.now().toString().slice(-8)}`;
+  const prefix = getLagosSamplePrefix();
+  const serial = Number(Date.now().toString().slice(-3));
+  return `${prefix}${String(Math.max(serial, 1)).padStart(3, "0")}`;
 }
 
 function getLagosSamplePrefix(date = new Date()) {

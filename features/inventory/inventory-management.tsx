@@ -756,7 +756,7 @@ export function InventoryManagement() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="inventory-unit-cost">Unit cost (NGN)</Label>
+                  <Label htmlFor="inventory-unit-cost">Unit cost (N)</Label>
                   <Input
                     id="inventory-unit-cost"
                     min="0"
@@ -1290,7 +1290,7 @@ export function InventoryManagement() {
                           </div>
 
                           <div className="space-y-2">
-                            <Label htmlFor="transaction-unit-cost">Unit cost (NGN)</Label>
+                            <Label htmlFor="transaction-unit-cost">Unit cost (N)</Label>
                             <Input
                               id="transaction-unit-cost"
                               min="0"

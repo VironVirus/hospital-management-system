@@ -285,7 +285,7 @@ export async function getTestsLocal(args: {
   const rows = await db.tests.orderBy("name").toArray();
 
   return rows.filter((row) => {
-    if (!matchesText([row.name], args.query)) {
+    if (!matchesText([row.name, row.test_code], args.query)) {
       return false;
     }
 
@@ -393,6 +393,7 @@ export async function getPatientOrdersLocal(patientId: string) {
       id: order.id,
       notes: order.notes,
       order_number: order.order_number,
+      patient_id: order.patient_id,
       order_tests: orderTests
         .filter((row) => row.order_id === order.id)
         .map((orderTest) => ({
@@ -434,6 +435,7 @@ export async function getRecentOrdersLocal(limit = 10) {
       id: order.id,
       notes: order.notes,
       order_number: order.order_number,
+      patient_id: order.patient_id,
       order_tests: orderTests
         .filter((row) => row.order_id === order.id)
         .map((orderTest) => ({
@@ -459,6 +461,49 @@ export async function getRecentOrdersLocal(limit = 10) {
       priority: order.priority,
       status: order.status
     }));
+}
+
+export async function getOrderWithTestsLocal(orderId: string) {
+  const [order, patients, orderTests, tests] = await Promise.all([
+    db.orders.get(orderId),
+    db.patients.toArray(),
+    db.order_tests.where("order_id").equals(orderId).toArray(),
+    db.tests.toArray()
+  ]);
+
+  if (!order) {
+    return null;
+  }
+
+  const patient = patients.find((row) => row.id === order.patient_id) ?? null;
+  const testMap = new Map(tests.map((row) => [row.id, row]));
+
+  return {
+    created_at: order.created_at,
+    id: order.id,
+    notes: order.notes,
+    order_number: order.order_number,
+    patient_id: order.patient_id,
+    order_tests: orderTests.map((orderTest) => ({
+      id: orderTest.id,
+      sample_code: orderTest.sample_code,
+      status: orderTest.status,
+      tests: (() => {
+        const test = testMap.get(orderTest.test_id);
+        return test ? { id: test.id, name: test.name } : null;
+      })()
+    })),
+    patients: patient
+      ? {
+          id: patient.id,
+          lab_id: patient.lab_id,
+          name: patient.name,
+          phone: patient.phone
+        }
+      : null,
+    priority: order.priority,
+    status: order.status
+  };
 }
 
 export async function findSampleByCodeLocal(code: string) {

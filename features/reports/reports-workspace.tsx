@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -90,6 +91,7 @@ function triggerBrowserDownload(blob: Blob, filename: string) {
 }
 
 export function ReportsWorkspace() {
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const { facilityId, loading, role, user } = useAuth();
   const { toast } = useToast();
@@ -104,6 +106,7 @@ export function ReportsWorkspace() {
     error: string | null;
     success: string | null;
   }>({ error: null, success: null });
+  const orderIdFilter = searchParams.get("orderId");
 
   const reportsQuery = useQuery({
     queryKey: ["reports-queue"],
@@ -120,6 +123,10 @@ export function ReportsWorkspace() {
     const needle = search.trim().toLowerCase();
 
     return (reportsQuery.data ?? []).filter((order) => {
+      if (orderIdFilter && order.id !== orderIdFilter) {
+        return false;
+      }
+
       const rows = buildResultRows(order);
       const matchesSearch =
         !needle ||
@@ -139,6 +146,10 @@ export function ReportsWorkspace() {
         return false;
       }
 
+      if (orderIdFilter) {
+        return true;
+      }
+
       if (statusFilter === "reported") {
         return isFullyReported(order);
       }
@@ -153,7 +164,7 @@ export function ReportsWorkspace() {
 
       return true;
     });
-  }, [reportsQuery.data, search, statusFilter]);
+  }, [orderIdFilter, reportsQuery.data, search, statusFilter]);
 
   const selectedOrder = useMemo(
     () =>

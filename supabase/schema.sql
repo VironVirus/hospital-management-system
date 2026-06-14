@@ -172,6 +172,7 @@ create sequence if not exists public.order_number_seq start 1000;
 create sequence if not exists public.sample_code_seq start 1000;
 create sequence if not exists public.invoice_number_seq start 1000;
 create sequence if not exists public.receipt_number_seq start 1000;
+create sequence if not exists public.test_code_seq start 1000;
 
 create or replace function public.generate_patient_lab_id()
 returns text
@@ -184,11 +185,27 @@ $$;
 
 create or replace function public.generate_order_number()
 returns text
-language sql
+language plpgsql
 volatile
 set search_path = public
 as $$
-  select 'ORD-' || lpad(nextval('public.order_number_seq')::text, 6, '0');
+declare
+  prefix text := to_char(timezone('Africa/Lagos', now()), 'MMDD');
+  next_serial integer;
+begin
+  perform pg_advisory_xact_lock(hashtext('order-number-' || prefix));
+
+  select coalesce(max(right(order_number, 3)::integer), 0) + 1
+  into next_serial
+  from public.orders
+  where order_number ~ ('^' || prefix || '[0-9]{3}$');
+
+  if next_serial > 999 then
+    raise exception 'Test order number limit reached for prefix %', prefix;
+  end if;
+
+  return prefix || lpad(next_serial::text, 3, '0');
+end;
 $$;
 
 create or replace function public.generate_sample_code()
@@ -232,6 +249,15 @@ volatile
 set search_path = public
 as $$
   select 'RCT-' || lpad(nextval('public.receipt_number_seq')::text, 6, '0');
+$$;
+
+create or replace function public.generate_test_code()
+returns text
+language sql
+volatile
+set search_path = public
+as $$
+  select 'T' || lpad(nextval('public.test_code_seq')::text, 5, '0');
 $$;
 
 create or replace function public.current_user_is_admin()
@@ -291,16 +317,40 @@ $$;
 
 create table if not exists public.tests (
   id uuid primary key default gen_random_uuid(),
+  test_code text not null unique default public.generate_test_code(),
   name text not null unique,
   category text,
   price numeric(12,2) not null default 0,
-  result_type text not null check (result_type in ('numeric', 'text', 'boolean')),
+  result_type text not null check (result_type in ('numeric', 'text', 'boolean', 'panel')),
   reference_range jsonb not null default '{"mode":"text","text":"","min":null,"max":null}'::jsonb,
   unit text,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table if exists public.tests
+  add column if not exists test_code text;
+
+update public.tests
+set test_code = public.generate_test_code()
+where test_code is null or btrim(test_code) = '';
+
+alter table if exists public.tests
+  alter column test_code set default public.generate_test_code();
+
+alter table if exists public.tests
+  alter column test_code set not null;
+
+create unique index if not exists tests_test_code_key
+  on public.tests (test_code);
+
+alter table if exists public.tests
+  drop constraint if exists tests_result_type_check;
+
+alter table if exists public.tests
+  add constraint tests_result_type_check
+  check (result_type in ('numeric', 'text', 'boolean', 'panel'));
 
 do $$
 begin
@@ -404,8 +454,8 @@ create table if not exists public.order_tests (
   test_id uuid not null references public.tests(id) on delete restrict,
   specimen_label text,
   status public.sample_status not null default 'Registered',
-  sample_code text not null unique,
-  barcode_value text not null unique,
+  sample_code text not null,
+  barcode_value text not null,
   qr_value text not null,
   collected_at timestamptz,
   collected_by uuid references auth.users(id) on delete set null,
@@ -417,6 +467,12 @@ create table if not exists public.order_tests (
   updated_at timestamptz not null default now(),
   unique (order_id, test_id)
 );
+
+alter table if exists public.order_tests
+  drop constraint if exists order_tests_sample_code_key;
+
+alter table if exists public.order_tests
+  drop constraint if exists order_tests_barcode_value_key;
 
 create table if not exists public.sample_custody_logs (
   id uuid primary key default gen_random_uuid(),
@@ -1034,7 +1090,12 @@ declare
   derived_specimen_label text;
 begin
   if coalesce(nullif(btrim(new.sample_code), ''), '') = '' then
-    new.sample_code = public.generate_sample_code();
+    select o.order_number
+    into new.sample_code
+    from public.orders o
+    where o.id = new.order_id;
+
+    new.sample_code = coalesce(new.sample_code, public.generate_sample_code());
   end if;
 
   if coalesce(nullif(btrim(new.barcode_value), ''), '') = '' then

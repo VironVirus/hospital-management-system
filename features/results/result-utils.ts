@@ -64,6 +64,10 @@ export function getDropdownOptions(test: TestDefinition) {
 export function getResultInputMode(test: TestDefinition) {
   const referenceRange = getReferenceRange(test.reference_range);
 
+  if (referenceRange?.mode === "panel") {
+    return "panel" as const;
+  }
+
   if (test.result_type === "numeric") {
     return "numeric" as const;
   }
@@ -93,6 +97,39 @@ export function formatExistingResult(result: Tables<"order_test_results"> | null
   }
 
   return result.value_text ?? "";
+}
+
+export function parsePanelResult(rawValue: string) {
+  if (!rawValue.trim()) {
+    return {} as Record<string, string>;
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, string>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+export function formatPanelResultValue(
+  rawValue: string,
+  test: TestDefinition
+) {
+  const referenceRange = getReferenceRange(test.reference_range);
+  if (referenceRange?.mode !== "panel") {
+    return rawValue;
+  }
+
+  const values = parsePanelResult(rawValue);
+  return referenceRange.parameters
+    .map((parameter) => {
+      const value = values[parameter.id] ?? "";
+      return `${parameter.name}: ${value || "Pending"}`;
+    })
+    .join("\n");
 }
 
 export function getResultFlagCode(
@@ -142,6 +179,47 @@ export function evaluateResult(
   const interpretation = formValues.interpretation.trim() || null;
   const referenceRange = getReferenceRange(test.reference_range);
   const inputMode = getResultInputMode(test);
+
+  if (inputMode === "panel") {
+    const range = referenceRange?.mode === "panel" ? referenceRange : null;
+    const values = parsePanelResult(trimmedValue);
+    const abnormalReasons: string[] = [];
+
+    range?.parameters.forEach((parameter) => {
+      if (parameter.reference_range.mode !== "numeric") {
+        return;
+      }
+
+      const numericValue = Number(values[parameter.id]);
+      if (!Number.isFinite(numericValue)) {
+        return;
+      }
+
+      const low = parameter.reference_range.min;
+      const high = parameter.reference_range.max;
+      if (low !== null && numericValue < low) {
+        abnormalReasons.push(`${parameter.name} below minimum (${low})`);
+      }
+
+      if (high !== null && numericValue > high) {
+        abnormalReasons.push(`${parameter.name} above maximum (${high})`);
+      }
+    });
+
+    return {
+      abnormalFlag: abnormalReasons.length > 0,
+      abnormalReason: abnormalReasons.length > 0 ? abnormalReasons.join("; ") : null,
+      displayValue: range ? formatPanelResultValue(trimmedValue, test) : trimmedValue,
+      payload: {
+        abnormal_flag: abnormalReasons.length > 0,
+        abnormal_reason: abnormalReasons.length > 0 ? abnormalReasons.join("; ") : null,
+        interpretation,
+        value_boolean: null,
+        value_numeric: null,
+        value_text: trimmedValue
+      }
+    };
+  }
 
   if (inputMode === "numeric") {
     const numericValue = Number(trimmedValue);

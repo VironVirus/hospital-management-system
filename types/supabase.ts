@@ -823,6 +823,7 @@ export type Database = {
           price: number
           reference_range: Json
           result_type: string
+          test_code: string
           unit: string | null
           updated_at: string
         }
@@ -835,6 +836,7 @@ export type Database = {
           price?: number
           reference_range?: Json
           result_type: string
+          test_code?: string
           unit?: string | null
           updated_at?: string
         }
@@ -847,6 +849,7 @@ export type Database = {
           price?: number
           reference_range?: Json
           result_type?: string
+          test_code?: string
           unit?: string | null
           updated_at?: string
         }
@@ -911,6 +914,7 @@ export type Database = {
       generate_patient_lab_id: { Args: never; Returns: string }
       generate_receipt_number: { Args: never; Returns: string }
       generate_sample_code: { Args: never; Returns: string }
+      generate_test_code: { Args: never; Returns: string }
       inventory_item_in_current_facility: {
         Args: { target_item_id: string }
         Returns: boolean

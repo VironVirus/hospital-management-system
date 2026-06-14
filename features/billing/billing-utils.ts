@@ -34,12 +34,12 @@ export const paymentMethodOptions = [
 ] as const;
 
 export function formatCurrency(value: number | null | undefined) {
-  return new Intl.NumberFormat("en-NG", {
-    currency: "NGN",
+  const amount = new Intl.NumberFormat("en-NG", {
     maximumFractionDigits: 2,
-    minimumFractionDigits: 2,
-    style: "currency"
+    minimumFractionDigits: 2
   }).format(value ?? 0);
+
+  return `N${amount}`;
 }
 
 export function formatDate(value: string | null | undefined) {

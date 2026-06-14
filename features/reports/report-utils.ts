@@ -1,4 +1,9 @@
-import { getReferenceRange, getResultFlagCode, type ResultFlagCode } from "@/features/results/result-utils";
+import {
+  formatPanelResultValue,
+  getReferenceRange,
+  getResultFlagCode,
+  type ResultFlagCode
+} from "@/features/results/result-utils";
 import type { Tables } from "@/types/supabase";
 
 export type ReportOrderTest = Tables<"order_tests"> & {
@@ -57,12 +62,12 @@ export type PatientReportBundle = {
 };
 
 export function formatCurrency(value: number | null | undefined) {
-  return new Intl.NumberFormat("en-NG", {
-    currency: "NGN",
+  const amount = new Intl.NumberFormat("en-NG", {
     maximumFractionDigits: 2,
-    minimumFractionDigits: 2,
-    style: "currency"
+    minimumFractionDigits: 2
   }).format(value ?? 0);
+
+  return `N${amount}`;
 }
 
 export function formatDate(value: string | null | undefined) {
@@ -141,6 +146,11 @@ export function formatResultValue(
   }
 
   if (result.value_text) {
+    const range = getReferenceRange(test?.reference_range ?? null);
+    if (range?.mode === "panel" && test) {
+      return formatPanelResultValue(result.value_text, test);
+    }
+
     return result.value_text;
   }
 
@@ -173,6 +183,10 @@ export function formatReferenceRangeLabel(test: Tables<"tests"> | null) {
       negative: range.negative_label
     };
     return `${labels.positive} / ${labels.negative}`;
+  }
+
+  if (range.mode === "panel") {
+    return "See parameter ranges";
   }
 
   return range.text || "As documented by laboratory";

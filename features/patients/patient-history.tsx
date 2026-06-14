@@ -657,6 +657,42 @@ export function PatientHistory({ patientId }: { patientId: string }) {
                         <p className="text-sm text-slate-600">{order.notes}</p>
                       ) : null}
                     </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button asChild size="sm" variant="outline">
+                        <Link
+                          href={{
+                            pathname: "/orders",
+                            query: {
+                              editOrderId: order.id,
+                              patient: patient.lab_id,
+                              patientId: patient.id
+                            }
+                          }}
+                        >
+                          Edit tests
+                        </Link>
+                      </Button>
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={{ pathname: "/results", query: { orderId: order.id } }}>
+                          Edit results
+                        </Link>
+                      </Button>
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={{ pathname: "/reports", query: { orderId: order.id } }}>
+                          Print result
+                        </Link>
+                      </Button>
+                      <Button asChild size="sm">
+                        <Link
+                          href={{
+                            pathname: "/billing",
+                            query: { patientId: patient.id, orderId: order.id }
+                          }}
+                        >
+                          Print bill
+                        </Link>
+                      </Button>
+                    </div>
                   </div>
 
                   <Separator className="my-4" />
@@ -683,6 +719,18 @@ export function PatientHistory({ patientId }: { patientId: string }) {
                             Sample {result.sample_code} is currently in{" "}
                             {formatTestStatus(result.status)}.
                           </p>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Button asChild size="sm" variant="ghost">
+                              <Link href={{ pathname: "/results", query: { sampleId: result.id } }}>
+                                Edit result
+                              </Link>
+                            </Button>
+                            <Button asChild size="sm" variant="ghost">
+                              <Link href={{ pathname: "/reports", query: { orderId: order.id } }}>
+                                Print/download group
+                              </Link>
+                            </Button>
+                          </div>
                         </div>
                       ))
                     ) : (

@@ -120,6 +120,7 @@ export function BillingWorkspace() {
   const [invoiceError, setInvoiceError] = useState<string | null>(null);
   const [invoiceSuccess, setInvoiceSuccess] = useState<string | null>(null);
   const patientIdFilter = searchParams.get("patientId");
+  const orderIdFilter = searchParams.get("orderId");
 
   const canAccessBilling = canAccessBillingRole(role);
   const canManageBilling = canManageBillingRole(role);
@@ -147,6 +148,10 @@ export function BillingWorkspace() {
         return false;
       }
 
+      if (orderIdFilter && invoice.order_id !== orderIdFilter) {
+        return false;
+      }
+
       if (dateFilter === "today") {
         return isToday(invoice.issued_at);
       }
@@ -160,7 +165,7 @@ export function BillingWorkspace() {
 
       return true;
     });
-  }, [dateFilter, deferredSearch, invoicesQuery.data, patientIdFilter, statusFilter]);
+  }, [dateFilter, deferredSearch, invoicesQuery.data, orderIdFilter, patientIdFilter, statusFilter]);
 
   const selectedInvoice = useMemo(
     () =>
@@ -178,14 +183,14 @@ export function BillingWorkspace() {
   }, [filteredInvoices, selectedInvoiceId]);
 
   useEffect(() => {
-    if (!patientIdFilter || filteredInvoices.length === 0) {
+    if ((!patientIdFilter && !orderIdFilter) || filteredInvoices.length === 0) {
       return;
     }
 
     if (!filteredInvoices.some((invoice) => invoice.id === selectedInvoiceId)) {
       setSelectedInvoiceId(filteredInvoices[0].id);
     }
-  }, [filteredInvoices, patientIdFilter, selectedInvoiceId]);
+  }, [filteredInvoices, orderIdFilter, patientIdFilter, selectedInvoiceId]);
 
   useEffect(() => {
     if (!selectedInvoice) {

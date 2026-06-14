@@ -12,8 +12,10 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ClipboardPlus,
+  FileText,
   FlaskConical,
   Loader2,
+  PencilLine,
   Search,
   ShieldAlert
 } from "lucide-react";
@@ -52,6 +54,7 @@ import { useToast } from "@/hooks/use-toast";
 import { SampleLabelSheet } from "@/features/orders/sample-label-sheet";
 import { canAccessOrdersRole, canCreateOrdersRole } from "@/lib/guards";
 import {
+  addOfflineTestsToOrder,
   createOfflineOrderBundle
 } from "@/lib/offline-mutations";
 import {
@@ -59,6 +62,7 @@ import {
   cachePatients,
   cacheTests,
   getActiveTestsLocal,
+  getOrderWithTestsLocal,
   getRecentOrdersLocal,
   searchPatientsLocal
 } from "@/lib/offline-data";
@@ -74,6 +78,7 @@ type RecentOrderRow = {
   id: string;
   notes: string | null;
   order_number: string;
+  patient_id: string;
   patients: {
     id: string;
     lab_id: string;
@@ -165,10 +170,10 @@ async function fetchRecentOrders() {
   const supabase = getSupabaseBrowserClient();
   return resolveOfflineQuery<RecentOrderRow[]>({
     cacheKey: "recent-orders",
-    offline: () => getRecentOrdersLocal(),
+    offline: () => getRecentOrdersLocal(5),
     online: async () => {
       if (!supabase) {
-        return getRecentOrdersLocal();
+        return getRecentOrdersLocal(5);
       }
 
       const { data, error } = await supabase
@@ -177,7 +182,7 @@ async function fetchRecentOrders() {
           "id, order_number, status, priority, notes, created_at, patient_id, facility_id, ordered_at, ordered_by, reported_at, updated_at, patients(id, name, lab_id, phone), order_tests(id, order_id, test_id, sample_code, status, specimen_label, barcode_value, qr_value, created_at, updated_at, collected_at, collected_by, in_progress_at, results_entered_at, verified_at, reported_at, tests(id, name))"
         )
         .order("created_at", { ascending: false })
-        .limit(10);
+        .limit(5);
 
       if (error) {
         throw new Error(error.message);
@@ -189,12 +194,44 @@ async function fetchRecentOrders() {
   });
 }
 
+async function fetchOrderForEdit(orderId: string) {
+  const supabase = getSupabaseBrowserClient();
+  return resolveOfflineQuery<RecentOrderRow | null>({
+    cacheKey: `order-edit:${orderId}`,
+    offline: () => getOrderWithTestsLocal(orderId),
+    online: async () => {
+      if (!supabase) {
+        return getOrderWithTestsLocal(orderId);
+      }
+
+      const { data, error } = await supabase
+        .from("orders")
+        .select(
+          "id, order_number, status, priority, notes, created_at, patient_id, facility_id, ordered_at, ordered_by, reported_at, updated_at, patients(id, name, lab_id, phone), order_tests(id, order_id, test_id, sample_code, status, specimen_label, barcode_value, qr_value, created_at, updated_at, collected_at, collected_by, in_progress_at, results_entered_at, verified_at, reported_at, tests(id, name))"
+        )
+        .eq("id", orderId)
+        .maybeSingle();
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      if (data) {
+        await cacheOrdersWithRelations([data as Record<string, unknown>]);
+      }
+
+      return (data as RecentOrderRow | null) ?? null;
+    }
+  });
+}
+
 export function OrdersManagement() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  const { role, loading, facilityId } = useAuth();
+  const { role, loading, facilityId, user } = useAuth();
   const { toast } = useToast();
   const patientIdFromQuery = searchParams.get("patientId");
+  const editOrderIdFromQuery = searchParams.get("editOrderId");
   const patientSearchFromQuery = searchParams.get("patient") ?? "";
   const [patientSearch, setPatientSearch] = useState(patientSearchFromQuery);
   const deferredPatientSearch = useDeferredValue(patientSearch);
@@ -212,8 +249,10 @@ export function OrdersManagement() {
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [createdOrder, setCreatedOrder] = useState<{
+    orderId: string;
     orderNumber: string;
     patientName: string;
+    patientId: string;
     samples: Array<{
       barcode_value: string;
       order_number: string;
@@ -225,6 +264,9 @@ export function OrdersManagement() {
       test_name: string;
     }>;
   } | null>(null);
+  const [editingOrderId, setEditingOrderId] = useState<string | null>(
+    editOrderIdFromQuery
+  );
 
   const canAccessOrders = canAccessOrdersRole(role);
   const canCreateOrders = canCreateOrdersRole(role);
@@ -247,11 +289,25 @@ export function OrdersManagement() {
     enabled: canAccessOrders && Boolean(facilityId)
   });
 
+  const editOrderQuery = useQuery({
+    queryKey: ["order-edit", editingOrderId],
+    queryFn: () => fetchOrderForEdit(editingOrderId as string),
+    enabled: canAccessOrders && Boolean(facilityId) && Boolean(editingOrderId)
+  });
+
   const selectedPatient = useMemo(
     () =>
       (patientsQuery.data ?? []).find((patient) => patient.id === formState.patient_id) ??
       null,
     [formState.patient_id, patientsQuery.data]
+  );
+
+  const editingOrder = useMemo(
+    () =>
+      (recentOrdersQuery.data ?? []).find((order) => order.id === editingOrderId) ??
+      editOrderQuery.data ??
+      null,
+    [editOrderQuery.data, editingOrderId, recentOrdersQuery.data]
   );
 
   useEffect(() => {
@@ -261,6 +317,10 @@ export function OrdersManagement() {
 
     setPatientSearch(patientSearchFromQuery);
   }, [patientSearchFromQuery]);
+
+  useEffect(() => {
+    setEditingOrderId(editOrderIdFromQuery);
+  }, [editOrderIdFromQuery]);
 
   useEffect(() => {
     if (!patientIdFromQuery || !patientsQuery.data?.length) {
@@ -281,6 +341,23 @@ export function OrdersManagement() {
           }
     );
   }, [patientIdFromQuery, patientsQuery.data]);
+
+  useEffect(() => {
+    if (!editingOrder) {
+      return;
+    }
+
+    setPatientSearch(editingOrder.patients?.lab_id ?? editingOrder.patients?.name ?? "");
+    setFormState((current) => ({
+      ...current,
+      patient_id: editingOrder.patient_id,
+      priority: editingOrder.priority as OrderFormValues["priority"],
+      notes: editingOrder.notes ?? "",
+      selected_test_ids: (editingOrder.order_tests ?? [])
+        .map((sample) => sample.tests?.id)
+        .filter((testId): testId is string => Boolean(testId))
+    }));
+  }, [editingOrder]);
 
   const filteredRecentOrders = useMemo(() => {
     const needle = deferredRecentSearch.trim().toLowerCase();
@@ -473,6 +550,55 @@ export function OrdersManagement() {
       }
 
       const patientName = selectedPatient?.name || "Selected patient";
+      if (editingOrder) {
+        const created = await addOfflineTestsToOrder({
+          facilityId,
+          order: {
+            id: editingOrder.id,
+            order_number: editingOrder.order_number,
+            patient_id: editingOrder.patient_id
+          },
+          patientName,
+          tests: selectedTests.map((test) => ({
+            id: test.id,
+            name: test.name,
+            price: test.price
+          })),
+          userId: user?.id ?? null
+        });
+
+        if (created.samples.length === 0) {
+          setSubmitError("No new tests were added. Select at least one extra test.");
+          return;
+        }
+
+        setCreatedOrder({
+          orderId: created.orderId,
+          orderNumber: created.orderNumber,
+          patientName,
+          patientId: parsed.data.patient_id,
+          samples: created.samples
+        });
+        setSubmitSuccess(
+          `${created.samples.length} extra test${created.samples.length > 1 ? "s" : ""} added to ${created.orderNumber}.`
+        );
+        toast({
+          title: "Test order updated",
+          description: `${created.orderNumber} now includes ${created.samples.length} extra test(s).`,
+          variant: "success"
+        });
+        setEditingOrderId(null);
+        setFormState(initialOrderFormState);
+        setPatientSearch("");
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["recent-orders"] }),
+          queryClient.invalidateQueries({ queryKey: ["patient-orders"] }),
+          queryClient.invalidateQueries({ queryKey: ["billing-invoices"] }),
+          queryClient.invalidateQueries({ queryKey: ["patients"] })
+        ]);
+        return;
+      }
+
       const created = await createOfflineOrderBundle({
         facilityId,
         notes: parsed.data.notes.trim() || null,
@@ -485,11 +611,14 @@ export function OrdersManagement() {
           id: test.id,
           name: test.name,
           price: test.price
-        }))
+        })),
+        userId: user?.id ?? null
       });
       setCreatedOrder({
+        orderId: created.orderId,
         orderNumber: created.orderNumber,
         patientName,
+        patientId: parsed.data.patient_id,
         samples: created.samples
       });
       setSubmitSuccess(
@@ -505,6 +634,7 @@ export function OrdersManagement() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["recent-orders"] }),
         queryClient.invalidateQueries({ queryKey: ["patient-orders"] }),
+        queryClient.invalidateQueries({ queryKey: ["billing-invoices"] }),
         queryClient.invalidateQueries({ queryKey: ["patients"] })
       ]);
     } catch (error) {
@@ -550,18 +680,19 @@ export function OrdersManagement() {
         </Card>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+      <section className="grid gap-6 xl:grid-cols-[1.35fr_0.65fr]">
         <Card className="border-blue-100 print-hidden">
           <CardHeader>
             <div className="flex items-center justify-between gap-3">
               <div>
                 <CardTitle className="flex items-center gap-2">
                   <ClipboardPlus className="h-5 w-5 text-blue-700" />
-                  Create lab test
+                  {editingOrder ? `Edit test order ${editingOrder.order_number}` : "Create lab test"}
                 </CardTitle>
                 <CardDescription>
-                  Select a patient, add multiple tests, and generate sample labels in one
-                  step.
+                  {editingOrder
+                    ? "Add extra tests to this existing order number and update the bill automatically."
+                    : "Select a patient, add multiple tests, and generate sample labels in one step."}
                 </CardDescription>
               </div>
               <Badge variant="outline">
@@ -577,6 +708,25 @@ export function OrdersManagement() {
               </div>
             ) : (
               <form className="space-y-5" onSubmit={handleSubmit}>
+                {editingOrder ? (
+                  <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                    You are editing order <strong>{editingOrder.order_number}</strong>. New
+                    tests added here will keep this same order/sample number.
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="ml-2 text-blue-800"
+                      onClick={() => {
+                        setEditingOrderId(null);
+                        setFormState(initialOrderFormState);
+                      }}
+                    >
+                      Cancel edit
+                    </Button>
+                  </div>
+                ) : null}
+
                 <div className="space-y-2">
                   <Label htmlFor="patient-search">Find patient</Label>
                   <div className="relative">
@@ -654,7 +804,9 @@ export function OrdersManagement() {
                           ) : null}
                           {testsInSelectedCategory.map((test) => (
                             <option key={test.id} value={test.id}>
-                              {test.name} - NGN {Number(test.price).toLocaleString("en-NG")}
+                              {test.test_code} - {test.name} -{" "}
+                              {getTestCategoryLabel(test.category)} - N
+                              {Number(test.price).toLocaleString("en-NG")}
                             </option>
                           ))}
                         </select>
@@ -685,13 +837,15 @@ export function OrdersManagement() {
                               className="flex items-start justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-3"
                             >
                               <div className="min-w-0">
-                                <p className="font-medium text-slate-950">{test.name}</p>
+                                <p className="font-medium text-slate-950">
+                                  {test.test_code} - {test.name}
+                                </p>
                                 <p className="text-xs text-slate-500">
                                   {getTestCategoryLabel(test.category)}
                                   {test.unit ? ` • ${test.unit}` : ""}
                                 </p>
                                 <p className="text-sm text-slate-600">
-                                  NGN {Number(test.price).toLocaleString("en-NG")}
+                                  N{Number(test.price).toLocaleString("en-NG")}
                                 </p>
                               </div>
                               <Button
@@ -774,7 +928,13 @@ export function OrdersManagement() {
 
                 <Button type="submit" className="w-full" disabled={creating}>
                   {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  {creating ? "Creating test..." : "Create test request and generate labels"}
+                  {creating
+                    ? editingOrder
+                      ? "Updating test order..."
+                      : "Creating test..."
+                    : editingOrder
+                      ? "Add selected tests to existing order"
+                      : "Create test request and generate labels"}
                 </Button>
               </form>
             )}
@@ -877,6 +1037,26 @@ export function OrdersManagement() {
                       {formatDateTime(order.created_at)}
                     </p>
                   </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setEditingOrderId(order.id)}
+                    >
+                      <PencilLine className="h-4 w-4" />
+                      Edit tests
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={`/billing?patientId=${order.patient_id}&orderId=${order.id}`}>
+                        <FileText className="h-4 w-4" />
+                        Bill
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={`/results?orderId=${order.id}`}>Results</Link>
+                    </Button>
+                  </div>
                 </div>
 
                 <Separator className="my-4" />
@@ -907,11 +1087,33 @@ export function OrdersManagement() {
       </section>
 
       {createdOrder ? (
-        <SampleLabelSheet
-          orderNumber={createdOrder.orderNumber}
-          patientName={createdOrder.patientName}
-          samples={createdOrder.samples}
-        />
+        <div className="space-y-4">
+          <Card className="border-blue-100 print-hidden">
+            <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-semibold text-slate-950">
+                  Bill ready for {createdOrder.orderNumber}
+                </p>
+                <p className="text-sm text-slate-600">
+                  The invoice is linked to this test order and can be printed immediately.
+                </p>
+              </div>
+              <Button asChild>
+                <Link
+                  href={`/billing?patientId=${createdOrder.patientId}&orderId=${createdOrder.orderId}`}
+                >
+                  <FileText className="h-4 w-4" />
+                  Print bill
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
+          <SampleLabelSheet
+            orderNumber={createdOrder.orderNumber}
+            patientName={createdOrder.patientName}
+            samples={createdOrder.samples}
+          />
+        </div>
       ) : null}
     </div>
   );
