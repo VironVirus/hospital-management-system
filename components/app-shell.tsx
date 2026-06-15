@@ -126,7 +126,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const sidebar = (
     <>
-      <div className="flex items-center gap-3 px-6 py-5">
+      <div className="flex items-center gap-3 px-5 py-3">
         <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-sky-400 text-white shadow-soft">
           <FlaskConical className="h-5 w-5" />
         </div>
@@ -140,7 +140,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <Separator />
 
-      <nav className="flex flex-1 flex-col gap-1 px-3 py-4">
+      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-3">
         {visibleNavigation.map((item) => {
           const Icon = item.icon;
           const active = pathname === item.href;
@@ -150,7 +150,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-colors",
+                "flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors",
                 active
                   ? "bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-200"
                   : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-slate-50"
@@ -163,20 +163,20 @@ export function AppShell({ children }: { children: ReactNode }) {
         })}
       </nav>
 
-      <div className="space-y-3 px-4 pb-6">
-        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-slate-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-slate-200">
+      <div className="space-y-2 px-3 pb-3">
+        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3 text-sm text-slate-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-slate-200">
           <div className="flex items-center justify-between">
             <p className="font-medium text-slate-900 dark:text-slate-50">Network status</p>
             <Badge variant={isOnline ? "default" : "secondary"}>
               {isOnline ? "Online" : "Offline"}
             </Badge>
           </div>
-          <p className="mt-2 text-slate-600 dark:text-slate-300">
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
             {pending > 0 || failed > 0
               ? `${pending + failed} queued change(s) waiting to sync.`
               : "Local changes are cached in Dexie and replayed when connectivity returns."}
           </p>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
+          <div className="mt-2 flex flex-wrap items-center gap-2">
             {pending > 0 ? <Badge variant="outline">{pending} pending</Badge> : null}
             {failed > 0 ? <Badge variant="secondary">{failed} retrying</Badge> : null}
             {conflicts > 0 ? (
@@ -188,7 +188,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Button
             type="button"
             variant="outline"
-            className="mt-3 w-full justify-start"
+            className="mt-2 h-9 w-full justify-start"
             disabled={!isOnline || processing}
             onClick={() => void syncNow()}
           >
@@ -196,7 +196,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Button>
         </div>
 
-        <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950/60">
+        <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950/60">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-200">
               <CircleUserRound className="h-5 w-5" />
@@ -228,7 +228,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Button
               type="button"
               variant="outline"
-              className="flex-1 justify-start"
+              className="h-9 flex-1 justify-start"
               onClick={toggleTheme}
             >
               {resolvedTheme === "dark" ? (
@@ -238,7 +238,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               )}
               {resolvedTheme === "dark" ? "Light mode" : "Dark mode"}
             </Button>
-            <Button asChild variant="outline" className="flex-1 justify-start">
+            <Button asChild variant="outline" className="h-9 flex-1 justify-start">
               <Link href="/logout">
                 <LogOut className="h-4 w-4" />
                 Sign out

@@ -261,13 +261,55 @@ as $$
   select 'RCT-' || lpad(nextval('public.receipt_number_seq')::text, 6, '0');
 $$;
 
+create or replace function public.test_category_prefix(category_name text)
+returns text
+language plpgsql
+immutable
+set search_path = public
+as $$
+declare
+  cleaned text := upper(regexp_replace(coalesce(category_name, 'Test'), '[^A-Za-z]', '', 'g'));
+begin
+  if lower(coalesce(category_name, '')) in ('haematology', 'hematology') then
+    return 'HE';
+  end if;
+
+  return rpad(coalesce(nullif(left(cleaned, 2), ''), 'TE'), 2, 'X');
+end;
+$$;
+
+create or replace function public.generate_test_code_for_category(category_name text)
+returns text
+language plpgsql
+volatile
+set search_path = public
+as $$
+declare
+  prefix text := public.test_category_prefix(category_name);
+  next_serial integer;
+begin
+  perform pg_advisory_xact_lock(hashtext('test-code-' || prefix));
+
+  select coalesce(max(substring(test_code from length(prefix) + 1)::integer), 0) + 1
+  into next_serial
+  from public.tests
+  where test_code ~ ('^' || prefix || '[0-9]{5}$');
+
+  if next_serial > 99999 then
+    raise exception 'Test ID limit reached for prefix %', prefix;
+  end if;
+
+  return prefix || lpad(next_serial::text, 5, '0');
+end;
+$$;
+
 create or replace function public.generate_test_code()
 returns text
 language sql
 volatile
 set search_path = public
 as $$
-  select 'T' || lpad(nextval('public.test_code_seq')::text, 5, '0');
+  select public.generate_test_code_for_category(null);
 $$;
 
 create or replace function public.current_user_is_admin()
@@ -343,17 +385,41 @@ alter table if exists public.tests
   add column if not exists test_code text;
 
 update public.tests
-set test_code = public.generate_test_code()
-where test_code is null or btrim(test_code) = '';
+set test_code = public.generate_test_code_for_category(category)
+where test_code is null
+  or btrim(test_code) = ''
+  or test_code ~ '^T[0-9]{5}$'
+  or left(test_code, 2) <> public.test_category_prefix(category);
 
 alter table if exists public.tests
-  alter column test_code set default public.generate_test_code();
+  alter column test_code drop default;
 
 alter table if exists public.tests
   alter column test_code set not null;
 
 create unique index if not exists tests_test_code_key
   on public.tests (test_code);
+
+create or replace function public.sync_test_code_defaults()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  expected_prefix text := public.test_category_prefix(new.category);
+begin
+  if new.test_code is null
+    or btrim(new.test_code) = ''
+    or new.test_code ~ '^T[0-9]{5}$'
+    or left(new.test_code, 2) <> expected_prefix then
+    new.test_code = public.generate_test_code_for_category(new.category);
+  else
+    new.test_code = upper(btrim(new.test_code));
+  end if;
+
+  return new;
+end;
+$$;
 
 alter table if exists public.tests
   drop constraint if exists tests_result_type_check;
@@ -1925,6 +1991,11 @@ drop trigger if exists set_tests_updated_at on public.tests;
 create trigger set_tests_updated_at
 before update on public.tests
 for each row execute procedure public.set_updated_at();
+
+drop trigger if exists sync_test_code_defaults on public.tests;
+create trigger sync_test_code_defaults
+before insert or update of category, test_code on public.tests
+for each row execute procedure public.sync_test_code_defaults();
 
 create index if not exists profiles_facility_id_idx
   on public.profiles (facility_id);

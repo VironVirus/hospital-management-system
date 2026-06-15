@@ -344,61 +344,28 @@ export function PatientManagement() {
 
   return (
     <div className="space-y-6">
-      <section className="grid gap-4 xl:grid-cols-[1.3fr_repeat(3,minmax(0,0.6fr))]">
+      <section>
         <Card className="overflow-hidden border-blue-100 bg-[linear-gradient(135deg,rgba(10,92,163,0.98),rgba(56,189,248,0.92))] text-white shadow-soft">
-          <CardContent className="flex h-full flex-col justify-between gap-6 p-6">
-            <div className="space-y-3">
+          <CardContent className="grid gap-4 p-4 md:grid-cols-[minmax(0,1fr)_repeat(3,minmax(120px,0.34fr))] md:items-center">
+            <div className="space-y-2">
               <Badge className="w-fit border-white/20 bg-white/10 text-white">
                 Patient directory
               </Badge>
-              <div>
-                <h2 className="text-2xl font-semibold">Clean, privacy-safe patient lookup</h2>
-                <p className="mt-2 max-w-2xl text-sm text-blue-50">
-                  The directory now keeps sensitive details out of the list view, surfaces
-                  age clearly, and opens a fuller patient profile only when you need it.
-                </p>
-              </div>
+              <h2 className="text-xl font-semibold">Patient lookup</h2>
             </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur">
-                <p className="text-xs uppercase tracking-[0.22em] text-blue-50">Patients</p>
-                <p className="mt-2 text-2xl font-semibold">{summary.totalPatients}</p>
-              </div>
-              <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur">
-                <p className="text-xs uppercase tracking-[0.22em] text-blue-50">Test history</p>
-                <p className="mt-2 text-2xl font-semibold">{summary.withOrders}</p>
-              </div>
-              <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur">
-                <p className="text-xs uppercase tracking-[0.22em] text-blue-50">NDPR ready</p>
-                <p className="mt-2 text-2xl font-semibold">{summary.consented}</p>
-              </div>
+            <div className="rounded-2xl border border-white/15 bg-white/10 p-3 backdrop-blur">
+              <p className="text-xs uppercase tracking-[0.22em] text-blue-50">Patients</p>
+              <p className="mt-1 text-2xl font-semibold">{summary.totalPatients}</p>
+            </div>
+            <div className="rounded-2xl border border-white/15 bg-white/10 p-3 backdrop-blur">
+              <p className="text-xs uppercase tracking-[0.22em] text-blue-50">With tests</p>
+              <p className="mt-1 text-2xl font-semibold">{summary.withOrders}</p>
+            </div>
+            <div className="rounded-2xl border border-white/15 bg-white/10 p-3 backdrop-blur">
+              <p className="text-xs uppercase tracking-[0.22em] text-blue-50">NDPR ready</p>
+              <p className="mt-1 text-2xl font-semibold">{summary.consented}</p>
             </div>
           </CardContent>
-        </Card>
-
-        <Card className="border-blue-100">
-          <CardHeader className="pb-2">
-            <CardDescription>Visible on this page</CardDescription>
-            <CardTitle className="text-3xl text-slate-950">
-              {summary.pagePatients}
-            </CardTitle>
-          </CardHeader>
-        </Card>
-        <Card className="border-blue-100">
-          <CardHeader className="pb-2">
-            <CardDescription>Patients with tests</CardDescription>
-            <CardTitle className="text-3xl text-slate-950">
-              {summary.withOrders}
-            </CardTitle>
-          </CardHeader>
-        </Card>
-        <Card className="border-blue-100">
-          <CardHeader className="pb-2">
-            <CardDescription>NDPR consent captured</CardDescription>
-            <CardTitle className="text-3xl text-slate-950">
-              {summary.consented}
-            </CardTitle>
-          </CardHeader>
         </Card>
       </section>
 
@@ -526,7 +493,7 @@ export function PatientManagement() {
               {patients.map((patient: SearchPatientRow) => (
                 <div
                   key={patient.id}
-                  className="grid gap-3 px-4 py-3 transition hover:bg-blue-50/50 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.9fr)_auto]"
+                  className="grid gap-3 px-4 py-2.5 transition hover:bg-blue-50/50 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.9fr)_auto]"
                 >
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -537,9 +504,6 @@ export function PatientManagement() {
                         {patient.lab_id}
                       </Badge>
                     </div>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Contact details are hidden until the profile is opened.
-                    </p>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 sm:grid-cols-4">

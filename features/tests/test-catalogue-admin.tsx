@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Pencil, Plus, Search, ShieldAlert, TestTube2, ToggleLeft, ToggleRight, Trash2 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { Badge } from "@/components/ui/badge";
@@ -91,8 +91,61 @@ function createPanelRange(count = 1): StoredReferenceRange {
   };
 }
 
-function buildLocalTestCode() {
-  return `T${Date.now().toString().slice(-5)}`;
+function getTestCodePrefix(category: TestFormValues["category"]) {
+  const normalized = normalizeTestCategory(category);
+  if (normalized === "Haematology") {
+    return "HE";
+  }
+
+  const letters = (normalized ?? "Test")
+    .replace(/[^a-z]/gi, "")
+    .toUpperCase();
+
+  return (letters.slice(0, 2) || "TE").padEnd(2, "X");
+}
+
+function buildLocalTestCode(category: TestFormValues["category"], existingTests: TestRow[]) {
+  const prefix = getTestCodePrefix(category);
+  const nextSerial =
+    existingTests
+      .map((test) => test.test_code ?? "")
+      .filter((code) => code.startsWith(prefix))
+      .map((code) => Number(code.slice(prefix.length)))
+      .filter(Number.isFinite)
+      .reduce((max, value) => Math.max(max, value), 0) + 1;
+
+  if (nextSerial <= 99999) {
+    return `${prefix}${nextSerial.toString().padStart(5, "0")}`;
+  }
+
+  return `${prefix}${Date.now().toString().slice(-5)}`;
+}
+
+function resolveTestCode(
+  enteredCode: string | undefined,
+  category: TestFormValues["category"],
+  currentTest: TestRow | null,
+  existingTests: TestRow[]
+) {
+  const normalizedEnteredCode = enteredCode?.trim().toUpperCase() ?? "";
+  const expectedPrefix = getTestCodePrefix(category);
+  const isOldGenericCode = /^T\d{5}$/.test(normalizedEnteredCode);
+  const isUntouchedMismatchedCode =
+    currentTest?.test_code === normalizedEnteredCode &&
+    !normalizedEnteredCode.startsWith(expectedPrefix);
+  const hasWrongPrefix =
+    Boolean(normalizedEnteredCode) && !normalizedEnteredCode.startsWith(expectedPrefix);
+
+  if (
+    !normalizedEnteredCode ||
+    isOldGenericCode ||
+    isUntouchedMismatchedCode ||
+    hasWrongPrefix
+  ) {
+    return buildLocalTestCode(category, existingTests);
+  }
+
+  return normalizedEnteredCode;
 }
 
 function createNumericRange(
@@ -221,6 +274,7 @@ async function fetchTests({
 export function TestCatalogueAdmin() {
   const { role, loading } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<FilterStatus>("all");
   const [resultType, setResultType] = useState<FilterResultType>("all");
@@ -427,10 +481,12 @@ export function TestCatalogueAdmin() {
       price: parsed.data.price,
       result_type: parsed.data.result_type,
       reference_range: parsed.data.reference_range,
-      test_code:
-        parsed.data.test_code?.trim() ||
-        currentTest?.test_code ||
-        buildLocalTestCode(),
+      test_code: resolveTestCode(
+        parsed.data.test_code,
+        parsed.data.category,
+        currentTest,
+        tests
+      ),
       unit: parsed.data.unit?.trim() ? parsed.data.unit.trim() : null,
       updated_at: now
     } satisfies TestRow;
@@ -456,6 +512,13 @@ export function TestCatalogueAdmin() {
         recordId: payload.id
       });
 
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tests"] }),
+        queryClient.invalidateQueries({ queryKey: ["active-tests"] }),
+        queryClient.invalidateQueries({ queryKey: ["test-catalogue"] }),
+        queryClient.invalidateQueries({ queryKey: ["order-tests"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard-overview"] })
+      ]);
       await testsQuery.refetch();
       setSubmitSuccess(editingId ? "Test updated successfully." : "Test added successfully.");
       toast({
@@ -493,6 +556,13 @@ export function TestCatalogueAdmin() {
         resetForm();
       }
 
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["tests"] }),
+        queryClient.invalidateQueries({ queryKey: ["active-tests"] }),
+        queryClient.invalidateQueries({ queryKey: ["test-catalogue"] }),
+        queryClient.invalidateQueries({ queryKey: ["order-tests"] }),
+        queryClient.invalidateQueries({ queryKey: ["dashboard-overview"] })
+      ]);
       await testsQuery.refetch();
       toast({
         title: "Test removed",
@@ -750,9 +820,12 @@ export function TestCatalogueAdmin() {
                 <Input
                   id="test-code"
                   value={formState.test_code ?? ""}
-                  onChange={(event) => setField("test_code", event.target.value)}
-                  placeholder="Auto-generated if left blank"
+                  onChange={(event) => setField("test_code", event.target.value.toUpperCase())}
+                  placeholder={`${getTestCodePrefix(formState.category)}00001`}
                 />
+                <p className="text-xs text-slate-500">
+                  Leave blank to auto-generate from the category prefix.
+                </p>
                 {errors.test_code ? (
                   <p className="text-sm text-red-700">{errors.test_code}</p>
                 ) : null}
