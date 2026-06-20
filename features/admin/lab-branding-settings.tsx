@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ImageIcon, Loader2, Save } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
@@ -32,6 +32,13 @@ export type LabBrandingSettings = {
 };
 
 type BrandingFormState = Omit<LabBrandingSettings, "facility_id">;
+
+type LabBrandingSettingsPanelProps = {
+  description?: string;
+  facilityIdOverride?: string | null;
+  facilityName?: string | null;
+  title?: string;
+};
 
 const emptyForm: BrandingFormState = {
   accreditation: "",
@@ -100,18 +107,24 @@ function normalizeFormValue(value: string) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-export function LabBrandingSettingsPanel() {
+export function LabBrandingSettingsPanel({
+  description = "Control the identity shown on PDFs, printed reports, and patient-facing documents.",
+  facilityIdOverride,
+  facilityName,
+  title = "Lab branding and reports"
+}: LabBrandingSettingsPanelProps) {
   const { facilityId, loading, role, user } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [form, setForm] = useState<BrandingFormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const canAccessAdministration = canAccessAdministrationRole(role);
+  const targetFacilityId = facilityIdOverride ?? facilityId;
 
   const brandingQuery = useQuery({
-    queryKey: ["lab-branding", facilityId],
-    queryFn: () => fetchLabBrandingSettings(facilityId as string),
-    enabled: Boolean(facilityId) && canAccessAdministration
+    queryKey: ["lab-branding", targetFacilityId],
+    queryFn: () => fetchLabBrandingSettings(targetFacilityId as string),
+    enabled: Boolean(targetFacilityId) && canAccessAdministration
   });
 
   useEffect(() => {
@@ -134,6 +147,11 @@ export function LabBrandingSettingsPanel() {
     });
   }, [brandingQuery.data]);
 
+  const previewName = useMemo(
+    () => form.lab_name?.trim() || facilityName?.trim() || "Facility report preview",
+    [facilityName, form.lab_name]
+  );
+
   if (loading) {
     return (
       <Card className="border-blue-100 shadow-sm">
@@ -154,7 +172,7 @@ export function LabBrandingSettingsPanel() {
   };
 
   const handleSave = async () => {
-    if (!facilityId) {
+    if (!targetFacilityId) {
       toast({
         title: "Facility required",
         description: "Assign this admin account to a facility before saving branding.",
@@ -170,7 +188,7 @@ export function LabBrandingSettingsPanel() {
       const payload = {
         accreditation: normalizeFormValue(form.accreditation ?? ""),
         address: normalizeFormValue(form.address ?? ""),
-        facility_id: facilityId,
+        facility_id: targetFacilityId,
         lab_name: normalizeFormValue(form.lab_name ?? ""),
         logo_url: normalizeFormValue(form.logo_url ?? ""),
         report_footer: normalizeFormValue(form.report_footer ?? ""),
@@ -190,17 +208,20 @@ export function LabBrandingSettingsPanel() {
         throw error;
       }
 
+      await queryClient.invalidateQueries({ queryKey: ["lab-branding", targetFacilityId] });
       await queryClient.invalidateQueries({ queryKey: ["lab-branding"] });
       await queryClient.invalidateQueries({ queryKey: ["reports-queue"] });
       toast({
         title: "Branding saved",
-        description: "Reports will now use the updated lab identity."
+        description:
+          facilityName && facilityName.trim().length > 0
+            ? `${facilityName} will now use the updated report identity.`
+            : "Reports will now use the updated lab identity."
       });
     } catch (error) {
       toast({
         title: "Branding could not be saved",
-        description:
-          error instanceof Error ? error.message : "Please try again.",
+        description: error instanceof Error ? error.message : "Please try again.",
         variant: "error"
       });
     } finally {
@@ -213,11 +234,9 @@ export function LabBrandingSettingsPanel() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <ImageIcon className="h-5 w-5 text-blue-700" />
-          Lab branding and reports
+          {title}
         </CardTitle>
-        <CardDescription>
-          Control the identity shown on PDFs, printed reports, and patient-facing documents.
-        </CardDescription>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         {brandingQuery.isLoading ? (
@@ -226,6 +245,43 @@ export function LabBrandingSettingsPanel() {
             Loading branding settings...
           </div>
         ) : null}
+
+        {brandingQuery.isError ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-800">
+            {brandingQuery.error instanceof Error
+              ? brandingQuery.error.message
+              : "Unable to load branding settings."}
+          </div>
+        ) : null}
+
+        <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+          <p className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
+            Report preview
+          </p>
+          <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-center">
+            <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              {form.logo_url?.trim() ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={form.logo_url}
+                  alt={`${previewName} logo`}
+                  className="h-full w-full object-contain"
+                />
+              ) : (
+                <ImageIcon className="h-8 w-8 text-slate-300" />
+              )}
+            </div>
+            <div className="space-y-1 text-sm text-slate-600">
+              <p className="font-semibold text-slate-950">{previewName}</p>
+              <p>{form.support_line?.trim() || "Add branch phone or email support line"}</p>
+              <p>{form.address?.trim() || "Add the branch address shown on reports"}</p>
+              <p className="text-xs text-slate-500">
+                {form.signatory_name?.trim() || "Signatory"} |{" "}
+                {form.signatory_title?.trim() || "Role"}
+              </p>
+            </div>
+          </div>
+        </div>
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
@@ -304,7 +360,7 @@ export function LabBrandingSettingsPanel() {
           />
         </div>
 
-        <Button type="button" onClick={handleSave} disabled={saving || !facilityId}>
+        <Button type="button" onClick={handleSave} disabled={saving || !targetFacilityId}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           Save branding
         </Button>

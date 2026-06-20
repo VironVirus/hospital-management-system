@@ -59,6 +59,10 @@ create table if not exists public.facilities (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   code text not null unique,
+  address text,
+  phone text,
+  email text,
+  is_active boolean not null default true,
   parent_facility_id uuid references public.facilities(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -66,6 +70,18 @@ create table if not exists public.facilities (
 
 alter table if exists public.facilities
   add column if not exists parent_facility_id uuid references public.facilities(id) on delete set null;
+
+alter table if exists public.facilities
+  add column if not exists address text;
+
+alter table if exists public.facilities
+  add column if not exists phone text;
+
+alter table if exists public.facilities
+  add column if not exists email text;
+
+alter table if exists public.facilities
+  add column if not exists is_active boolean not null default true;
 
 insert into public.facilities (name, code)
 values ('Main Laboratory', 'MAIN-LAB')
@@ -479,17 +495,13 @@ as $$
     and exists (
       select 1
       from public.profiles p
-      left join public.facilities target_facility on target_facility.id = target_facility_id
       where p.id = auth.uid()
         and p.facility_id is not null
         and (
-          p.facility_id = target_facility_id
-          or (
-            p.role::text = 'SuperAdmin'
-            and target_facility.parent_facility_id = p.facility_id
-          )
-      )
-  );
+          p.role::text = 'SuperAdmin'
+          or p.facility_id = target_facility_id
+        )
+    );
 $$;
 
 create or replace function public.patient_in_current_facility(target_patient_id uuid)
@@ -505,6 +517,25 @@ as $$
     where p.id = target_patient_id
       and public.facility_access_allowed(p.facility_id)
   );
+$$;
+
+create or replace function public.prevent_non_super_admin_facility_reparent()
+returns trigger
+language plpgsql
+as $$
+begin
+  if auth.uid() is not null
+    and new.parent_facility_id is distinct from old.parent_facility_id
+    and not public.current_user_is_super_admin() then
+    raise exception 'Only the Super Admin can change a facility parent';
+  end if;
+
+  if new.parent_facility_id = new.id then
+    raise exception 'A facility cannot be its own parent';
+  end if;
+
+  return new;
+end;
 $$;
 
 create table if not exists public.tests (
@@ -2352,6 +2383,11 @@ create trigger set_facilities_updated_at
 before update on public.facilities
 for each row execute procedure public.set_updated_at();
 
+drop trigger if exists prevent_non_super_admin_facility_reparent on public.facilities;
+create trigger prevent_non_super_admin_facility_reparent
+before update on public.facilities
+for each row execute procedure public.prevent_non_super_admin_facility_reparent();
+
 drop trigger if exists set_profiles_updated_at on public.profiles;
 create trigger set_profiles_updated_at
 before update on public.profiles
@@ -2647,7 +2683,9 @@ using (public.facility_access_allowed(id));
 drop policy if exists "Admins can manage facilities" on public.facilities;
 drop policy if exists "Scoped admins can update facilities" on public.facilities;
 drop policy if exists "Super admins can create branch facilities" on public.facilities;
+drop policy if exists "Super admins can create facilities" on public.facilities;
 drop policy if exists "Super admins can delete child facilities" on public.facilities;
+drop policy if exists "Super admins can delete facilities" on public.facilities;
 create policy "Scoped admins can update facilities"
 on public.facilities
 for update
@@ -2659,22 +2697,31 @@ with check (
   public.current_user_is_admin()
   and public.facility_access_allowed(id)
   and (parent_facility_id is null or parent_facility_id <> id)
+  and (
+    not public.current_user_is_super_admin()
+    or parent_facility_id is null
+    or public.facility_access_allowed(parent_facility_id)
+  )
 );
 
-create policy "Super admins can create branch facilities"
+create policy "Super admins can create facilities"
 on public.facilities
 for insert
 with check (
   public.current_user_is_super_admin()
-  and parent_facility_id = public.current_user_facility_id()
+  and (
+    parent_facility_id is null
+    or public.facility_access_allowed(parent_facility_id)
+  )
 );
 
-create policy "Super admins can delete child facilities"
+create policy "Super admins can delete facilities"
 on public.facilities
 for delete
 using (
   public.current_user_is_super_admin()
-  and parent_facility_id = public.current_user_facility_id()
+  and public.facility_access_allowed(id)
+  and id <> public.current_user_facility_id()
 );
 
 drop policy if exists "Users can read own profile" on public.profiles;
