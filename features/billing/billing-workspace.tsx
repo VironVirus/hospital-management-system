@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Download,
   FileText,
+  Keyboard,
   Loader2,
   Printer,
   Search,
@@ -38,12 +39,14 @@ import {
   type BillingInvoiceRow,
   type InvoicePaymentStatus
 } from "@/features/billing/billing-utils";
+import { useFrontDeskMode } from "@/hooks/use-front-desk-mode";
 import { useToast } from "@/hooks/use-toast";
 import { printHtmlDocument } from "@/lib/print";
 import { canAccessBillingRole, canManageBillingRole } from "@/lib/guards";
 import { commitOnlineMutation, resolveOnlineQuery } from "@/lib/online-core";
 import { recordAuditLog, recordInvoicePayment } from "@/lib/online-mutations";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
+import { cn } from "@/lib/utils";
 import type { Json, TablesUpdate } from "@/types/supabase";
 
 type PaymentFormState = {
@@ -101,6 +104,7 @@ export function BillingWorkspace() {
   const queryClient = useQueryClient();
   const { facilityId, loading, role, user } = useAuth();
   const { toast } = useToast();
+  const { frontDeskMode, toggleFrontDeskMode } = useFrontDeskMode();
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
   const [statusFilter, setStatusFilter] = useState<"all" | InvoicePaymentStatus>("all");
@@ -407,8 +411,8 @@ export function BillingWorkspace() {
             Billing access is restricted
           </CardTitle>
           <CardDescription className="text-red-800">
-            Only administrators and accountants can access invoices, receipts, and revenue
-            operations.
+            Only Super Admin, Admin, and Accountant users can access invoices, receipts,
+            and revenue operations.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -431,9 +435,9 @@ export function BillingWorkspace() {
   const activeFacilityId = facilityId as string;
   return (
     <div className="space-y-6">
-      <section className="grid gap-4 md:grid-cols-4">
+      <section className={cn("grid gap-4 md:grid-cols-4", frontDeskMode && "gap-3")}>
         <Card className="border-blue-100">
-          <CardHeader className="pb-3">
+          <CardHeader className={cn("pb-3", frontDeskMode && "px-4 py-4")}>
             <CardDescription>Total billed</CardDescription>
             <CardTitle className="text-3xl text-slate-950">
               {formatCurrency(summary.billed)}
@@ -468,16 +472,18 @@ export function BillingWorkspace() {
         <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <CardTitle className="text-slate-950">Invoice and receipt workspace</CardTitle>
-            <CardDescription>
-              Automatic invoices are linked to test requests and priced from the current
-              test catalogue.
-            </CardDescription>
+            {!frontDeskMode ? (
+              <CardDescription>
+                Automatic invoices are linked to test requests and priced from the current
+                test catalogue.
+              </CardDescription>
+            ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative min-w-[240px]">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <Input
-                className="pl-9"
+                className={cn("pl-9", frontDeskMode && "h-11")}
                 onChange={(event) => setSearch(event.target.value)}
                 placeholder="Search invoice, order, patient, lab ID"
                 value={search}
@@ -509,6 +515,15 @@ export function BillingWorkspace() {
                 </Button>
               ))}
             </div>
+            <Button
+              type="button"
+              size="sm"
+              variant={frontDeskMode ? "default" : "outline"}
+              onClick={toggleFrontDeskMode}
+            >
+              <Keyboard className="h-4 w-4" />
+              {frontDeskMode ? "Front desk mode on" : "Front desk mode"}
+            </Button>
           </div>
         </CardHeader>
 
@@ -554,7 +569,7 @@ export function BillingWorkspace() {
                         active
                           ? "border-blue-200 bg-blue-50/70"
                           : "border-slate-200 bg-white hover:border-blue-100 hover:bg-slate-50"
-                      }`}
+                      } ${frontDeskMode ? "p-3" : ""}`}
                       onClick={() => setSelectedInvoiceId(invoice.id)}
                       type="button"
                     >
@@ -601,10 +616,12 @@ export function BillingWorkspace() {
                       <CardTitle className="text-slate-950">
                         {selectedInvoice.invoice_number}
                       </CardTitle>
-                      <CardDescription>
-                        {selectedInvoice.orders?.order_number || "-"} •{" "}
-                        {selectedInvoice.orders?.patients?.name || "Unknown patient"}
-                      </CardDescription>
+                      {!frontDeskMode ? (
+                        <CardDescription>
+                          {selectedInvoice.orders?.order_number || "-"} •{" "}
+                          {selectedInvoice.orders?.patients?.name || "Unknown patient"}
+                        </CardDescription>
+                      ) : null}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <Button

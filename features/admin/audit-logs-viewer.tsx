@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { isAdminRole } from "@/lib/guards";
+import { canAccessAdministrationRole } from "@/lib/guards";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type { Tables } from "@/types/supabase";
 
@@ -83,10 +83,12 @@ export function AuditLogsViewer() {
   const [dateFilter, setDateFilter] = useState<DateFilter>("7d");
   const [visibleCount, setVisibleCount] = useState(40);
 
+  const canAccessAdministration = canAccessAdministrationRole(role);
+
   const query = useQuery({
     queryKey: ["admin-audit-logs"],
     queryFn: fetchAuditLogs,
-    enabled: isAdminRole(role) && Boolean(facilityId)
+    enabled: canAccessAdministration && Boolean(facilityId)
   });
 
   useEffect(() => {
@@ -148,7 +150,7 @@ export function AuditLogsViewer() {
     );
   }
 
-  if (!isAdminRole(role)) {
+  if (!canAccessAdministration) {
     return (
       <Card className="border-red-100 bg-red-50/70">
         <CardHeader>
@@ -157,7 +159,7 @@ export function AuditLogsViewer() {
             Admin access required
           </CardTitle>
           <CardDescription className="text-red-800">
-            Only administrators can review the full system audit trail.
+            Only Admin and Super Admin users can review the full system audit trail.
           </CardDescription>
         </CardHeader>
       </Card>

@@ -1,14 +1,45 @@
+"use client";
+
 import Link from "next/link";
-import { Activity, TestTube2, Users } from "lucide-react";
+import { Activity, Building2, TestTube2, Users } from "lucide-react";
+import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { FacilityManagementPanel } from "@/features/admin/facility-management";
 import { LabBrandingSettingsPanel } from "@/features/admin/lab-branding-settings";
 import { UserManagementPanel } from "@/features/admin/user-management";
+import { canAccessAdministrationRole } from "@/lib/guards";
 
 export default function AdminPage() {
+  const { loading, role } = useAuth();
+  const canAccessAdministration = canAccessAdministrationRole(role);
+
+  if (loading) {
+    return (
+      <Card className="border-blue-100">
+        <CardContent className="flex items-center gap-3 p-6 text-sm text-slate-600">
+          Loading administration workspace...
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!canAccessAdministration) {
+    return (
+      <Card className="border-amber-200 bg-amber-50">
+        <CardHeader>
+          <CardTitle>Admin access required</CardTitle>
+          <CardDescription>
+            Only Admin and Super Admin users can access administration settings.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-4">
         <Card className="border-blue-100">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -55,11 +86,33 @@ export default function AdminPage() {
         <Card className="border-blue-100">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-blue-700" />
+              Facilities
+            </CardTitle>
+            <CardDescription>
+              Manage your branch record, or create child facilities when using Super Admin
+              multi-branch ownership.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4 text-sm text-slate-600">
+            <p>
+              Keep branch names and codes clean, and create new child facilities from the
+              dedicated facility workspace.
+            </p>
+            <Button asChild variant="outline">
+              <Link href="/admin/facilities">Open facility management</Link>
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="border-blue-100">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
               <Users className="h-5 w-5 text-blue-700" />
               User management
             </CardTitle>
             <CardDescription>
-              Role assignment and administrative settings can live here next.
+              Assign staff to the correct facility and keep branch access properly scoped.
             </CardDescription>
           </CardHeader>
           <CardContent className="text-sm text-slate-600">
@@ -67,6 +120,8 @@ export default function AdminPage() {
           </CardContent>
         </Card>
       </div>
+
+      <FacilityManagementPanel />
 
       <UserManagementPanel />
 

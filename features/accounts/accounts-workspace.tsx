@@ -514,8 +514,8 @@ export function AccountsWorkspace() {
             Accounts access is restricted
           </CardTitle>
           <CardDescription className="text-red-800">
-            Only administrators and accountants can access income, expenditure, and cashflow
-            analysis.
+            Only Super Admin, Admin, and Accountant users can access income, expenditure,
+            and cashflow analysis.
           </CardDescription>
         </CardHeader>
       </Card>

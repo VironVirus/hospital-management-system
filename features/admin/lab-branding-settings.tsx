@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { canAccessAdministrationRole } from "@/lib/guards";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 
 export type LabBrandingSettings = {
@@ -100,16 +101,17 @@ function normalizeFormValue(value: string) {
 }
 
 export function LabBrandingSettingsPanel() {
-  const { facilityId, user } = useAuth();
+  const { facilityId, loading, role, user } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [form, setForm] = useState<BrandingFormState>(emptyForm);
   const [saving, setSaving] = useState(false);
+  const canAccessAdministration = canAccessAdministrationRole(role);
 
   const brandingQuery = useQuery({
     queryKey: ["lab-branding", facilityId],
     queryFn: () => fetchLabBrandingSettings(facilityId as string),
-    enabled: Boolean(facilityId)
+    enabled: Boolean(facilityId) && canAccessAdministration
   });
 
   useEffect(() => {
@@ -131,6 +133,21 @@ export function LabBrandingSettingsPanel() {
       support_line: brandingQuery.data.support_line ?? ""
     });
   }, [brandingQuery.data]);
+
+  if (loading) {
+    return (
+      <Card className="border-blue-100 shadow-sm">
+        <CardContent className="flex items-center gap-3 p-6 text-sm text-slate-600">
+          <Loader2 className="h-4 w-4 animate-spin text-blue-700" />
+          Loading branding settings...
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!canAccessAdministration) {
+    return null;
+  }
 
   const updateField = (key: keyof BrandingFormState, value: string) => {
     setForm((current) => ({ ...current, [key]: value }));

@@ -3,6 +3,7 @@ import type { Database } from "@/types/supabase";
 export type AppRole = Database["public"]["Enums"]["app_role"];
 
 export const appRoles: AppRole[] = [
+  "SuperAdmin",
   "Admin",
   "Receptionist",
   "LabScientist",
@@ -17,6 +18,10 @@ export function formatAppRole(role: AppRole | null | undefined) {
 
   if (role === "LabScientist") {
     return "Lab Scientist";
+  }
+
+  if (role === "SuperAdmin") {
+    return "Super Admin";
   }
 
   if (role === "Verifier") {

@@ -477,7 +477,8 @@ function BranchDashboardPanel({ data }: { data: DashboardData | undefined }) {
       <CardHeader>
         <CardTitle>Branch / multi-facility dashboard</CardTitle>
         <CardDescription>
-          Compares visible branch activity. Admins assigned to a parent facility can view child branches.
+          Compares visible branch activity. Super Admin users assigned to a parent
+          facility can view child branches.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3 xl:grid-cols-3">

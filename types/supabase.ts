@@ -131,6 +131,7 @@ export type Database = {
           created_at: string
           id: string
           name: string
+          parent_facility_id: string | null
           updated_at: string
         }
         Insert: {
@@ -138,6 +139,7 @@ export type Database = {
           created_at?: string
           id?: string
           name: string
+          parent_facility_id?: string | null
           updated_at?: string
         }
         Update: {
@@ -145,9 +147,18 @@ export type Database = {
           created_at?: string
           id?: string
           name?: string
+          parent_facility_id?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "facilities_parent_facility_id_fkey"
+            columns: ["parent_facility_id"]
+            isOneToOne: false
+            referencedRelation: "facilities"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       inventory_items: {
         Row: {
@@ -820,6 +831,7 @@ export type Database = {
         Row: {
           category: string | null
           created_at: string
+          facility_id: string | null
           id: string
           is_active: boolean
           name: string
@@ -833,6 +845,7 @@ export type Database = {
         Insert: {
           category?: string | null
           created_at?: string
+          facility_id?: string | null
           id?: string
           is_active?: boolean
           name: string
@@ -846,6 +859,7 @@ export type Database = {
         Update: {
           category?: string | null
           created_at?: string
+          facility_id?: string | null
           id?: string
           is_active?: boolean
           name?: string
@@ -856,7 +870,15 @@ export type Database = {
           unit?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "tests_facility_id_fkey"
+            columns: ["facility_id"]
+            isOneToOne: false
+            referencedRelation: "facilities"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
@@ -1021,6 +1043,7 @@ export type Database = {
     }
     Enums: {
       app_role:
+        | "SuperAdmin"
         | "Admin"
         | "Receptionist"
         | "LabScientist"
@@ -1162,6 +1185,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: [
+        "SuperAdmin",
         "Admin",
         "Receptionist",
         "LabScientist",

@@ -4,6 +4,7 @@ create extension if not exists "pg_trgm";
 do $$
 begin
   create type public.app_role as enum (
+    'SuperAdmin',
     'Admin',
     'Receptionist',
     'LabScientist',
@@ -14,6 +15,8 @@ exception
   when duplicate_object then null;
 end
 $$;
+
+alter type public.app_role add value if not exists 'SuperAdmin';
 
 do $$
 begin
@@ -327,11 +330,11 @@ as $$
     select 1
     from public.profiles p
     where p.id = auth.uid()
-      and p.role = 'Admin'
+      and p.role::text in ('SuperAdmin', 'Admin')
   );
 $$;
 
-create or replace function public.current_user_has_role(allowed_roles public.app_role[])
+create or replace function public.current_user_is_super_admin()
 returns boolean
 language sql
 stable
@@ -342,7 +345,22 @@ as $$
     select 1
     from public.profiles p
     where p.id = auth.uid()
-      and p.role = any (allowed_roles)
+      and p.role::text = 'SuperAdmin'
+  );
+$$;
+
+create or replace function public.current_user_has_role_text(allowed_roles text[])
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.role::text = any (allowed_roles)
   );
 $$;
 
@@ -353,7 +371,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select public.current_user_has_role(array['Admin', 'Receptionist']::public.app_role[]);
+  select public.current_user_has_role_text(array['SuperAdmin', 'Admin', 'Receptionist']);
 $$;
 
 create or replace function public.current_user_can_create_orders()
@@ -363,7 +381,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select public.current_user_has_role(array['Admin', 'Receptionist']::public.app_role[]);
+  select public.current_user_has_role_text(array['SuperAdmin', 'Admin', 'Receptionist']);
 $$;
 
 create or replace function public.current_user_can_move_samples()
@@ -373,7 +391,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select public.current_user_has_role(array['Admin', 'Receptionist', 'LabScientist', 'Verifier']::public.app_role[]);
+  select public.current_user_has_role_text(array['SuperAdmin', 'Admin', 'Receptionist', 'LabScientist', 'Verifier']);
 $$;
 
 create or replace function public.current_user_can_enter_results()
@@ -383,7 +401,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select public.current_user_has_role(array['Admin', 'LabScientist']::public.app_role[]);
+  select public.current_user_has_role_text(array['SuperAdmin', 'Admin', 'LabScientist']);
 $$;
 
 create or replace function public.current_user_can_update_results()
@@ -393,7 +411,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select public.current_user_has_role(array['Admin', 'LabScientist', 'Verifier']::public.app_role[]);
+  select public.current_user_has_role_text(array['SuperAdmin', 'Admin', 'LabScientist', 'Verifier']);
 $$;
 
 create or replace function public.current_user_can_verify_results()
@@ -403,7 +421,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select public.current_user_has_role(array['Admin', 'Verifier']::public.app_role[]);
+  select public.current_user_has_role_text(array['SuperAdmin', 'Admin', 'Verifier']);
 $$;
 
 create or replace function public.current_user_can_manage_branding()
@@ -413,7 +431,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select public.current_user_has_role(array['Admin']::public.app_role[]);
+  select public.current_user_has_role_text(array['SuperAdmin', 'Admin']);
 $$;
 
 create or replace function public.current_user_can_access_qc()
@@ -423,7 +441,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select public.current_user_has_role(array['Admin', 'LabScientist', 'Verifier']::public.app_role[]);
+  select public.current_user_has_role_text(array['SuperAdmin', 'Admin', 'LabScientist', 'Verifier']);
 $$;
 
 create or replace function public.current_user_can_manage_qc()
@@ -433,7 +451,7 @@ stable
 security definer
 set search_path = public
 as $$
-  select public.current_user_has_role(array['Admin', 'LabScientist']::public.app_role[]);
+  select public.current_user_has_role_text(array['SuperAdmin', 'Admin', 'LabScientist']);
 $$;
 
 create or replace function public.current_user_facility_id()
@@ -461,24 +479,17 @@ as $$
     and exists (
       select 1
       from public.profiles p
-      left join public.facilities user_facility on user_facility.id = p.facility_id
       left join public.facilities target_facility on target_facility.id = target_facility_id
       where p.id = auth.uid()
+        and p.facility_id is not null
         and (
           p.facility_id = target_facility_id
           or (
-            p.role = 'Admin'
-            and p.facility_id is not null
-            and (
-              target_facility.parent_facility_id = p.facility_id
-              or (
-                user_facility.parent_facility_id is not null
-                and target_facility.parent_facility_id = user_facility.parent_facility_id
-              )
-            )
+            p.role::text = 'SuperAdmin'
+            and target_facility.parent_facility_id = p.facility_id
           )
-        )
-    );
+      )
+  );
 $$;
 
 create or replace function public.patient_in_current_facility(target_patient_id uuid)
@@ -499,7 +510,8 @@ $$;
 create table if not exists public.tests (
   id uuid primary key default gen_random_uuid(),
   test_code text not null unique default public.generate_test_code(),
-  name text not null unique,
+  facility_id uuid references public.facilities(id) on delete restrict,
+  name text not null,
   category text,
   price numeric(12,2) not null default 0,
   result_type text not null check (result_type in ('numeric', 'text', 'boolean', 'panel')),
@@ -512,6 +524,9 @@ create table if not exists public.tests (
 
 alter table if exists public.tests
   add column if not exists test_code text;
+
+alter table if exists public.tests
+  add column if not exists facility_id uuid references public.facilities(id) on delete restrict;
 
 update public.tests
 set test_code = public.generate_test_code_for_category(category)
@@ -526,8 +541,26 @@ alter table if exists public.tests
 alter table if exists public.tests
   alter column test_code set not null;
 
-create unique index if not exists tests_test_code_key
-  on public.tests (test_code);
+alter table if exists public.tests
+  drop constraint if exists tests_name_key;
+
+alter table if exists public.tests
+  drop constraint if exists tests_test_code_key;
+
+create unique index if not exists tests_scope_test_code_key
+  on public.tests (
+    coalesce(facility_id, '00000000-0000-0000-0000-000000000000'::uuid),
+    upper(test_code)
+  );
+
+create unique index if not exists tests_scope_name_key
+  on public.tests (
+    coalesce(facility_id, '00000000-0000-0000-0000-000000000000'::uuid),
+    lower(name)
+  );
+
+create index if not exists tests_facility_active_name_idx
+  on public.tests (facility_id, is_active, name);
 
 create or replace function public.sync_test_code_defaults()
 returns trigger
@@ -823,11 +856,44 @@ create table if not exists public.test_bundles (
   description text,
   test_ids uuid[] not null default '{}'::uuid[],
   is_active boolean not null default true,
+  usage_count bigint not null default 0,
+  last_used_at timestamptz,
   created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (facility_id, name)
 );
+
+alter table public.test_bundles
+  add column if not exists usage_count bigint not null default 0;
+
+alter table public.test_bundles
+  add column if not exists last_used_at timestamptz;
+
+drop function if exists public.bump_test_bundle_usage(uuid);
+create or replace function public.bump_test_bundle_usage(target_bundle_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.current_user_can_create_orders() then
+    raise exception 'Only order creators can use facility bundles';
+  end if;
+
+  update public.test_bundles
+  set
+    usage_count = coalesce(usage_count, 0) + 1,
+    last_used_at = now()
+  where id = target_bundle_id
+    and facility_id = public.current_user_facility_id();
+
+  if not found then
+    raise exception 'Bundle not found for this facility';
+  end if;
+end;
+$$;
 
 create table if not exists public.lab_branding_settings (
   facility_id uuid primary key references public.facilities(id) on delete cascade,
@@ -953,6 +1019,26 @@ as $$
   );
 $$;
 
+create or replace function public.test_available_for_order(
+  target_test_id uuid,
+  target_order_id uuid
+)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.tests t
+    join public.orders o on o.id = target_order_id
+    where t.id = target_test_id
+      and public.facility_access_allowed(o.facility_id)
+      and (t.facility_id is null or t.facility_id = o.facility_id)
+  );
+$$;
+
 create or replace function public.order_test_in_current_facility(target_order_test_id uuid)
 returns boolean
 language sql
@@ -1014,7 +1100,7 @@ as $$
     select 1
     from public.profiles p
     where p.id = auth.uid()
-      and p.role in ('Admin', 'Accountant')
+      and p.role::text in ('SuperAdmin', 'Admin', 'Accountant')
   );
 $$;
 
@@ -1075,7 +1161,7 @@ as $$
     select 1
     from public.profiles p
     where p.id = auth.uid()
-      and p.role in ('Admin', 'LabScientist', 'Accountant')
+      and p.role::text in ('SuperAdmin', 'Admin', 'LabScientist', 'Accountant')
   );
 $$;
 
@@ -1300,8 +1386,26 @@ begin
       new.role is distinct from old.role
       or new.facility_id is distinct from old.facility_id
     )
-    and not public.current_user_is_admin() then
-    raise exception 'Only administrators can change user roles or facility assignments';
+  then
+    if not public.current_user_is_admin() then
+      raise exception 'Only Admin or Super Admin users can change user roles or facility assignments';
+    end if;
+
+    if (
+      old.role::text = 'SuperAdmin'
+      or new.role::text = 'SuperAdmin'
+    )
+    and not public.current_user_is_super_admin() then
+      raise exception 'Only Super Admin users can assign or change the Super Admin role';
+    end if;
+
+    if (
+      old.role::text = 'Admin'
+      or new.role::text = 'Admin'
+    )
+    and not public.current_user_is_super_admin() then
+      raise exception 'Only the Super Admin can assign or change Admin accounts';
+    end if;
   end if;
 
   return new;
@@ -2032,6 +2136,7 @@ begin
   from public.tests t
   where t.id = any (selected_test_ids)
     and t.is_active = true
+    and (t.facility_id is null or t.facility_id = created_order.facility_id)
   on conflict on constraint order_tests_order_id_test_id_key do nothing;
 
   get diagnostics inserted_count = row_count;
@@ -2442,6 +2547,9 @@ create index if not exists audit_logs_entity_idx
 create index if not exists test_bundles_facility_name_idx
   on public.test_bundles (facility_id, is_active, name);
 
+create index if not exists test_bundles_facility_usage_idx
+  on public.test_bundles (facility_id, is_active, usage_count desc, last_used_at desc);
+
 create index if not exists lab_branding_settings_facility_idx
   on public.lab_branding_settings (facility_id);
 
@@ -2530,17 +2638,44 @@ alter table public.calibration_logs enable row level security;
 alter table public.maintenance_logs enable row level security;
 
 drop policy if exists "Authenticated can read facilities" on public.facilities;
-create policy "Authenticated can read facilities"
+drop policy if exists "Users can read visible facilities" on public.facilities;
+create policy "Users can read visible facilities"
 on public.facilities
 for select
-using (auth.role() = 'authenticated');
+using (public.facility_access_allowed(id));
 
 drop policy if exists "Admins can manage facilities" on public.facilities;
-create policy "Admins can manage facilities"
+drop policy if exists "Scoped admins can update facilities" on public.facilities;
+drop policy if exists "Super admins can create branch facilities" on public.facilities;
+drop policy if exists "Super admins can delete child facilities" on public.facilities;
+create policy "Scoped admins can update facilities"
 on public.facilities
-for all
-using (public.current_user_is_admin())
-with check (public.current_user_is_admin());
+for update
+using (
+  public.current_user_is_admin()
+  and public.facility_access_allowed(id)
+)
+with check (
+  public.current_user_is_admin()
+  and public.facility_access_allowed(id)
+  and (parent_facility_id is null or parent_facility_id <> id)
+);
+
+create policy "Super admins can create branch facilities"
+on public.facilities
+for insert
+with check (
+  public.current_user_is_super_admin()
+  and parent_facility_id = public.current_user_facility_id()
+);
+
+create policy "Super admins can delete child facilities"
+on public.facilities
+for delete
+using (
+  public.current_user_is_super_admin()
+  and parent_facility_id = public.current_user_facility_id()
+);
 
 drop policy if exists "Users can read own profile" on public.profiles;
 create policy "Users can read own profile"
@@ -2562,23 +2697,42 @@ for insert
 with check (auth.uid() = id);
 
 drop policy if exists "Admins can read all profiles" on public.profiles;
-create policy "Admins can read all profiles"
+drop policy if exists "Scoped admins can read facility profiles" on public.profiles;
+create policy "Scoped admins can read facility profiles"
 on public.profiles
 for select
-using (public.current_user_is_admin());
+using (
+  public.current_user_is_admin()
+  and public.facility_access_allowed(facility_id)
+  and (role::text <> 'SuperAdmin' or public.current_user_is_super_admin())
+);
 
 drop policy if exists "Admins can update all profiles" on public.profiles;
-create policy "Admins can update all profiles"
+drop policy if exists "Scoped admins can update facility profiles" on public.profiles;
+create policy "Scoped admins can update facility profiles"
 on public.profiles
 for update
-using (public.current_user_is_admin())
-with check (public.current_user_is_admin());
+using (
+  public.current_user_is_admin()
+  and public.facility_access_allowed(facility_id)
+  and (role::text <> 'SuperAdmin' or public.current_user_is_super_admin())
+)
+with check (
+  public.current_user_is_admin()
+  and public.facility_access_allowed(facility_id)
+  and (role::text <> 'SuperAdmin' or public.current_user_is_super_admin())
+);
 
 drop policy if exists "Admins can insert profiles" on public.profiles;
-create policy "Admins can insert profiles"
+drop policy if exists "Scoped admins can insert facility profiles" on public.profiles;
+create policy "Scoped admins can insert facility profiles"
 on public.profiles
 for insert
-with check (public.current_user_is_admin());
+with check (
+  public.current_user_is_admin()
+  and public.facility_access_allowed(facility_id)
+  and (role::text <> 'SuperAdmin' or public.current_user_is_super_admin())
+);
 
 drop policy if exists "Facility users can read patients" on public.patients;
 create policy "Facility users can read patients"
@@ -2811,6 +2965,7 @@ on public.order_tests
 for insert
 with check (
   public.order_record_in_current_facility(order_id)
+  and public.test_available_for_order(test_id, order_id)
   and public.current_user_can_create_orders()
 );
 
@@ -2820,10 +2975,12 @@ on public.order_tests
 for update
 using (
   public.order_record_in_current_facility(order_id)
+  and public.test_available_for_order(test_id, order_id)
   and public.current_user_can_move_samples()
 )
 with check (
   public.order_record_in_current_facility(order_id)
+  and public.test_available_for_order(test_id, order_id)
   and public.current_user_can_move_samples()
 );
 
@@ -3065,11 +3222,34 @@ drop policy if exists "Authenticated can read tests" on public.tests;
 create policy "Authenticated can read tests"
 on public.tests
 for select
-using (auth.role() = 'authenticated');
+using (
+  auth.role() = 'authenticated'
+  and (facility_id is null or public.facility_access_allowed(facility_id))
+);
 
 drop policy if exists "Admins can manage tests" on public.tests;
-create policy "Admins can manage tests"
+drop policy if exists "Branch admins can manage facility tests" on public.tests;
+create policy "Branch admins can manage facility tests"
 on public.tests
 for all
-using (public.current_user_is_admin())
-with check (public.current_user_is_admin());
+using (
+  public.current_user_has_role_text(array['Admin'])
+  and facility_id = public.current_user_facility_id()
+)
+with check (
+  public.current_user_has_role_text(array['Admin'])
+  and facility_id = public.current_user_facility_id()
+);
+
+drop policy if exists "Super Admin can manage visible tests" on public.tests;
+create policy "Super Admin can manage visible tests"
+on public.tests
+for all
+using (
+  public.current_user_is_super_admin()
+  and (facility_id is null or public.facility_access_allowed(facility_id))
+)
+with check (
+  public.current_user_is_super_admin()
+  and (facility_id is null or public.facility_access_allowed(facility_id))
+);

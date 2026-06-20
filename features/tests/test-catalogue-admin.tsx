@@ -17,10 +17,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { isAdminRole } from "@/lib/guards";
+import { canAccessAdministrationRole, isSuperAdminRole } from "@/lib/guards";
 import { commitOnlineMutation, generateId, resolveOnlineQuery } from "@/lib/online-core";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
-import type { Tables } from "@/types/supabase";
+import type { Tables, TablesInsert, TablesUpdate } from "@/types/supabase";
 import {
   resultTypes,
   testFormSchema,
@@ -41,9 +41,15 @@ import {
 import { useToast } from "@/hooks/use-toast";
 
 type TestRow = Tables<"tests">;
+type FacilityOption = Pick<Tables<"facilities">, "id" | "name" | "code">;
+type CatalogueTestRow = TestRow & {
+  facilities: FacilityOption | null;
+};
 type FilterStatus = "all" | "active" | "inactive";
 type FilterResultType = "all" | TestRow["result_type"];
 type FilterCategory = "all" | "uncategorized" | TestCategory;
+type FilterScope = "all" | "shared" | "facility";
+type FormScope = "shared" | "facility";
 type FormErrors = Partial<Record<string, string>>;
 
 const initialFormState: TestFormValues = {
@@ -209,15 +215,17 @@ async function fetchTests({
   query,
   category,
   status,
-  resultType
+  resultType,
+  scope
 }: {
   query: string;
   category: FilterCategory;
   status: FilterStatus;
   resultType: FilterResultType;
+  scope: FilterScope;
 }) {
   const supabase = getSupabaseBrowserClient();
-  return resolveOnlineQuery<TestRow[]>({
+  return resolveOnlineQuery<CatalogueTestRow[]>({
     online: async () => {
       if (!supabase) {
         throw new Error("Supabase is not configured.");
@@ -225,7 +233,7 @@ async function fetchTests({
 
       let request = supabase
         .from("tests")
-        .select("*")
+        .select("*, facilities(id, name, code)")
         .order("name", { ascending: true });
 
       if (query.trim()) {
@@ -250,32 +258,54 @@ async function fetchTests({
         throw new Error(error.message);
       }
 
-      const rows = (data ?? []) as TestRow[];
-      return rows.filter((row) => {
-        if (category === "all") {
-          return true;
-        }
+      const rows = (data ?? []) as CatalogueTestRow[];
+      return rows
+        .filter((row) => {
+          if (scope === "shared" && row.facility_id !== null) {
+            return false;
+          }
 
-        const normalizedCategory = normalizeTestCategory(row.category);
-        if (category === "uncategorized") {
-          return normalizedCategory === null;
-        }
+          if (scope === "facility" && row.facility_id === null) {
+            return false;
+          }
 
-        return normalizedCategory === category;
-      });
+          if (category === "all") {
+            return true;
+          }
+
+          const normalizedCategory = normalizeTestCategory(row.category);
+          if (category === "uncategorized") {
+            return normalizedCategory === null;
+          }
+
+          return normalizedCategory === category;
+        })
+        .sort((left, right) => {
+          const leftRank = left.facility_id ? 1 : 0;
+          const rightRank = right.facility_id ? 1 : 0;
+
+          if (leftRank !== rightRank) {
+            return leftRank - rightRank;
+          }
+
+          return left.name.localeCompare(right.name);
+        });
     }
   });
 }
 
 export function TestCatalogueAdmin() {
-  const { role, loading } = useAuth();
+  const { role, loading, facilityId } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<FilterStatus>("all");
   const [resultType, setResultType] = useState<FilterResultType>("all");
   const [categoryFilter, setCategoryFilter] = useState<FilterCategory>("all");
+  const [scopeFilter, setScopeFilter] = useState<FilterScope>("all");
   const [formState, setFormState] = useState<TestFormValues>(initialFormState);
+  const [formScope, setFormScope] = useState<FormScope>("shared");
+  const [targetFacilityId, setTargetFacilityId] = useState<string>("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -283,10 +313,42 @@ export function TestCatalogueAdmin() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
+  const canAccessAdministration = canAccessAdministrationRole(role);
+  const isSuperAdmin = isSuperAdminRole(role);
+
+  const facilitiesQuery = useQuery({
+    queryKey: ["admin", "facilities", "catalogue-visible"],
+    queryFn: async () => {
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase) {
+        throw new Error("Supabase is not configured.");
+      }
+
+      const { data, error } = await supabase
+        .from("facilities")
+        .select("id, name, code")
+        .order("name", { ascending: true });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      return (data ?? []) as FacilityOption[];
+    },
+    enabled: canAccessAdministration
+  });
+
   const testsQuery = useQuery({
-    queryKey: ["tests", query, categoryFilter, status, resultType],
-    queryFn: () => fetchTests({ category: categoryFilter, query, status, resultType }),
-    enabled: isAdminRole(role),
+    queryKey: ["tests", facilityId, query, categoryFilter, scopeFilter, status, resultType],
+    queryFn: () =>
+      fetchTests({
+        category: categoryFilter,
+        query,
+        resultType,
+        scope: scopeFilter,
+        status
+      }),
+    enabled: canAccessAdministration,
     staleTime: 60_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false
@@ -301,6 +363,16 @@ export function TestCatalogueAdmin() {
     };
   }, [testsQuery.data]);
 
+  const visibleFacilities = useMemo(
+    () => facilitiesQuery.data ?? [],
+    [facilitiesQuery.data]
+  );
+
+  const currentFacility = useMemo(
+    () => visibleFacilities.find((facility) => facility.id === facilityId) ?? null,
+    [facilityId, visibleFacilities]
+  );
+
   useEffect(() => {
     if (!submitSuccess) {
       return;
@@ -309,6 +381,18 @@ export function TestCatalogueAdmin() {
     const timer = window.setTimeout(() => setSubmitSuccess(null), 2500);
     return () => window.clearTimeout(timer);
   }, [submitSuccess]);
+
+  useEffect(() => {
+    const defaultFacilityId = facilityId ?? visibleFacilities[0]?.id ?? "";
+    if (!defaultFacilityId) {
+      return;
+    }
+
+    setTargetFacilityId((current) => current || defaultFacilityId);
+    if (!isSuperAdmin) {
+      setFormScope("facility");
+    }
+  }, [facilityId, isSuperAdmin, visibleFacilities]);
 
   if (loading) {
     return (
@@ -321,7 +405,7 @@ export function TestCatalogueAdmin() {
     );
   }
 
-  if (!isAdminRole(role)) {
+  if (!canAccessAdministration) {
     return (
       <Card className="border-red-100 bg-red-50/60">
         <CardHeader>
@@ -330,7 +414,7 @@ export function TestCatalogueAdmin() {
             Admin access required
           </CardTitle>
           <CardDescription className="text-red-800">
-            Only administrators can manage the test catalogue.
+            Only Admin and Super Admin users can manage the test catalogue.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -402,15 +486,19 @@ export function TestCatalogueAdmin() {
   const resetForm = () => {
     setEditingId(null);
     setFormState(initialFormState);
+    setFormScope(isSuperAdmin ? "shared" : "facility");
+    setTargetFacilityId(facilityId ?? visibleFacilities[0]?.id ?? "");
     setErrors({});
     setSubmitError(null);
   };
 
-  const loadForEdit = (test: TestRow) => {
+  const loadForEdit = (test: CatalogueTestRow) => {
     setEditingId(test.id);
     setErrors({});
     setSubmitError(null);
     setSubmitSuccess(null);
+    setFormScope(test.facility_id ? "facility" : "shared");
+    setTargetFacilityId(test.facility_id ?? facilityId ?? visibleFacilities[0]?.id ?? "");
     setFormState({
       id: test.id,
       test_code: test.test_code,
@@ -468,9 +556,22 @@ export function TestCatalogueAdmin() {
     const currentTest = editingId
       ? tests.find((test) => test.id === editingId) ?? null
       : null;
-    const payload = {
+    const resolvedFacilityId =
+      formScope === "shared" ? null : targetFacilityId || facilityId || null;
+
+    if (formScope === "facility" && !resolvedFacilityId) {
+      setSubmitError("Choose the facility that should own this test before saving.");
+      return;
+    }
+
+    const scopedTests = tests.filter(
+      (test) => (test.facility_id ?? null) === resolvedFacilityId
+    );
+
+    const insertPayload = {
       category: parsed.data.category,
       created_at: currentTest?.created_at ?? now,
+      facility_id: resolvedFacilityId,
       id: currentTest?.id ?? generateId(),
       is_active: parsed.data.is_active,
       name: parsed.data.name,
@@ -481,31 +582,32 @@ export function TestCatalogueAdmin() {
         parsed.data.test_code,
         parsed.data.category,
         currentTest,
-        tests
+        scopedTests
       ),
       unit: parsed.data.unit?.trim() ? parsed.data.unit.trim() : null,
       updated_at: now
-    } satisfies TestRow;
+    } satisfies TablesInsert<"tests">;
+
+    const updatePayload = {
+      category: insertPayload.category,
+      facility_id: insertPayload.facility_id,
+      is_active: insertPayload.is_active,
+      name: insertPayload.name,
+      price: insertPayload.price,
+      reference_range: insertPayload.reference_range,
+      result_type: insertPayload.result_type,
+      test_code: insertPayload.test_code,
+      unit: insertPayload.unit,
+      updated_at: insertPayload.updated_at
+    } satisfies TablesUpdate<"tests">;
 
     try {
       setSaving(true);
       await commitOnlineMutation({
         action: editingId ? "update" : "insert",
         entity: "tests",
-        payload: editingId
-          ? {
-              category: payload.category,
-              is_active: payload.is_active,
-              name: payload.name,
-              price: payload.price,
-              reference_range: payload.reference_range,
-              result_type: payload.result_type,
-              test_code: payload.test_code,
-              unit: payload.unit,
-              updated_at: payload.updated_at
-            }
-          : payload,
-        recordId: payload.id
+        payload: editingId ? updatePayload : insertPayload,
+        recordId: insertPayload.id
       });
 
       await Promise.all([
@@ -519,7 +621,7 @@ export function TestCatalogueAdmin() {
       setSubmitSuccess(editingId ? "Test updated successfully." : "Test added successfully.");
       toast({
         title: editingId ? "Test updated" : "Test created",
-        description: `${payload.name} was saved successfully.`,
+        description: `${insertPayload.name} was saved successfully.`,
         variant: "success"
       });
       resetForm();
@@ -538,6 +640,20 @@ export function TestCatalogueAdmin() {
   };
 
   const handleDelete = async (id: string) => {
+    const targetTest = testsQuery.data?.find((test) => test.id === id) ?? null;
+    const canManageTarget =
+      Boolean(isSuperAdmin) ||
+      Boolean(targetTest?.facility_id && targetTest.facility_id === facilityId);
+
+    if (!canManageTarget) {
+      toast({
+        title: "Super Admin required",
+        description: "Shared tests can only be edited or deleted by the Super Admin.",
+        variant: "error"
+      });
+      return;
+    }
+
     try {
       setDeletingId(id);
       setSubmitError(null);
@@ -638,16 +754,16 @@ export function TestCatalogueAdmin() {
                   the screen.
                 </CardDescription>
               </div>
-              <Badge variant="outline">Admin only</Badge>
+              <Badge variant="outline">Admin / Super Admin</Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_220px_220px_220px]">
+            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_220px_180px_180px_180px]">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
                 <Input
                   className="pl-9"
-                  placeholder="Search test name"
+                  placeholder="Search test name or ID"
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                 />
@@ -667,6 +783,16 @@ export function TestCatalogueAdmin() {
                   </option>
                 ))}
                 <option value="uncategorized">Uncategorized</option>
+              </select>
+
+              <select
+                className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
+                value={scopeFilter}
+                onChange={(event) => setScopeFilter(event.target.value as FilterScope)}
+              >
+                <option value="all">Shared + facility tests</option>
+                <option value="shared">Shared tests only</option>
+                <option value="facility">Facility tests only</option>
               </select>
 
               <select
@@ -719,6 +845,7 @@ export function TestCatalogueAdmin() {
                     <tr className="text-left text-slate-500">
                       <th className="px-4 py-3 font-medium">Test ID</th>
                       <th className="px-4 py-3 font-medium">Name</th>
+                      <th className="px-4 py-3 font-medium">Scope</th>
                       <th className="px-4 py-3 font-medium">Type</th>
                       <th className="px-4 py-3 font-medium">Reference range</th>
                       <th className="px-4 py-3 font-medium">Price</th>
@@ -730,7 +857,7 @@ export function TestCatalogueAdmin() {
                     {tests.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={7}
+                          colSpan={8}
                           className="px-4 py-8 text-center text-slate-500"
                         >
                           No tests matched the current search or filters.
@@ -748,6 +875,24 @@ export function TestCatalogueAdmin() {
                           <div className="text-xs text-slate-500">
                             {getTestCategoryLabel(test.category) + " • " + (test.unit || "No unit")}
                           </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          {test.facility_id ? (
+                            <div className="space-y-1">
+                              <Badge variant="outline">Facility-specific</Badge>
+                              <p className="text-xs text-slate-500">
+                                {test.facilities?.name || "Scoped branch"}{" "}
+                                {test.facilities?.code ? `(${test.facilities.code})` : ""}
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="space-y-1">
+                              <Badge>Shared</Badge>
+                              <p className="text-xs text-slate-500">
+                                Available across every allowed branch
+                              </p>
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3 capitalize text-slate-700">
                           {test.result_type}
@@ -769,6 +914,7 @@ export function TestCatalogueAdmin() {
                               type="button"
                               variant="outline"
                               size="sm"
+                              disabled={!isSuperAdmin && test.facility_id !== facilityId}
                               onClick={() => loadForEdit(test)}
                             >
                               <Pencil className="h-4 w-4" />
@@ -778,7 +924,10 @@ export function TestCatalogueAdmin() {
                               type="button"
                               variant="outline"
                               size="sm"
-                              disabled={deletingId === test.id}
+                              disabled={
+                                deletingId === test.id ||
+                                (!isSuperAdmin && test.facility_id !== facilityId)
+                              }
                               onClick={() => handleDelete(test.id)}
                             >
                               {deletingId === test.id ? (
@@ -806,11 +955,63 @@ export function TestCatalogueAdmin() {
               {editingId ? "Edit test" : "Add test"}
             </CardTitle>
             <CardDescription>
-              Define pricing, result type, unit, and reference range rules.
+              Define pricing, result type, branch scope, unit, and reference range rules.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form className="space-y-4" onSubmit={handleSubmit}>
+              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+                <p className="text-sm font-semibold text-slate-950">Availability scope</p>
+                <p className="mt-1 text-xs leading-5 text-slate-600">
+                  Shared tests are available everywhere. Facility-specific tests stay inside one
+                  branch only.
+                </p>
+
+                {isSuperAdmin ? (
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="test-scope">Scope</Label>
+                      <select
+                        id="test-scope"
+                        className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                        value={formScope}
+                        onChange={(event) => setFormScope(event.target.value as FormScope)}
+                      >
+                        <option value="shared">Shared across branches</option>
+                        <option value="facility">Facility-specific</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="test-facility">Facility</Label>
+                      <select
+                        id="test-facility"
+                        className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                        value={targetFacilityId}
+                        onChange={(event) => setTargetFacilityId(event.target.value)}
+                        disabled={formScope !== "facility"}
+                      >
+                        <option value="">Select facility</option>
+                        {visibleFacilities.map((facility) => (
+                          <option key={facility.id} value={facility.id}>
+                            {facility.name} ({facility.code})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-xl border border-blue-100 bg-white px-3 py-3 text-sm text-slate-700">
+                    New catalogue items created here will belong to{" "}
+                    <strong>
+                      {currentFacility?.name || "your assigned facility"}
+                      {currentFacility?.code ? ` (${currentFacility.code})` : ""}
+                    </strong>
+                    .
+                  </div>
+                )}
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="test-code">Test ID</Label>
                 <Input

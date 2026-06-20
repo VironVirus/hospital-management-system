@@ -45,73 +45,79 @@ const navigation: NavigationItem[] = [
     href: "/patients",
     label: "Patients",
     icon: Building2,
-    roles: ["Admin", "Receptionist", "LabScientist"] as AppRole[]
+    roles: ["SuperAdmin", "Admin", "Receptionist", "LabScientist"] as AppRole[]
   },
   {
     href: "/inventory",
     label: "Inventory",
     icon: Boxes,
-    roles: ["Admin", "LabScientist", "Accountant"] as AppRole[]
+    roles: ["SuperAdmin", "Admin", "LabScientist", "Accountant"] as AppRole[]
   },
   {
     href: "/orders",
     label: "Tests",
     icon: ClipboardPlus,
-    roles: ["Admin", "Receptionist", "LabScientist"] as AppRole[]
+    roles: ["SuperAdmin", "Admin", "Receptionist", "LabScientist"] as AppRole[]
   },
   {
     href: "/orders/reception",
     label: "Sample Reception",
     icon: ScanLine,
-    roles: ["Admin", "Receptionist", "LabScientist", "Verifier"] as AppRole[]
+    roles: ["SuperAdmin", "Admin", "Receptionist", "LabScientist", "Verifier"] as AppRole[]
   },
   {
     href: "/results",
     label: "Results",
     icon: Stethoscope,
-    roles: ["Admin", "LabScientist", "Verifier"] as AppRole[]
+    roles: ["SuperAdmin", "Admin", "LabScientist", "Verifier"] as AppRole[]
   },
   {
     href: "/qc",
     label: "Quality Control",
     icon: FlaskConical,
-    roles: ["Admin", "LabScientist", "Verifier"] as AppRole[]
+    roles: ["SuperAdmin", "Admin", "LabScientist", "Verifier"] as AppRole[]
   },
   {
     href: "/reports",
     label: "Reports",
     icon: FileText,
-    roles: ["Admin", "Receptionist", "Verifier"] as AppRole[]
+    roles: ["SuperAdmin", "Admin", "Receptionist", "Verifier"] as AppRole[]
   },
   {
     href: "/accounts",
     label: "Accounts",
     icon: Wallet,
-    roles: ["Admin", "Accountant"] as AppRole[]
+    roles: ["SuperAdmin", "Admin", "Accountant"] as AppRole[]
   },
   {
     href: "/billing",
     label: "Billing",
     icon: Wallet,
-    roles: ["Admin", "Accountant"] as AppRole[]
+    roles: ["SuperAdmin", "Admin", "Accountant"] as AppRole[]
   },
   {
     href: "/admin",
     label: "Administration",
     icon: ShieldCheck,
-    roles: ["Admin"] as AppRole[]
+    roles: ["SuperAdmin", "Admin"] as AppRole[]
+  },
+  {
+    href: "/admin/facilities",
+    label: "Facilities",
+    icon: Building2,
+    roles: ["SuperAdmin", "Admin"] as AppRole[]
   },
   {
     href: "/admin/tests",
     label: "Test Catalogue",
     icon: TestTube2,
-    roles: ["Admin"] as AppRole[]
+    roles: ["SuperAdmin", "Admin"] as AppRole[]
   },
   {
     href: "/admin/audit",
     label: "Audit Logs",
     icon: Activity,
-    roles: ["Admin"] as AppRole[]
+    roles: ["SuperAdmin", "Admin"] as AppRole[]
   }
 ];
 

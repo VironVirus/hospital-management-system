@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileSearch,
+  Keyboard,
   Loader2,
   PencilLine,
   Search,
@@ -43,6 +44,7 @@ import {
   type PatientFormValues
 } from "@/features/patients/schema";
 import { formatPatientAge } from "@/features/patients/patient-utils";
+import { useFrontDeskMode } from "@/hooks/use-front-desk-mode";
 import { useToast } from "@/hooks/use-toast";
 import {
   canAccessPatientsRole,
@@ -51,6 +53,7 @@ import {
 } from "@/lib/guards";
 import { commitOnlineMutation, generateId, resolveOnlineQuery } from "@/lib/online-core";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
+import { cn } from "@/lib/utils";
 import type { Database, TablesInsert } from "@/types/supabase";
 
 type SearchPatientRow =
@@ -101,6 +104,7 @@ export function PatientManagement() {
   const queryClient = useQueryClient();
   const { role, loading, facilityId, profile } = useAuth();
   const { toast } = useToast();
+  const { frontDeskMode, toggleFrontDeskMode } = useFrontDeskMode();
   const [searchTerm, setSearchTerm] = useState("");
   const deferredSearchTerm = useDeferredValue(searchTerm);
   const [page, setPage] = useState(1);
@@ -338,12 +342,19 @@ export function PatientManagement() {
     <div className="space-y-6">
       <section>
         <Card className="overflow-hidden border-blue-100 bg-[linear-gradient(135deg,rgba(10,92,163,0.98),rgba(56,189,248,0.92))] text-white shadow-soft">
-          <CardContent className="grid gap-4 p-4 md:grid-cols-[minmax(0,1fr)_repeat(3,minmax(120px,0.34fr))] md:items-center">
+          <CardContent
+            className={cn(
+              "grid gap-4 p-4 md:grid-cols-[minmax(0,1fr)_repeat(3,minmax(120px,0.34fr))] md:items-center",
+              frontDeskMode && "gap-3 p-3 md:grid-cols-[minmax(0,1fr)_repeat(3,minmax(110px,0.32fr))]"
+            )}
+          >
             <div className="space-y-2">
               <Badge className="w-fit border-white/20 bg-white/10 text-white">
                 Patient directory
               </Badge>
-              <h2 className="text-xl font-semibold">Patient lookup</h2>
+              <h2 className={cn("text-xl font-semibold", frontDeskMode && "text-lg")}>
+                Patient lookup
+              </h2>
             </div>
             <div className="rounded-2xl border border-white/15 bg-white/10 p-3 backdrop-blur">
               <p className="text-xs uppercase tracking-[0.22em] text-blue-50">Patients</p>
@@ -370,12 +381,24 @@ export function PatientManagement() {
                   <FileSearch className="h-5 w-5 text-blue-700" />
                   Patient directory
                 </CardTitle>
-                <CardDescription>
-                  Search by patient name, phone number, or lab ID. The list keeps contact
-                  details private until a profile is opened.
-                </CardDescription>
+                {!frontDeskMode ? (
+                  <CardDescription>
+                    Search by patient name, phone number, or lab ID.
+                  </CardDescription>
+                ) : null}
               </div>
-              <Badge variant="outline">Facility scoped</Badge>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline">Facility scoped</Badge>
+                <Button
+                  type="button"
+                  variant={frontDeskMode ? "default" : "outline"}
+                  size="sm"
+                  onClick={toggleFrontDeskMode}
+                >
+                  <Keyboard className="h-4 w-4" />
+                  {frontDeskMode ? "Front desk mode on" : "Front desk mode"}
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -383,7 +406,7 @@ export function PatientManagement() {
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
                 <Input
-                  className="pl-9"
+                  className={cn("pl-9", frontDeskMode && "h-11")}
                   value={searchTerm}
                   onBlur={() => {
                     window.setTimeout(() => setSearchFocused(false), 120);
@@ -420,7 +443,10 @@ export function PatientManagement() {
                 ) : null}
               </div>
               <select
-                className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
+                className={cn(
+                  "h-10 rounded-lg border border-border bg-background px-3 text-sm",
+                  frontDeskMode && "h-11"
+                )}
                 value={sexFilter}
                 onChange={(event) =>
                   setSexFilter(event.target.value as PatientFormValues["sex"] | "all")
@@ -434,7 +460,10 @@ export function PatientManagement() {
                 ))}
               </select>
               <select
-                className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
+                className={cn(
+                  "h-10 rounded-lg border border-border bg-background px-3 text-sm",
+                  frontDeskMode && "h-11"
+                )}
                 value={historyFilter}
                 onChange={(event) => setHistoryFilter(event.target.value as HistoryFilter)}
               >
@@ -443,7 +472,10 @@ export function PatientManagement() {
                 <option value="new">New patients</option>
               </select>
               <select
-                className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
+                className={cn(
+                  "h-10 rounded-lg border border-border bg-background px-3 text-sm",
+                  frontDeskMode && "h-11"
+                )}
                 value={consentFilter}
                 onChange={(event) => setConsentFilter(event.target.value as ConsentFilter)}
               >
@@ -485,7 +517,10 @@ export function PatientManagement() {
               {patients.map((patient: SearchPatientRow) => (
                 <div
                   key={patient.id}
-                  className="grid gap-2 px-3 py-2.5 transition hover:bg-blue-50/50 lg:grid-cols-[minmax(260px,1.5fr)_minmax(220px,0.75fr)_auto] lg:items-center"
+                  className={cn(
+                    "grid gap-2 px-3 py-2.5 transition hover:bg-blue-50/50 lg:grid-cols-[minmax(260px,1.5fr)_minmax(220px,0.75fr)_auto] lg:items-center",
+                    frontDeskMode && "gap-1 py-2"
+                  )}
                 >
                   <div className="min-w-0">
                     <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
@@ -511,14 +546,19 @@ export function PatientManagement() {
                   </div>
 
                   <div className="flex items-center gap-2 lg:justify-end">
-                    <Button asChild size="sm" className="h-8 px-2 text-xs">
+                    <Button asChild size="sm" className={cn("h-8 px-2 text-xs", frontDeskMode && "h-7")}>
                       <Link href={`/patients/${patient.id}` as Route}>
                         Open
                         <ArrowRight className="h-3.5 w-3.5" />
                       </Link>
                     </Button>
                     {canManagePatients ? (
-                      <Button asChild variant="outline" size="sm" className="h-8 px-2 text-xs">
+                      <Button
+                        asChild
+                        variant="outline"
+                        size="sm"
+                        className={cn("h-8 px-2 text-xs", frontDeskMode && "h-7")}
+                      >
                         <Link
                           href={{
                             pathname: `/patients/${patient.id}` as Route,

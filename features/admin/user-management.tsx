@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Loader2,
   Search,
   ShieldCheck,
   UserCog,
+  UserPlus,
   UsersRound
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
@@ -23,7 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { appRoles, formatAppRole, type AppRole } from "@/lib/auth-types";
-import { isAdminRole } from "@/lib/guards";
+import { canAccessAdministrationRole, isSuperAdminRole } from "@/lib/guards";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type { Tables, TablesUpdate } from "@/types/supabase";
 
@@ -37,7 +38,26 @@ type StaffDraft = {
   role: AppRole;
 };
 
+type StaffCreationForm = {
+  display_name: string;
+  email: string;
+  facility_id: string;
+  password: string;
+  role: AppRole;
+};
+
+type CreatedStaffAccount = {
+  display_name: string;
+  email: string;
+  facility_code: string;
+  facility_name: string;
+  password_was_generated: boolean;
+  role: AppRole;
+  temporary_password: string | null;
+};
+
 const roleDescriptions: Record<AppRole, string> = {
+  SuperAdmin: "Multi-branch owner access, facility creation, branch oversight, and high-level administration.",
   Admin: "Full system access, user management, catalogue setup, and reports.",
   Receptionist: "Patient registration, test creation, billing support, and reception workflows.",
   LabScientist: "Sample handling, test worklists, result entry, inventory visibility.",
@@ -65,9 +85,20 @@ export function UserManagementPanel() {
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
   const [roleFilter, setRoleFilter] = useState<AppRole | "all">("all");
+  const [facilityFilter, setFacilityFilter] = useState<string>("all");
   const [drafts, setDrafts] = useState<Record<string, StaffDraft>>({});
+  const [creatingStaff, setCreatingStaff] = useState(false);
+  const [createdStaffAccount, setCreatedStaffAccount] = useState<CreatedStaffAccount | null>(null);
+  const [staffCreationForm, setStaffCreationForm] = useState<StaffCreationForm>({
+    display_name: "",
+    email: "",
+    facility_id: "",
+    password: "",
+    role: "Receptionist"
+  });
 
-  const isAdmin = isAdminRole(role);
+  const canAccessAdministration = canAccessAdministrationRole(role);
+  const isSuperAdmin = isSuperAdminRole(role);
 
   const facilitiesQuery = useQuery({
     queryKey: ["admin", "facilities"],
@@ -88,7 +119,7 @@ export function UserManagementPanel() {
 
       return data ?? [];
     },
-    enabled: isAdmin
+    enabled: canAccessAdministration
   });
 
   const staffQuery = useQuery({
@@ -112,13 +143,67 @@ export function UserManagementPanel() {
 
       return (data ?? []) as StaffProfile[];
     },
-    enabled: isAdmin
+    enabled: canAccessAdministration
   });
+
+  const visibleFacilities = useMemo(
+    () => facilitiesQuery.data ?? [],
+    [facilitiesQuery.data]
+  );
+
+  useEffect(() => {
+    const defaultFacilityId = facilityId ?? visibleFacilities[0]?.id ?? "";
+    if (!defaultFacilityId) {
+      return;
+    }
+
+    setStaffCreationForm((current) =>
+      current.facility_id
+        ? current
+        : {
+            ...current,
+            facility_id: defaultFacilityId
+          }
+    );
+  }, [facilityId, visibleFacilities]);
+
+  useEffect(() => {
+    if (isSuperAdmin) {
+      return;
+    }
+
+    setStaffCreationForm((current) =>
+      current.role === "Admin" || current.role === "SuperAdmin"
+        ? {
+            ...current,
+            role: "Receptionist"
+          }
+        : current
+    );
+  }, [isSuperAdmin]);
+
+  const assignableRoles = useMemo(
+    () =>
+      isSuperAdmin
+        ? appRoles
+        : appRoles.filter((appRole) => !["SuperAdmin", "Admin"].includes(appRole)),
+    [isSuperAdmin]
+  );
+
+  const creatableRoles = useMemo(
+    () =>
+      isSuperAdmin
+        ? appRoles.filter((appRole) => appRole !== "SuperAdmin")
+        : appRoles.filter((appRole) => !["SuperAdmin", "Admin"].includes(appRole)),
+    [isSuperAdmin]
+  );
 
   const filteredStaff = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
     return (staffQuery.data ?? []).filter((profile) => {
       const matchesRole = roleFilter === "all" || profile.role === roleFilter;
+      const matchesFacility =
+        facilityFilter === "all" || profile.facility_id === facilityFilter;
       const haystack = [
         profile.display_name,
         profile.email,
@@ -130,9 +215,13 @@ export function UserManagementPanel() {
         .join(" ")
         .toLowerCase();
 
-      return matchesRole && (!normalizedSearch || haystack.includes(normalizedSearch));
+      return (
+        matchesRole &&
+        matchesFacility &&
+        (!normalizedSearch || haystack.includes(normalizedSearch))
+      );
     });
-  }, [roleFilter, searchTerm, staffQuery.data]);
+  }, [facilityFilter, roleFilter, searchTerm, staffQuery.data]);
 
   const saveMutation = useMutation({
     mutationFn: async ({
@@ -203,6 +292,89 @@ export function UserManagementPanel() {
     }));
   };
 
+  const setCreationField = <Key extends keyof StaffCreationForm>(
+    key: Key,
+    value: StaffCreationForm[Key]
+  ) => {
+    setStaffCreationForm((current) => ({
+      ...current,
+      [key]: value
+    }));
+  };
+
+  const handleCreateStaff = async () => {
+    const targetFacilityId = isSuperAdmin
+      ? staffCreationForm.facility_id
+      : (facilityId ?? staffCreationForm.facility_id);
+
+    if (!targetFacilityId) {
+      toast({
+        title: "Choose a facility first",
+        description: "Assign the new staff member to a branch before creating the account.",
+        variant: "error"
+      });
+      return;
+    }
+
+    try {
+      setCreatingStaff(true);
+      setCreatedStaffAccount(null);
+
+      const response = await fetch("/api/admin/staff", {
+        body: JSON.stringify({
+          display_name: staffCreationForm.display_name,
+          email: staffCreationForm.email,
+          facility_id: targetFacilityId,
+          password: staffCreationForm.password,
+          role: staffCreationForm.role
+        }),
+        headers: {
+          "Content-Type": "application/json"
+        },
+        method: "POST"
+      });
+
+      const payload = (await response.json().catch(() => null)) as
+        | {
+            error?: string;
+            temporary_password?: string | null;
+            user?: Omit<CreatedStaffAccount, "temporary_password">;
+          }
+        | null;
+
+      if (!response.ok || !payload?.user) {
+        throw new Error(payload?.error || "The staff account could not be created.");
+      }
+
+      setCreatedStaffAccount({
+        ...payload.user,
+        temporary_password: payload.temporary_password ?? null
+      });
+      setStaffCreationForm({
+        display_name: "",
+        email: "",
+        facility_id: isSuperAdmin ? targetFacilityId : (facilityId ?? targetFacilityId),
+        password: "",
+        role: isSuperAdmin ? "Admin" : "Receptionist"
+      });
+
+      await queryClient.invalidateQueries({ queryKey: ["admin", "staff-profiles"] });
+      toast({
+        title: "Staff account created",
+        description: `${payload.user.display_name} can now sign in with ${payload.user.email}.`,
+        variant: "success"
+      });
+    } catch (error) {
+      toast({
+        title: "Staff account not created",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "error"
+      });
+    } finally {
+      setCreatingStaff(false);
+    }
+  };
+
   if (loading) {
     return (
       <Card className="border-blue-100">
@@ -214,7 +386,7 @@ export function UserManagementPanel() {
     );
   }
 
-  if (!isAdmin) {
+  if (!canAccessAdministration) {
     return (
       <Card className="border-amber-200 bg-amber-50">
         <CardHeader>
@@ -223,7 +395,7 @@ export function UserManagementPanel() {
             Admin access required
           </CardTitle>
           <CardDescription className="text-amber-900">
-            Only Admin users can review staff and assign roles.
+            Only Admin and Super Admin users can review staff and assign roles.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -240,8 +412,8 @@ export function UserManagementPanel() {
               User management
             </CardTitle>
             <CardDescription>
-              Staff register with email/password first. Admins then assign facility access and
-              the correct role here.
+              Staff register with email/password first. Admins can manage only the staff in
+              their own facility. Super Admins can manage branch staff across their network.
             </CardDescription>
           </div>
           <Badge variant="outline">{filteredStaff.length} staff shown</Badge>
@@ -249,13 +421,145 @@ export function UserManagementPanel() {
       </CardHeader>
       <CardContent className="space-y-5">
         <div className="rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-3 text-sm text-slate-700">
-          To make a newly registered staff member an Admin, find their row below, change
-          Role to <strong>Admin</strong>, then click <strong>Save changes</strong>. If this is
-          the very first Admin account, use the SQL shown in the setup notes because the app
-          needs at least one existing Admin to open this screen.
+          New staff members appear here after registration. Assign them to the correct
+          facility, choose the right role, and save. Only the Super Admin can create or
+          assign <strong>Admin</strong> and <strong>Super Admin</strong> accounts.
         </div>
 
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+        <div className="rounded-3xl border border-slate-200 bg-slate-50/80 p-4 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="flex items-center gap-2 text-sm font-semibold text-slate-950">
+                <UserPlus className="h-4 w-4 text-blue-700" />
+                Create staff account
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-600">
+                {isSuperAdmin
+                  ? "Create branch Admins and staff directly from this dashboard."
+                  : "Create staff accounts inside your own facility without leaving the admin page."}
+              </p>
+            </div>
+            <Badge variant="outline">
+              {isSuperAdmin ? "Super Admin branch setup" : "Branch staff onboarding"}
+            </Badge>
+          </div>
+
+          <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_220px_220px]">
+            <div className="space-y-2">
+              <Label htmlFor="staff-create-name" className="text-xs">
+                Staff name
+              </Label>
+              <Input
+                id="staff-create-name"
+                value={staffCreationForm.display_name}
+                onChange={(event) => setCreationField("display_name", event.target.value)}
+                placeholder="Grace Okafor"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="staff-create-email" className="text-xs">
+                Email address
+              </Label>
+              <Input
+                id="staff-create-email"
+                type="email"
+                value={staffCreationForm.email}
+                onChange={(event) => setCreationField("email", event.target.value)}
+                placeholder="staff@branch.tapxora.com"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="staff-create-role" className="text-xs">
+                Starting role
+              </Label>
+              <select
+                id="staff-create-role"
+                className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                value={staffCreationForm.role}
+                onChange={(event) => setCreationField("role", event.target.value as AppRole)}
+              >
+                {creatableRoles.map((appRole) => (
+                  <option key={appRole} value={appRole}>
+                    {formatAppRole(appRole)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="staff-create-facility" className="text-xs">
+                Facility
+              </Label>
+              <select
+                id="staff-create-facility"
+                className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                value={isSuperAdmin ? staffCreationForm.facility_id : (facilityId ?? staffCreationForm.facility_id)}
+                onChange={(event) => setCreationField("facility_id", event.target.value)}
+                disabled={!isSuperAdmin}
+              >
+                {visibleFacilities.map((facility) => (
+                  <option key={facility.id} value={facility.id}>
+                    {facility.name} ({facility.code})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto]">
+            <div className="space-y-2">
+              <Label htmlFor="staff-create-password" className="text-xs">
+                Temporary password
+              </Label>
+              <Input
+                id="staff-create-password"
+                value={staffCreationForm.password}
+                onChange={(event) => setCreationField("password", event.target.value)}
+                placeholder="Leave blank to auto-generate a secure temporary password"
+              />
+            </div>
+            <div className="flex items-end">
+              <Button type="button" className="w-full xl:w-auto" disabled={creatingStaff} onClick={handleCreateStaff}>
+                {creatingStaff ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
+                Create staff account
+              </Button>
+            </div>
+          </div>
+
+          {createdStaffAccount ? (
+            <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+              <p className="font-semibold">
+                {createdStaffAccount.display_name} was added to {createdStaffAccount.facility_name} (
+                {createdStaffAccount.facility_code}) as {formatAppRole(createdStaffAccount.role)}.
+              </p>
+              <p className="mt-1 text-xs text-emerald-900">
+                Login email: <strong>{createdStaffAccount.email}</strong>
+              </p>
+              {createdStaffAccount.temporary_password ? (
+                <p className="mt-2 text-xs text-emerald-900">
+                  Temporary password:{" "}
+                  <span className="rounded-md bg-white px-2 py-1 font-mono text-[11px] text-slate-950">
+                    {createdStaffAccount.temporary_password}
+                  </span>
+                </p>
+              ) : (
+                <p className="mt-2 text-xs text-emerald-900">
+                  The account used the password you supplied above.
+                </p>
+              )}
+            </div>
+          ) : null}
+        </div>
+
+        <div
+          className={
+            isSuperAdmin
+              ? "grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_220px]"
+              : "grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]"
+          }
+        >
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <Input
@@ -277,6 +581,20 @@ export function UserManagementPanel() {
               </option>
             ))}
           </select>
+          {isSuperAdmin ? (
+            <select
+              className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
+              value={facilityFilter}
+              onChange={(event) => setFacilityFilter(event.target.value)}
+            >
+              <option value="all">All facilities</option>
+              {visibleFacilities.map((facility) => (
+                <option key={facility.id} value={facility.id}>
+                  {facility.name} ({facility.code})
+                </option>
+              ))}
+            </select>
+          ) : null}
         </div>
 
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -313,6 +631,20 @@ export function UserManagementPanel() {
           {filteredStaff.map((profile) => {
             const draft = getDraft(profile);
             const isCurrentUser = profile.id === user?.id;
+            const isProtectedOwnRole =
+              isCurrentUser &&
+              (profile.role === "Admin" || profile.role === "SuperAdmin");
+            const isBranchAdminLockedProfile =
+              !isSuperAdmin &&
+              (profile.role === "Admin" || profile.role === "SuperAdmin");
+            const isLockedProfile = isProtectedOwnRole || isBranchAdminLockedProfile;
+            const roleOptions: AppRole[] = isSuperAdmin
+              ? assignableRoles
+              : profile.role === "SuperAdmin"
+                ? ["SuperAdmin", ...assignableRoles]
+                : profile.role === "Admin"
+                  ? ["Admin", ...assignableRoles]
+                  : assignableRoles;
             const isSaving = saveMutation.isPending;
             const hasChanges =
               draft.display_name !== (profile.display_name ?? "") ||
@@ -330,7 +662,13 @@ export function UserManagementPanel() {
                       <p className="truncate text-sm font-semibold text-slate-950">
                         {profile.display_name || profile.email || "Unnamed staff"}
                       </p>
-                      <Badge variant={profile.role === "Admin" ? "default" : "outline"}>
+                      <Badge
+                        variant={
+                          profile.role === "Admin" || profile.role === "SuperAdmin"
+                            ? "default"
+                            : "outline"
+                        }
+                      >
                         {formatAppRole(profile.role)}
                       </Badge>
                       {isCurrentUser ? <Badge variant="secondary">You</Badge> : null}
@@ -363,9 +701,9 @@ export function UserManagementPanel() {
                         onChange={(event) =>
                           setDraftField(profile, "role", event.target.value as AppRole)
                         }
-                        disabled={isCurrentUser && profile.role === "Admin"}
+                        disabled={isLockedProfile}
                       >
-                        {appRoles.map((appRole) => (
+                        {roleOptions.map((appRole) => (
                           <option key={appRole} value={appRole}>
                             {formatAppRole(appRole)}
                           </option>
@@ -381,11 +719,11 @@ export function UserManagementPanel() {
                         onChange={(event) =>
                           setDraftField(profile, "facility_id", event.target.value)
                         }
+                        disabled={isLockedProfile}
                       >
-                        <option value="">No facility</option>
-                        {(facilitiesQuery.data ?? []).map((facility) => (
+                        {visibleFacilities.map((facility) => (
                           <option key={facility.id} value={facility.id}>
-                            {facility.name}
+                            {facility.name} ({facility.code})
                           </option>
                         ))}
                       </select>
@@ -395,7 +733,7 @@ export function UserManagementPanel() {
                       <Button
                         type="button"
                         className="w-full"
-                        disabled={!hasChanges || isSaving}
+                        disabled={!hasChanges || isSaving || isLockedProfile}
                         onClick={() => saveMutation.mutate({ draft, profile })}
                       >
                         {saveMutation.isPending ? (
@@ -409,10 +747,15 @@ export function UserManagementPanel() {
                   </div>
                 </div>
 
-                {isCurrentUser && profile.role === "Admin" ? (
+                {isProtectedOwnRole ? (
                   <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                    Your own Admin role is locked in the UI to avoid accidentally removing
-                    your access. Another Admin can change it if needed.
+                    Your own protected role is locked in the UI to avoid accidentally
+                    removing your access. Another Super Admin can change it if needed.
+                  </p>
+                ) : isBranchAdminLockedProfile ? (
+                  <p className="mt-3 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+                    Only the Super Admin can change Admin or Super Admin accounts. Branch
+                    Admins can manage the rest of the staff in this facility.
                   </p>
                 ) : null}
               </div>

@@ -428,8 +428,8 @@ export function ReportsWorkspace() {
             Reporting access is restricted
           </CardTitle>
           <CardDescription className="text-red-800">
-            Only administrators, reception staff, and the HOD of Lab / Chief Scientist
-            can release patient reports.
+            Only Super Admin, Admin, Receptionist, and HOD of Lab / Chief Scientist
+            users can release patient reports.
           </CardDescription>
         </CardHeader>
       </Card>

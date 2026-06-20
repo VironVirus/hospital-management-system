@@ -74,9 +74,8 @@ export async function recordAuditLog(args: {
 }
 
 export async function createTestOrderBundle(args: {
-  facilityId: string;
   notes: string | null;
-  patient: Pick<Tables<"patients">, "id" | "name">;
+  patient: Pick<Tables<"patients">, "facility_id" | "id" | "name">;
   priority: string;
   tests: Array<Pick<Tables<"tests">, "id" | "name" | "price">>;
   userId?: string | null;
@@ -85,7 +84,7 @@ export async function createTestOrderBundle(args: {
   const { data: order, error: orderError } = await supabase
     .from("orders")
     .insert({
-      facility_id: args.facilityId,
+      facility_id: args.patient.facility_id,
       notes: args.notes,
       ordered_by: args.userId ?? null,
       patient_id: args.patient.id,
@@ -133,7 +132,6 @@ export async function createTestOrderBundle(args: {
 }
 
 export async function addTestsToOrder(args: {
-  facilityId: string;
   order: Pick<Tables<"orders">, "id" | "order_number" | "patient_id">;
   patientName: string;
   tests: Array<Pick<Tables<"tests">, "id" | "name" | "price">>;

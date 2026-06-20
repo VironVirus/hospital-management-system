@@ -59,6 +59,7 @@ import {
   testCategories,
   type TestCategory
 } from "@/features/tests/categories";
+import { useFrontDeskMode } from "@/hooks/use-front-desk-mode";
 import { useToast } from "@/hooks/use-toast";
 import {
   buildInvoicePrintHtml,
@@ -78,7 +79,9 @@ import type { Database, Tables } from "@/types/supabase";
 
 type PatientSearchRow =
   Database["public"]["Functions"]["search_patients"]["Returns"][number];
-type TestRow = Tables<"tests">;
+type TestRow = Tables<"tests"> & {
+  facilities: Pick<Tables<"facilities">, "id" | "name" | "code"> | null;
+};
 type RecentOrderRow = {
   created_at: string;
   id: string;
@@ -127,9 +130,11 @@ type TestBundleRow = {
   facility_id: string;
   id: string;
   is_active: boolean;
+  last_used_at: string | null;
   name: string;
   test_ids: string[];
   updated_at: string;
+  usage_count: number;
 };
 
 const quickBundleDefinitions: QuickBundleDefinition[] = [
@@ -187,6 +192,25 @@ function renderHighlightedText(value: string, query: string): ReactNode {
 
 function formatPatientOption(patient: PatientSearchRow) {
   return `${patient.name} / ${patient.lab_id}`;
+}
+
+function sortBundlesByUsage<T extends Pick<TestBundleRow, "last_used_at" | "name" | "usage_count">>(
+  bundles: T[]
+) {
+  return [...bundles].sort((left, right) => {
+    const usageDelta = (right.usage_count ?? 0) - (left.usage_count ?? 0);
+    if (usageDelta !== 0) {
+      return usageDelta;
+    }
+
+    const leftUsedAt = left.last_used_at ? new Date(left.last_used_at).getTime() : 0;
+    const rightUsedAt = right.last_used_at ? new Date(right.last_used_at).getTime() : 0;
+    if (rightUsedAt !== leftUsedAt) {
+      return rightUsedAt - leftUsedAt;
+    }
+
+    return left.name.localeCompare(right.name);
+  });
 }
 
 function findQuickBundleMatches(tests: TestRow[]): QuickBundleMatch[] {
@@ -298,7 +322,7 @@ async function fetchActiveTests() {
 
       const { data, error } = await supabase
         .from("tests")
-        .select("*")
+        .select("*, facilities(id, name, code)")
         .eq("is_active", true)
         .order("name", { ascending: true });
 
@@ -306,7 +330,16 @@ async function fetchActiveTests() {
         throw new Error(error.message);
       }
 
-      return (data ?? []) as TestRow[];
+      return ((data ?? []) as TestRow[]).sort((left, right) => {
+        const leftRank = left.facility_id ? 0 : 1;
+        const rightRank = right.facility_id ? 0 : 1;
+
+        if (leftRank !== rightRank) {
+          return leftRank - rightRank;
+        }
+
+        return left.name.localeCompare(right.name);
+      });
     }
   });
 }
@@ -356,20 +389,48 @@ async function fetchFacilityBundles(facilityId: string) {
         };
       };
     };
-  };
+  } | null;
+  return resolveOnlineQuery<TestBundleRow[]>({
+    online: async () => {
+      if (!supabase) {
+        throw new Error("Supabase is not configured.");
+      }
 
-  const { data, error } = await supabase
-    .from("test_bundles")
-    .select("*")
-    .eq("facility_id", facilityId)
-    .eq("is_active", true)
-    .order("name", { ascending: true });
+      const response = await supabase
+        .from("test_bundles")
+        .select("*")
+        .eq("facility_id", facilityId)
+        .eq("is_active", true)
+        .order("name", { ascending: true });
+
+      if (response.error) {
+        throw response.error;
+      }
+
+      return sortBundlesByUsage(response.data ?? []);
+    }
+  });
+}
+
+async function bumpBundleUsage(bundleId: string) {
+  const supabase = getSupabaseBrowserClient() as unknown as {
+    rpc: (
+      functionName: "bump_test_bundle_usage",
+      args: { target_bundle_id: string }
+    ) => Promise<{ error: Error | null }>;
+  } | null;
+
+  if (!supabase) {
+    return;
+  }
+
+  const { error } = await supabase.rpc("bump_test_bundle_usage", {
+    target_bundle_id: bundleId
+  });
 
   if (error) {
     throw error;
   }
-
-  return data ?? [];
 }
 
 async function fetchOrderForEdit(orderId: string) {
@@ -413,7 +474,6 @@ export function OrdersManagement() {
     useState<RecentOrderFilter>("all");
   const [recentPriorityFilter, setRecentPriorityFilter] =
     useState<(typeof priorityOptions)[number] | "all">("all");
-  const [receptionistMode, setReceptionistMode] = useState(false);
   const [showRecentPanel, setShowRecentPanel] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<TestCategoryOption | "">("");
   const [selectedCatalogueTestId, setSelectedCatalogueTestId] = useState("");
@@ -430,6 +490,7 @@ export function OrdersManagement() {
   const [creating, setCreating] = useState(false);
   const [bundleName, setBundleName] = useState("");
   const [bundleDescription, setBundleDescription] = useState("");
+  const [editingBundleId, setEditingBundleId] = useState<string | null>(null);
   const [savingBundle, setSavingBundle] = useState(false);
   const [deletingBundleId, setDeletingBundleId] = useState<string | null>(null);
   const [createdOrder, setCreatedOrder] = useState<{
@@ -455,6 +516,7 @@ export function OrdersManagement() {
   const testInputRef = useRef<HTMLInputElement | null>(null);
   const submitButtonRef = useRef<HTMLButtonElement | null>(null);
   const createdOrderFocusRef = useRef<HTMLDivElement | null>(null);
+  const { frontDeskMode, toggleFrontDeskMode } = useFrontDeskMode();
 
   const canAccessOrders = canAccessOrdersRole(role);
   const canCreateOrders = canCreateOrdersRole(role);
@@ -465,10 +527,19 @@ export function OrdersManagement() {
     enabled: canAccessOrders && Boolean(facilityId)
   });
 
+  const selectedPatient = useMemo(
+    () =>
+      (patientsQuery.data ?? []).find((patient) => patient.id === formState.patient_id) ??
+      null,
+    [formState.patient_id, patientsQuery.data]
+  );
+
+  const effectiveTestFacilityId = selectedPatient?.facility_id ?? facilityId ?? null;
+
   const testsQuery = useQuery({
-    queryKey: ["active-tests"],
+    queryKey: ["active-tests", facilityId],
     queryFn: fetchActiveTests,
-    enabled: canAccessOrders
+    enabled: canAccessOrders && Boolean(facilityId)
   });
 
   const recentOrdersQuery = useQuery({
@@ -478,9 +549,9 @@ export function OrdersManagement() {
   });
 
   const bundlesQuery = useQuery({
-    queryKey: ["facility-test-bundles", facilityId],
-    queryFn: () => fetchFacilityBundles(facilityId as string),
-    enabled: canAccessOrders && Boolean(facilityId)
+    queryKey: ["facility-test-bundles", selectedPatient?.facility_id ?? facilityId],
+    queryFn: () => fetchFacilityBundles((selectedPatient?.facility_id ?? facilityId) as string),
+    enabled: canAccessOrders && Boolean(selectedPatient?.facility_id ?? facilityId)
   });
 
   const editOrderQuery = useQuery({
@@ -488,13 +559,6 @@ export function OrdersManagement() {
     queryFn: () => fetchOrderForEdit(editingOrderId as string),
     enabled: canAccessOrders && Boolean(facilityId) && Boolean(editingOrderId)
   });
-
-  const selectedPatient = useMemo(
-    () =>
-      (patientsQuery.data ?? []).find((patient) => patient.id === formState.patient_id) ??
-      null,
-    [formState.patient_id, patientsQuery.data]
-  );
 
   const editingOrder = useMemo(
     () =>
@@ -603,15 +667,32 @@ export function OrdersManagement() {
     });
   }, [deferredRecentSearch, recentOrdersQuery.data, recentPriorityFilter, recentStatusFilter]);
 
+  const visibleTests = useMemo(() => {
+    const scopedTests = (testsQuery.data ?? []).filter(
+      (test) => !test.facility_id || test.facility_id === effectiveTestFacilityId
+    );
+
+    return scopedTests.sort((left, right) => {
+      const leftRank = left.facility_id === effectiveTestFacilityId ? 0 : 1;
+      const rightRank = right.facility_id === effectiveTestFacilityId ? 0 : 1;
+
+      if (leftRank !== rightRank) {
+        return leftRank - rightRank;
+      }
+
+      return left.name.localeCompare(right.name);
+    });
+  }, [effectiveTestFacilityId, testsQuery.data]);
+
   const testsById = useMemo(
-    () => new Map((testsQuery.data ?? []).map((test) => [test.id, test])),
-    [testsQuery.data]
+    () => new Map(visibleTests.map((test) => [test.id, test])),
+    [visibleTests]
   );
 
   const groupedTests = useMemo(() => {
     const groups = new Map<TestCategoryOption, TestRow[]>();
 
-    (testsQuery.data ?? []).forEach((test) => {
+    visibleTests.forEach((test) => {
       const category = normalizeTestCategory(test.category) ?? "Uncategorized";
       const current = groups.get(category) ?? [];
       current.push(test);
@@ -620,7 +701,7 @@ export function OrdersManagement() {
 
     groups.forEach((tests) => tests.sort((left, right) => left.name.localeCompare(right.name)));
     return groups;
-  }, [testsQuery.data]);
+  }, [visibleTests]);
 
   const availableCategories = useMemo(() => {
     const orderedCategories = testCategories.filter((category) => groupedTests.has(category));
@@ -654,24 +735,39 @@ export function OrdersManagement() {
     [formState.selected_test_ids, testsById]
   );
 
+  useEffect(() => {
+    const visibleIds = new Set(visibleTests.map((test) => test.id));
+    setFormState((current) => {
+      const nextSelected = current.selected_test_ids.filter((testId) => visibleIds.has(testId));
+      return nextSelected.length === current.selected_test_ids.length
+        ? current
+        : {
+            ...current,
+            selected_test_ids: nextSelected
+          };
+    });
+  }, [visibleTests]);
+
   const selectedTestsTotal = useMemo(
     () => selectedTests.reduce((sum, test) => sum + Number(test.price ?? 0), 0),
     [selectedTests]
   );
 
   const quickBundles = useMemo(
-    () => findQuickBundleMatches(testsQuery.data ?? []),
-    [testsQuery.data]
+    () => findQuickBundleMatches(visibleTests),
+    [visibleTests]
   );
 
   const resolvedBundles = useMemo(
     () =>
-      (bundlesQuery.data ?? []).map((bundle) => ({
-        ...bundle,
-        tests: bundle.test_ids
-          .map((testId) => testsById.get(testId) ?? null)
-          .filter((test): test is TestRow => Boolean(test))
-      })),
+      sortBundlesByUsage(
+        (bundlesQuery.data ?? []).map((bundle) => ({
+          ...bundle,
+          tests: bundle.test_ids
+            .map((testId) => testsById.get(testId) ?? null)
+            .filter((test): test is TestRow => Boolean(test))
+        }))
+      ),
     [bundlesQuery.data, testsById]
   );
 
@@ -715,10 +811,10 @@ export function OrdersManagement() {
   }, [filteredTestsInSelectedCategory]);
 
   useEffect(() => {
-    if (receptionistMode) {
+    if (frontDeskMode) {
       setShowRecentPanel(false);
     }
-  }, [receptionistMode]);
+  }, [frontDeskMode]);
 
   useEffect(() => {
     if (!createdOrder) {
@@ -857,6 +953,65 @@ export function OrdersManagement() {
     setErrors((current) => ({ ...current, selected_test_ids: undefined }));
   };
 
+  const resetBundleEditor = () => {
+    setEditingBundleId(null);
+    setBundleName("");
+    setBundleDescription("");
+  };
+
+  const handleStartBundleEdit = (bundle: {
+    description: string | null;
+    id: string;
+    name: string;
+    tests: TestRow[];
+  }) => {
+    setEditingBundleId(bundle.id);
+    setBundleName(bundle.name);
+    setBundleDescription(bundle.description ?? "");
+    setFormState((current) => ({
+      ...current,
+      selected_test_ids: bundle.tests.map((test) => test.id)
+    }));
+    setErrors((current) => ({ ...current, selected_test_ids: undefined }));
+    toast({
+      title: `Editing ${bundle.name}`,
+      description: "Adjust the selected tests, then update the facility bundle.",
+      variant: "success"
+    });
+  };
+
+  const recordBundleUsage = async (bundleId: string) => {
+    if (!effectiveTestFacilityId) {
+      return;
+    }
+
+    const usedAt = new Date().toISOString();
+
+    queryClient.setQueryData(
+      ["facility-test-bundles", effectiveTestFacilityId],
+      (current: TestBundleRow[] | undefined) =>
+        sortBundlesByUsage(
+          (current ?? []).map((bundle) =>
+            bundle.id === bundleId
+              ? {
+                  ...bundle,
+                  last_used_at: usedAt,
+                  usage_count: Number(bundle.usage_count ?? 0) + 1
+                }
+              : bundle
+          )
+        )
+    );
+
+    try {
+      await bumpBundleUsage(bundleId);
+    } finally {
+      await queryClient.invalidateQueries({
+        queryKey: ["facility-test-bundles", effectiveTestFacilityId]
+      });
+    }
+  };
+
   const handleApplyQuickBundle = (bundle: QuickBundleMatch) => {
     if (bundle.missingCount > 0 || bundle.matchedTests.length === 0) {
       toast({
@@ -907,10 +1062,11 @@ export function OrdersManagement() {
       description: `${bundle.tests.length} saved test${bundle.tests.length > 1 ? "s" : ""} added.`,
       variant: "success"
     });
+    void recordBundleUsage(bundle.id);
   };
 
   const handleSaveCurrentBundle = async () => {
-    if (!facilityId) {
+    if (!effectiveTestFacilityId) {
       return;
     }
 
@@ -938,35 +1094,43 @@ export function OrdersManagement() {
     try {
       const supabase = getSupabaseBrowserClient() as unknown as {
         from: (table: "test_bundles") => {
-          insert: (
-            payload: Record<string, unknown>
-          ) => Promise<{ error: Error | null }>;
+          insert: (payload: Record<string, unknown>) => Promise<{ error: Error | null }>;
+          update: (payload: Record<string, unknown>) => {
+            eq: (column: "id", value: string) => Promise<{ error: Error | null }>;
+          };
         };
       };
 
-      const { error } = await supabase.from("test_bundles").insert({
+      const payload = {
         created_by: user?.id ?? null,
         description: bundleDescription.trim() || null,
-        facility_id: facilityId,
+        facility_id: effectiveTestFacilityId,
         name: trimmedName,
         test_ids: selectedTests.map((test) => test.id)
-      });
+      };
+
+      const { error } = editingBundleId
+        ? await supabase.from("test_bundles").update(payload).eq("id", editingBundleId)
+        : await supabase.from("test_bundles").insert(payload);
 
       if (error) {
         throw error;
       }
 
-      setBundleName("");
-      setBundleDescription("");
-      await queryClient.invalidateQueries({ queryKey: ["facility-test-bundles"] });
+      resetBundleEditor();
+      await queryClient.invalidateQueries({
+        queryKey: ["facility-test-bundles", effectiveTestFacilityId]
+      });
       toast({
-        title: "Facility bundle saved",
-        description: `${trimmedName} is now available for this facility.`,
+        title: editingBundleId ? "Facility bundle updated" : "Facility bundle saved",
+        description: editingBundleId
+          ? `${trimmedName} now reflects the current test selection.`
+          : `${trimmedName} is now available for this facility.`,
         variant: "success"
       });
     } catch (error) {
       toast({
-        title: "Bundle could not be saved",
+        title: editingBundleId ? "Bundle could not be updated" : "Bundle could not be saved",
         description: error instanceof Error ? error.message : "Please try again.",
         variant: "error"
       });
@@ -996,7 +1160,12 @@ export function OrdersManagement() {
         throw error;
       }
 
-      await queryClient.invalidateQueries({ queryKey: ["facility-test-bundles"] });
+      if (editingBundleId === bundleId) {
+        resetBundleEditor();
+      }
+      await queryClient.invalidateQueries({
+        queryKey: ["facility-test-bundles", effectiveTestFacilityId]
+      });
       toast({
         title: "Bundle removed",
         description: `${bundleNameValue} was removed from this facility.`,
@@ -1035,7 +1204,7 @@ export function OrdersManagement() {
 
     try {
       setCreating(true);
-      const selectedTests = (testsQuery.data ?? []).filter((test) =>
+      const selectedTests = visibleTests.filter((test) =>
         parsed.data.selected_test_ids.includes(test.id)
       );
       if (selectedTests.length === 0) {
@@ -1043,10 +1212,14 @@ export function OrdersManagement() {
         return;
       }
 
+      if (!selectedPatient?.facility_id) {
+        setSubmitError("Select a patient before creating a test request.");
+        return;
+      }
+
       const patientName = selectedPatient?.name || "Selected patient";
       if (editingOrder) {
         const created = await addTestsToOrder({
-          facilityId,
           order: {
             id: editingOrder.id,
             order_number: editingOrder.order_number,
@@ -1098,9 +1271,9 @@ export function OrdersManagement() {
       }
 
       const created = await createTestOrderBundle({
-        facilityId,
         notes: parsed.data.notes.trim() || null,
         patient: {
+          facility_id: selectedPatient.facility_id,
           id: parsed.data.patient_id,
           name: patientName
         },
@@ -1203,7 +1376,7 @@ export function OrdersManagement() {
                     ? "Add extra tests to the same order number, keep the sample trail intact, and refresh the bill automatically."
                     : "Move from patient search to bundled tests, labels, and billing without the screen feeling crowded."}
                 </CardDescription>
-                {!receptionistMode ? (
+                {!frontDeskMode ? (
                   <div className="mt-4 flex flex-wrap gap-2 text-xs">
                     <Badge variant="outline">/ patient</Badge>
                     <Badge variant="outline">Alt+T test</Badge>
@@ -1218,12 +1391,12 @@ export function OrdersManagement() {
                 </Badge>
                 <Button
                   type="button"
-                  variant={receptionistMode ? "default" : "outline"}
+                  variant={frontDeskMode ? "default" : "outline"}
                   className="hidden lg:inline-flex"
-                  onClick={() => setReceptionistMode((current) => !current)}
+                  onClick={toggleFrontDeskMode}
                 >
                   <Keyboard className="h-4 w-4" />
-                  {receptionistMode ? "Receptionist mode on" : "Receptionist mode"}
+                  {frontDeskMode ? "Front desk mode on" : "Front desk mode"}
                 </Button>
                 <Button
                   type="button"
@@ -1279,7 +1452,7 @@ export function OrdersManagement() {
                         <Input
                           ref={patientInputRef}
                           id="patient-search-input"
-                          className={cn("pl-9", receptionistMode && "h-12 text-base")}
+                          className={cn("pl-9", frontDeskMode && "h-12 text-base")}
                           value={patientSearch}
                           onFocus={() => setPatientPickerOpen(true)}
                           onBlur={() => {
@@ -1383,7 +1556,7 @@ export function OrdersManagement() {
                         id="priority"
                         className={cn(
                           "h-10 w-full rounded-lg border border-border bg-background px-3 text-sm",
-                          receptionistMode && "h-12 text-base"
+                          frontDeskMode && "h-12 text-base"
                         )}
                         value={formState.priority}
                         onChange={(event) =>
@@ -1436,25 +1609,40 @@ export function OrdersManagement() {
                       <Input
                         value={bundleName}
                         onChange={(event) => setBundleName(event.target.value)}
-                        placeholder="Save current selection as a facility bundle"
-                        className={cn(receptionistMode && "h-12 text-base")}
+                        placeholder={
+                          editingBundleId
+                            ? "Rename this saved facility bundle"
+                            : "Save current selection as a facility bundle"
+                        }
+                        className={cn(frontDeskMode && "h-12 text-base")}
                       />
                       <Input
                         value={bundleDescription}
                         onChange={(event) => setBundleDescription(event.target.value)}
                         placeholder="Optional note, e.g. walk-in malaria package"
-                        className={cn(receptionistMode && "h-12 text-base", receptionistMode && "hidden")}
+                        className={cn(frontDeskMode && "h-12 text-base", frontDeskMode && "hidden")}
                       />
                     </div>
-                    <Button
-                      type="button"
-                      onClick={handleSaveCurrentBundle}
-                      disabled={savingBundle}
-                      className={cn(receptionistMode && "h-12 px-5 text-base")}
-                    >
-                      {savingBundle ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                      Save bundle
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        onClick={handleSaveCurrentBundle}
+                        disabled={savingBundle}
+                        className={cn(frontDeskMode && "h-12 px-5 text-base")}
+                      >
+                        {savingBundle ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Save className="h-4 w-4" />
+                        )}
+                        {editingBundleId ? "Update bundle" : "Save bundle"}
+                      </Button>
+                      {editingBundleId ? (
+                        <Button type="button" variant="outline" onClick={resetBundleEditor}>
+                          Cancel
+                        </Button>
+                      ) : null}
+                    </div>
                     <div className="lg:col-span-2">
                       <div className="flex flex-wrap gap-2">
                         {resolvedBundles.map((bundle) => (
@@ -1468,6 +1656,17 @@ export function OrdersManagement() {
                               onClick={() => handleApplySavedBundle(bundle)}
                             >
                               {bundle.name}
+                            </button>
+                            <span className="rounded-full bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-500">
+                              {bundle.usage_count ?? 0}x
+                            </span>
+                            <button
+                              type="button"
+                              className="rounded-full p-1 text-slate-400 hover:bg-white hover:text-blue-700"
+                              onClick={() => handleStartBundleEdit(bundle)}
+                              aria-label={`Edit ${bundle.name}`}
+                            >
+                              <PencilLine className="h-3.5 w-3.5" />
                             </button>
                             <button
                               type="button"
@@ -1500,7 +1699,7 @@ export function OrdersManagement() {
                         id="test-category-select"
                         className={cn(
                           "h-10 w-full rounded-lg border border-border bg-background px-3 text-sm",
-                          receptionistMode && "h-12 text-base"
+                          frontDeskMode && "h-12 text-base"
                         )}
                           value={selectedCategory}
                           onChange={(event) => {
@@ -1527,7 +1726,7 @@ export function OrdersManagement() {
                           <Input
                             ref={testInputRef}
                             id="test-search-input"
-                            className={cn("pl-9", receptionistMode && "h-12 text-base")}
+                            className={cn("pl-9", frontDeskMode && "h-12 text-base")}
                             value={testSearch}
                             onFocus={() => setTestPickerOpen(true)}
                             onBlur={() => {
@@ -1589,17 +1788,20 @@ export function OrdersManagement() {
                                     onClick={() => selectCatalogueTest(test)}
                                   >
                                   <div className="min-w-0">
-                                    <p className="font-medium">
-                                      {renderHighlightedText(test.test_code, testSearch)} -{" "}
-                                      {renderHighlightedText(test.name, testSearch)}
-                                    </p>
-                                    <p className="text-xs text-slate-500">
-                                      {getTestCategoryLabel(test.category)} / N
-                                      {Number(test.price).toLocaleString("en-NG")}
-                                    </p>
-                                    </div>
-                                    <ArrowRight className="mt-0.5 h-4 w-4 text-slate-400" />
-                                  </button>
+                                     <p className="font-medium">
+                                       {renderHighlightedText(test.test_code, testSearch)} -{" "}
+                                       {renderHighlightedText(test.name, testSearch)}
+                                     </p>
+                                     <p className="text-xs text-slate-500">
+                                      {getTestCategoryLabel(test.category)} /{" "}
+                                      {test.facility_id
+                                        ? test.facilities?.code || "Branch"
+                                        : "Shared"}{" "}
+                                      / N{Number(test.price).toLocaleString("en-NG")}
+                                      </p>
+                                     </div>
+                                     <ArrowRight className="mt-0.5 h-4 w-4 text-slate-400" />
+                                   </button>
                                 ))
                               )}
                             </div>
@@ -1612,7 +1814,7 @@ export function OrdersManagement() {
                           type="button"
                           variant="outline"
                           disabled={!selectedCatalogueTestId}
-                          className={cn(receptionistMode && "h-12 px-5 text-base")}
+                          className={cn(frontDeskMode && "h-12 px-5 text-base")}
                           onClick={() => handleAddSelectedTest()}
                         >
                           Add test
@@ -1639,6 +1841,9 @@ export function OrdersManagement() {
                                 <p className="text-xs text-slate-500">
                                   {getTestCategoryLabel(test.category)}
                                   {test.unit ? ` • ${test.unit}` : ""}
+                                  {test.facility_id
+                                    ? ` • ${test.facilities?.code || "Branch"}`
+                                    : " • Shared"}
                                 </p>
                                 <p className="text-sm text-slate-600">
                                   N{Number(test.price).toLocaleString("en-NG")}
@@ -1756,8 +1961,7 @@ export function OrdersManagement() {
                           <p className="mt-3 text-sm text-slate-500">
                             No tests selected yet.
                           </p>
-                        ) : (
-                          receptionistMode ? (
+                        ) : frontDeskMode ? (
                             <p className="mt-3 text-sm text-slate-600">
                               {selectedTests.length} test{selectedTests.length > 1 ? "s" : ""} selected for this request.
                             </p>
@@ -1782,14 +1986,13 @@ export function OrdersManagement() {
                                 </div>
                               ))}
                             </div>
-                          )
-                        )}
+                          )}
                       </div>
 
                       <div
                         className={cn(
                           "rounded-2xl border border-dashed border-blue-200 bg-blue-50 p-4",
-                          receptionistMode && "hidden"
+                          frontDeskMode && "hidden"
                         )}
                       >
                         <div className="flex items-start gap-3">

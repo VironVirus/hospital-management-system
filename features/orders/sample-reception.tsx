@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Keyboard,
   Loader2,
   ScanLine,
   ShieldAlert,
@@ -29,11 +30,13 @@ import {
   sampleStatuses,
   type SampleStatus
 } from "@/features/orders/constants";
+import { useFrontDeskMode } from "@/hooks/use-front-desk-mode";
 import { useToast } from "@/hooks/use-toast";
 import { canAccessSampleReceptionRole } from "@/lib/guards";
 import { resolveOnlineQuery } from "@/lib/online-core";
 import { updateSampleStatus } from "@/lib/online-mutations";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
+import { cn } from "@/lib/utils";
 
 type SampleLookupRow = {
   barcode_value: string;
@@ -182,6 +185,7 @@ export function SampleReception() {
   const queryClient = useQueryClient();
   const { role, loading, facilityId, user } = useAuth();
   const { toast } = useToast();
+  const { frontDeskMode, toggleFrontDeskMode } = useFrontDeskMode();
   const [scanValue, setScanValue] = useState("");
   const [lookupValue, setLookupValue] = useState("");
   const [statusError, setStatusError] = useState<string | null>(null);
@@ -316,13 +320,29 @@ export function SampleReception() {
       <section className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
         <Card className="border-blue-100">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ScanLine className="h-5 w-5 text-blue-700" />
-              Sample reception
-            </CardTitle>
-            <CardDescription>
-              Scan or enter a barcode to retrieve a sample and update its workflow status.
-            </CardDescription>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <ScanLine className="h-5 w-5 text-blue-700" />
+                  Sample reception
+                </CardTitle>
+                {!frontDeskMode ? (
+                  <CardDescription>
+                    Scan or enter a barcode to retrieve a sample and update its workflow
+                    status.
+                  </CardDescription>
+                ) : null}
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant={frontDeskMode ? "default" : "outline"}
+                onClick={toggleFrontDeskMode}
+              >
+                <Keyboard className="h-4 w-4" />
+                {frontDeskMode ? "Front desk mode on" : "Front desk mode"}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -330,6 +350,7 @@ export function SampleReception() {
               <div className="flex gap-3">
                 <Input
                   id="scanValue"
+                  className={cn(frontDeskMode && "h-11 text-base")}
                   value={scanValue}
                   onChange={(event) => setScanValue(event.target.value)}
                   onKeyDown={(event) => {
@@ -340,7 +361,11 @@ export function SampleReception() {
                   }}
                   placeholder="Scan SMP-000123 or barcode value"
                 />
-                <Button type="button" onClick={handleLookup}>
+                <Button
+                  type="button"
+                  className={cn(frontDeskMode && "h-11 px-5 text-base")}
+                  onClick={handleLookup}
+                >
                   Find sample
                 </Button>
               </div>
@@ -474,9 +499,11 @@ export function SampleReception() {
               <Waypoints className="h-5 w-5 text-blue-700" />
               Chain of custody
             </CardTitle>
-            <CardDescription>
-              Automatic status log for the selected sample, plus the current open queue.
-            </CardDescription>
+            {!frontDeskMode ? (
+              <CardDescription>
+                Automatic status log for the selected sample, plus the current open queue.
+              </CardDescription>
+            ) : null}
           </CardHeader>
           <CardContent className="space-y-4">
             {foundSample ? (
@@ -489,7 +516,10 @@ export function SampleReception() {
                   (logsQuery.data ?? []).map((log: CustodyLogRow) => (
                     <div
                       key={log.id}
-                      className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+                      className={cn(
+                        "rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm",
+                        frontDeskMode && "px-3 py-2.5"
+                      )}
                     >
                       <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                         <div>
@@ -538,7 +568,10 @@ export function SampleReception() {
                     setScanValue(queueItem.sample_code);
                     setLookupValue(queueItem.sample_code);
                   }}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left shadow-sm transition-colors hover:border-blue-200 hover:bg-blue-50/50"
+                  className={cn(
+                    "w-full rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left shadow-sm transition-colors hover:border-blue-200 hover:bg-blue-50/50",
+                    frontDeskMode && "px-3 py-3"
+                  )}
                 >
                   <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                     <div className="flex items-start gap-3">
