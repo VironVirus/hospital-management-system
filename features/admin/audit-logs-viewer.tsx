@@ -8,10 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { db } from "@/lib/dexie";
 import { isAdminRole } from "@/lib/guards";
-import { cacheAuditLogs } from "@/lib/offline-data";
-import { resolveOfflineQuery } from "@/lib/offline-core";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type { Tables } from "@/types/supabase";
 
@@ -59,34 +56,23 @@ function buildCutoff(filter: DateFilter) {
   return now.toISOString();
 }
 
-async function getAuditLogsLocal() {
-  return db.audit_logs.orderBy("created_at").reverse().limit(250).toArray();
-}
-
 async function fetchAuditLogs() {
   const supabase = getSupabaseBrowserClient();
-  return resolveOfflineQuery<AuditLogRow[]>({
-    cacheKey: "admin-audit-logs",
-    offline: getAuditLogsLocal,
-    online: async () => {
-      if (!supabase) {
-        return getAuditLogsLocal();
-      }
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
 
-      const { data, error } = await supabase
-        .from("audit_logs")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(250);
+  const { data, error } = await supabase
+    .from("audit_logs")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(250);
 
-      if (error) {
-        throw new Error(error.message);
-      }
+  if (error) {
+    throw new Error(error.message);
+  }
 
-      await cacheAuditLogs((data ?? []) as AuditLogRow[]);
-      return (data ?? []) as AuditLogRow[];
-    }
-  });
+  return (data ?? []) as AuditLogRow[];
 }
 
 export function AuditLogsViewer() {
@@ -183,7 +169,7 @@ export function AuditLogsViewer() {
       <section className="grid gap-4 md:grid-cols-3">
         <Card className="border-blue-100">
           <CardHeader className="pb-2">
-            <CardDescription>Logs in cache</CardDescription>
+            <CardDescription>Database logs</CardDescription>
             <CardTitle className="text-3xl text-slate-950">{stats.total}</CardTitle>
           </CardHeader>
         </Card>
@@ -211,7 +197,7 @@ export function AuditLogsViewer() {
               </CardTitle>
               <CardDescription>
                 Review changes across patient registration, orders, results, inventory, and
-                billing with local-first continuity.
+                billing from the central audit trail.
               </CardDescription>
             </div>
             <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px_160px] xl:min-w-[720px]">
@@ -243,7 +229,7 @@ export function AuditLogsViewer() {
                 <option value="24h">Last 24 hours</option>
                 <option value="7d">Last 7 days</option>
                 <option value="30d">Last 30 days</option>
-                <option value="all">All cached logs</option>
+                <option value="all">All logs</option>
               </select>
             </div>
           </div>

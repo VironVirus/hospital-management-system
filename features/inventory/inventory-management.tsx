@@ -59,17 +59,11 @@ import {
   canAccessInventoryRole,
   canManageInventoryRole
 } from "@/lib/guards";
-import { commitLocalMutation, generateLocalId, resolveOfflineQuery } from "@/lib/offline-core";
+import { commitOnlineMutation, generateId, resolveOnlineQuery } from "@/lib/online-core";
 import {
-  cacheInventoryItems,
-  cacheInventoryTransactions,
-  getInventoryItemsLocal,
-  getInventoryTransactionsLocal
-} from "@/lib/offline-data";
-import {
-  applyInventoryTransactionOffline,
-  queueAuditLog
-} from "@/lib/offline-mutations";
+  applyInventoryTransaction,
+  recordAuditLog
+} from "@/lib/online-mutations";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type { Json, TablesInsert, TablesUpdate } from "@/types/supabase";
 
@@ -81,12 +75,10 @@ type TransactionErrors = Partial<
 
 async function fetchInventoryItems() {
   const supabase = getSupabaseBrowserClient();
-  return resolveOfflineQuery<InventoryItemRow[]>({
-    cacheKey: "inventory-items",
-    offline: () => getInventoryItemsLocal(),
+  return resolveOnlineQuery<InventoryItemRow[]>({
     online: async () => {
       if (!supabase) {
-        return getInventoryItemsLocal();
+        throw new Error("Supabase is not configured.");
       }
 
       const { data, error } = await supabase
@@ -99,7 +91,6 @@ async function fetchInventoryItems() {
         throw new Error(error.message);
       }
 
-      await cacheInventoryItems((data ?? []) as InventoryItemRow[]);
       return (data ?? []) as InventoryItemRow[];
     }
   });
@@ -111,12 +102,10 @@ async function fetchInventoryTransactions(itemId: string | null) {
   }
 
   const supabase = getSupabaseBrowserClient();
-  return resolveOfflineQuery<InventoryTransactionRow[]>({
-    cacheKey: `inventory-transactions:${itemId}`,
-    offline: () => getInventoryTransactionsLocal(itemId),
+  return resolveOnlineQuery<InventoryTransactionRow[]>({
     online: async () => {
       if (!supabase) {
-        return getInventoryTransactionsLocal(itemId);
+        throw new Error("Supabase is not configured.");
       }
 
       const { data, error } = await supabase
@@ -130,7 +119,6 @@ async function fetchInventoryTransactions(itemId: string | null) {
         throw new Error(error.message);
       }
 
-      await cacheInventoryTransactions((data ?? []) as InventoryTransactionRow[]);
       return (data ?? []) as InventoryTransactionRow[];
     }
   });
@@ -378,7 +366,7 @@ export function InventoryManagement() {
     entityId: string,
     payload: Record<string, unknown>
   ) => {
-    await queueAuditLog({
+    await recordAuditLog({
       action,
       actorId: user?.id ?? null,
       entityId,
@@ -433,13 +421,11 @@ export function InventoryManagement() {
           ...payload,
           updated_at: new Date().toISOString()
         };
-        await commitLocalMutation({
+        await commitOnlineMutation({
           action: "update",
           entity: "inventory_items",
-          facilityId,
-          payload: updatePayload,
-          recordId: editingItemId,
-          userId: user?.id ?? null
+          payload: updatePayload as Json,
+          recordId: editingItemId
         });
 
         await writeAuditLog("inventory_item_updated", editingItemId, {
@@ -456,19 +442,17 @@ export function InventoryManagement() {
           variant: "success"
         });
       } else {
-        const rowId = generateLocalId("inventory-item");
+        const rowId = generateId();
         const row = {
           ...payload,
           id: rowId,
           updated_at: new Date().toISOString()
         } satisfies TablesInsert<"inventory_items"> & { id: string };
-        await commitLocalMutation({
+        await commitOnlineMutation({
           action: "insert",
           entity: "inventory_items",
-          facilityId,
-          payload: row,
-          recordId: rowId,
-          userId: user?.id ?? null
+          payload: row as Json,
+          recordId: rowId
         });
 
         await writeAuditLog("inventory_item_created", rowId, {
@@ -513,13 +497,11 @@ export function InventoryManagement() {
     try {
       setDeletingItemId(item.id);
       setSubmitError(null);
-      await commitLocalMutation({
+      await commitOnlineMutation({
         action: "delete",
         entity: "inventory_items",
-        facilityId,
         payload: { id: item.id },
-        recordId: item.id,
-        userId: user?.id ?? null
+        recordId: item.id
       });
 
       await writeAuditLog("inventory_item_deleted", item.id, {
@@ -537,7 +519,7 @@ export function InventoryManagement() {
       setSubmitSuccess(`Deleted ${item.name} successfully.`);
       toast({
         title: "Inventory item deleted",
-        description: `${item.name} and its local history were removed.`,
+        description: `${item.name} and its history were removed.`,
         variant: "success"
       });
       await Promise.all([
@@ -584,7 +566,7 @@ export function InventoryManagement() {
         throw new Error("Select an inventory item before posting a stock movement.");
       }
 
-      await applyInventoryTransactionOffline({
+      await applyInventoryTransaction({
         actorId: user?.id ?? null,
         facilityId,
         item: selectedItem,

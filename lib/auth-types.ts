@@ -10,6 +10,22 @@ export const appRoles: AppRole[] = [
   "Accountant"
 ];
 
+export function formatAppRole(role: AppRole | null | undefined) {
+  if (!role) {
+    return "Unknown";
+  }
+
+  if (role === "LabScientist") {
+    return "Lab Scientist";
+  }
+
+  if (role === "Verifier") {
+    return "HOD of Lab / Chief Scientist";
+  }
+
+  return role;
+}
+
 export type UserProfile = {
   id: string;
   display_name: string | null;

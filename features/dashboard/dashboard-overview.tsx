@@ -51,14 +51,6 @@ import {
   type DashboardPaymentRow,
   type DashboardWorklistRow
 } from "@/features/dashboard/dashboard-utils";
-import { db } from "@/lib/dexie";
-import {
-  cacheInventoryItems,
-  cacheInvoicesWithRelations,
-  cacheOrderTestsWithRelations,
-  cachePatients
-} from "@/lib/offline-data";
-import { resolveOfflineQuery } from "@/lib/offline-core";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 
 type DashboardData = {
@@ -110,192 +102,73 @@ async function fetchDashboardData(): Promise<DashboardData> {
   windowStart.setHours(0, 0, 0, 0);
   const startIso = windowStart.toISOString();
 
-  return resolveOfflineQuery<DashboardData>({
-    cacheKey: "dashboard-overview",
-    offline: async () => {
-      const [orderTests, invoices, payments, inventoryItems, patientsForWindow] = await Promise.all([
-        db.order_tests.where("created_at").aboveOrEqual(startIso).reverse().limit(320).toArray(),
-        db.invoices.where("issued_at").aboveOrEqual(startIso).reverse().limit(240).toArray(),
-        db.invoice_payments
-          .where("received_at")
-          .aboveOrEqual(startIso)
-          .reverse()
-          .limit(320)
-          .toArray(),
-        db.inventory_items.orderBy("updated_at").reverse().limit(120).toArray(),
-        db.patients.where("created_at").aboveOrEqual(startIso).reverse().limit(240).toArray()
-      ]);
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
 
-      const uniqueOrderIds = [...new Set(orderTests.map((row) => row.order_id))];
-      const uniquePatientIds: string[] = [];
-      const uniqueTestIds = [...new Set(orderTests.map((row) => row.test_id))];
-      const orders = (await db.orders.bulkGet(uniqueOrderIds)).filter(
-        (row): row is NonNullable<typeof row> => Boolean(row)
-      );
-      orders.forEach((row) => {
-        if (!uniquePatientIds.includes(row.patient_id)) {
-          uniquePatientIds.push(row.patient_id);
-        }
-      });
-      const [patients, tests] = await Promise.all([
-        db.patients.bulkGet(uniquePatientIds),
-        db.tests.bulkGet(uniqueTestIds)
-      ]);
+  const [worklistResponse, invoicesResponse, paymentsResponse, inventoryResponse, patientsResponse] =
+    await Promise.all([
+      supabase
+        .from("order_tests")
+        .select(
+          "id, order_id, test_id, sample_code, specimen_label, status, created_at, updated_at, collected_at, collected_by, in_progress_at, results_entered_at, verified_at, reported_at, tests(id, name), orders(id, patient_id, order_number, ordered_at, priority, patients(id, name, lab_id))"
+        )
+        .gte("created_at", startIso)
+        .order("created_at", { ascending: false })
+        .limit(320),
+      supabase
+        .from("invoices")
+        .select("id, facility_id, order_id, invoice_number, subtotal, discount_amount, total_amount, amount_paid, payment_status, notes, issued_at, due_at, created_at, created_by, updated_at")
+        .gte("issued_at", startIso)
+        .order("issued_at", { ascending: false })
+        .limit(240),
+      supabase
+        .from("invoice_payments")
+        .select("id, facility_id, invoice_id, amount, payment_method, receipt_number, received_at, received_by, reference_number, notes, created_at")
+        .gte("received_at", startIso)
+        .order("received_at", { ascending: false })
+        .limit(320),
+      supabase
+        .from("inventory_items")
+        .select("*")
+        .eq("is_active", true)
+        .order("updated_at", { ascending: false })
+        .limit(80),
+      supabase
+        .from("patients")
+        .select("id, created_at")
+        .gte("created_at", startIso)
+        .order("created_at", { ascending: false })
+        .limit(240)
+    ]);
 
-      const orderMap = new Map(orders.map((row) => [row.id, row]));
-      const patientMap = new Map(
-        patients.filter((row): row is NonNullable<typeof row> => Boolean(row)).map((row) => [row.id, row])
-      );
-      const testMap = new Map(
-        tests.filter((row): row is NonNullable<typeof row> => Boolean(row)).map((row) => [row.id, row])
-      );
+  if (worklistResponse.error) {
+    throw new Error(worklistResponse.error.message);
+  }
 
-      return {
-        inventoryItems: inventoryItems
-          .filter((item) => item.is_active)
-          .sort((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime())
-          .slice(0, 80),
-        invoices: invoices
-          .map((invoice) => ({
-            amount_paid: invoice.amount_paid,
-            id: invoice.id,
-            issued_at: invoice.issued_at,
-            payment_status: invoice.payment_status,
-            total_amount: invoice.total_amount
-          })),
-        payments: payments
-          .map((payment) => ({
-            amount: payment.amount,
-            payment_method: payment.payment_method,
-            received_at: payment.received_at
-          })),
-        patients: patientsForWindow.map((patient) => ({
-          created_at: patient.created_at,
-          id: patient.id
-        })),
-        worklist: orderTests
-          .map((row) => {
-            const order = orderMap.get(row.order_id) ?? null;
-            const patient = order ? patientMap.get(order.patient_id) ?? null : null;
-            const test = testMap.get(row.test_id) ?? null;
+  if (invoicesResponse.error) {
+    throw new Error(invoicesResponse.error.message);
+  }
 
-            return {
-              collected_at: row.collected_at,
-              created_at: row.created_at,
-              id: row.id,
-              in_progress_at: row.in_progress_at,
-              order_id: row.order_id,
-              orders: order
-                ? {
-                    order_number: order.order_number,
-                    ordered_at: order.ordered_at,
-                    patients: patient
-                      ? {
-                          lab_id: patient.lab_id,
-                          name: patient.name
-                        }
-                      : null,
-                    priority: order.priority
-                  }
-                : null,
-              reported_at: row.reported_at,
-              results_entered_at: row.results_entered_at,
-              sample_code: row.sample_code,
-              specimen_label: row.specimen_label,
-              status: row.status,
-              tests: test ? { name: test.name } : null,
-              updated_at: row.updated_at,
-              verified_at: row.verified_at
-            };
-          })
-      };
-    },
-    online: async () => {
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
-      }
+  if (paymentsResponse.error) {
+    throw new Error(paymentsResponse.error.message);
+  }
 
-      const [worklistResponse, invoicesResponse, paymentsResponse, inventoryResponse, patientsResponse] =
-        await Promise.all([
-          supabase
-            .from("order_tests")
-            .select(
-              "id, order_id, test_id, sample_code, specimen_label, status, created_at, updated_at, collected_at, collected_by, in_progress_at, results_entered_at, verified_at, reported_at, tests(id, name), orders(id, patient_id, order_number, ordered_at, priority, patients(id, name, lab_id))"
-            )
-            .gte("created_at", startIso)
-            .order("created_at", { ascending: false })
-            .limit(320),
-          supabase
-            .from("invoices")
-            .select("id, facility_id, order_id, invoice_number, subtotal, discount_amount, total_amount, amount_paid, payment_status, notes, issued_at, due_at, created_at, created_by, updated_at")
-            .gte("issued_at", startIso)
-            .order("issued_at", { ascending: false })
-            .limit(240),
-          supabase
-            .from("invoice_payments")
-            .select("id, facility_id, invoice_id, amount, payment_method, receipt_number, received_at, received_by, reference_number, notes, created_at")
-            .gte("received_at", startIso)
-            .order("received_at", { ascending: false })
-            .limit(320),
-          supabase
-            .from("inventory_items")
-            .select("*")
-            .eq("is_active", true)
-            .order("updated_at", { ascending: false })
-            .limit(80),
-          supabase
-            .from("patients")
-            .select("id, created_at")
-            .gte("created_at", startIso)
-            .order("created_at", { ascending: false })
-            .limit(240)
-        ]);
+  if (inventoryResponse.error) {
+    throw new Error(inventoryResponse.error.message);
+  }
 
-      if (worklistResponse.error) {
-        throw new Error(worklistResponse.error.message);
-      }
+  if (patientsResponse.error) {
+    throw new Error(patientsResponse.error.message);
+  }
 
-      if (invoicesResponse.error) {
-        throw new Error(invoicesResponse.error.message);
-      }
-
-      if (paymentsResponse.error) {
-        throw new Error(paymentsResponse.error.message);
-      }
-
-      if (inventoryResponse.error) {
-        throw new Error(inventoryResponse.error.message);
-      }
-
-      if (patientsResponse.error) {
-        throw new Error(patientsResponse.error.message);
-      }
-
-      await Promise.all([
-        cacheOrderTestsWithRelations((worklistResponse.data ?? []) as Record<string, unknown>[]),
-        cacheInvoicesWithRelations(
-          (invoicesResponse.data ?? []).map((invoice) => ({
-            ...invoice,
-            invoice_items: [],
-            invoice_payments: (paymentsResponse.data ?? []).filter(
-              (payment) => payment.invoice_id === invoice.id
-            ),
-            orders: null
-          })) as Record<string, unknown>[]
-        ),
-        cacheInventoryItems((inventoryResponse.data ?? []) as InventoryItemRow[]),
-        cachePatients((patientsResponse.data ?? []) as Array<DashboardPatientRow & { id: string }>)
-      ]);
-
-      return {
-        inventoryItems: (inventoryResponse.data ?? []) as InventoryItemRow[],
-        invoices: (invoicesResponse.data ?? []) as DashboardInvoiceRow[],
-        patients: (patientsResponse.data ?? []) as DashboardPatientRow[],
-        payments: (paymentsResponse.data ?? []) as DashboardPaymentRow[],
-        worklist: (worklistResponse.data ?? []) as DashboardWorklistRow[]
-      };
-    }
-  });
+  return {
+    inventoryItems: (inventoryResponse.data ?? []) as InventoryItemRow[],
+    invoices: (invoicesResponse.data ?? []) as DashboardInvoiceRow[],
+    patients: (patientsResponse.data ?? []) as DashboardPatientRow[],
+    payments: (paymentsResponse.data ?? []) as DashboardPaymentRow[],
+    worklist: (worklistResponse.data ?? []) as DashboardWorklistRow[]
+  };
 }
 
 function SummaryCard({ hint, icon: Icon, label, tone = "blue", value }: SummaryCardProps) {
@@ -633,7 +506,7 @@ export function DashboardOverview() {
       <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <ChartShell
           title="Today's worklist"
-          description="Open samples created today, prioritized for bench flow and verifier attention."
+          description="Open samples created today, prioritized for bench flow and HOD/chief scientist attention."
           actions={
             <Badge variant="outline" className="border-blue-200 text-blue-700">
               {analytics.worklistSummary.urgent} urgent/stat sample(s)

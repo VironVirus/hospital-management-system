@@ -18,7 +18,8 @@ const config = [
       "dist/**",
       "next-env.d.ts",
       "node_modules/**",
-      "out/**"
+      "out/**",
+      "scripts/*.cjs"
     ]
   },
   ...compat.extends("next/core-web-vitals", "next/typescript")

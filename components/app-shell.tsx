@@ -25,13 +25,12 @@ import {
   Wallet
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
-import { useOffline } from "@/components/offline-provider";
 import { useTheme } from "@/components/theme-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { appRoles, type AppRole } from "@/lib/auth-types";
+import { appRoles, formatAppRole, type AppRole } from "@/lib/auth-types";
 
 type NavigationItem = {
   href: Route;
@@ -112,7 +111,6 @@ const navigation: NavigationItem[] = [
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { conflicts, failed, isOnline, pending, processing, syncNow } = useOffline();
   const { profile, role, user, loading } = useAuth();
   const { resolvedTheme, toggleTheme } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -133,7 +131,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div>
           <p className="text-sm font-semibold text-slate-950 dark:text-slate-50">LIMS Nigeria</p>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Offline-first laboratory suite
+            Online laboratory suite
           </p>
         </div>
       </div>
@@ -164,38 +162,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       </nav>
 
       <div className="space-y-2 px-3 pb-3">
-        <div className="rounded-2xl border border-blue-100 bg-blue-50 p-3 text-sm text-slate-700 dark:border-blue-500/20 dark:bg-blue-500/10 dark:text-slate-200">
-          <div className="flex items-center justify-between">
-            <p className="font-medium text-slate-900 dark:text-slate-50">Network status</p>
-            <Badge variant={isOnline ? "default" : "secondary"}>
-              {isOnline ? "Online" : "Offline"}
-            </Badge>
-          </div>
-          <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-            {pending > 0 || failed > 0
-              ? `${pending + failed} queued change(s) waiting to sync.`
-              : "Local changes are cached in Dexie and replayed when connectivity returns."}
-          </p>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            {pending > 0 ? <Badge variant="outline">{pending} pending</Badge> : null}
-            {failed > 0 ? <Badge variant="secondary">{failed} retrying</Badge> : null}
-            {conflicts > 0 ? (
-              <Badge className="border-transparent bg-amber-100 text-amber-700">
-                {conflicts} manual review
-              </Badge>
-            ) : null}
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            className="mt-2 h-9 w-full justify-start"
-            disabled={!isOnline || processing}
-            onClick={() => void syncNow()}
-          >
-            {processing ? "Syncing queued changes..." : "Sync queued changes now"}
-          </Button>
-        </div>
-
         <div className="space-y-2 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950/60">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-200">
@@ -214,7 +180,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <p className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
               Role
             </p>
-            <Badge variant="outline">{loading ? "Loading..." : role || "Unknown"}</Badge>
+            <Badge variant="outline">{loading ? "Loading..." : formatAppRole(role)}</Badge>
           </div>
           <div className="flex items-center justify-between gap-4">
             <p className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">

@@ -51,22 +51,18 @@ import {
   type TestCategory
 } from "@/features/tests/categories";
 import { useToast } from "@/hooks/use-toast";
+import {
+  buildInvoicePrintHtml,
+  type BillingInvoiceRow
+} from "@/features/billing/billing-utils";
 import { SampleLabelSheet } from "@/features/orders/sample-label-sheet";
 import { canAccessOrdersRole, canCreateOrdersRole } from "@/lib/guards";
 import {
-  addOfflineTestsToOrder,
-  createOfflineOrderBundle
-} from "@/lib/offline-mutations";
-import {
-  cacheOrdersWithRelations,
-  cachePatients,
-  cacheTests,
-  getActiveTestsLocal,
-  getOrderWithTestsLocal,
-  getRecentOrdersLocal,
-  searchPatientsLocal
-} from "@/lib/offline-data";
-import { resolveOfflineQuery } from "@/lib/offline-core";
+  addTestsToOrder,
+  createTestOrderBundle
+} from "@/lib/online-mutations";
+import { resolveOnlineQuery } from "@/lib/online-core";
+import { printHtmlDocument } from "@/lib/print";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type { Database, Tables } from "@/types/supabase";
 
@@ -103,6 +99,40 @@ type FormErrors = Partial<Record<keyof OrderFormValues | "form", string>>;
 type RecentOrderFilter = "all" | SampleStatus;
 type TestCategoryOption = TestCategory | "Uncategorized";
 
+const invoicePrintSelect =
+  "id, facility_id, order_id, invoice_number, subtotal, discount_amount, total_amount, amount_paid, payment_status, notes, issued_at, due_at, created_at, created_by, updated_at, orders(id, facility_id, patient_id, order_number, ordered_at, priority, status, reported_at, created_at, updated_at, facilities(id, name, code), patients(id, name, lab_id, phone)), invoice_items(id, invoice_id, order_test_id, test_name, quantity, unit_price, line_total, created_at), invoice_payments(id, facility_id, invoice_id, receipt_number, amount, payment_method, reference_number, notes, received_at, received_by, created_at)";
+
+async function waitForInvoiceRetry(ms: number) {
+  await new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function fetchInvoiceForOrder(orderId: string) {
+  const supabase = getSupabaseBrowserClient();
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const { data, error } = await supabase
+      .from("invoices")
+      .select(invoicePrintSelect)
+      .eq("order_id", orderId)
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    if (data) {
+      return data as BillingInvoiceRow;
+    }
+
+    await waitForInvoiceRetry(350);
+  }
+
+  throw new Error("The bill is still being prepared. Use the Print bill button below.");
+}
+
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat("en-NG", {
     day: "2-digit",
@@ -115,12 +145,10 @@ function formatDateTime(value: string) {
 
 async function fetchPatients(searchTerm: string) {
   const supabase = getSupabaseBrowserClient();
-  return resolveOfflineQuery<PatientSearchRow[]>({
-    cacheKey: `order-patients:${searchTerm}`,
-    offline: async () => (await searchPatientsLocal(searchTerm, 1, 12)).rows,
+  return resolveOnlineQuery<PatientSearchRow[]>({
     online: async () => {
       if (!supabase) {
-        return (await searchPatientsLocal(searchTerm, 1, 12)).rows;
+        throw new Error("Supabase is not configured.");
       }
 
       const { data, error } = await supabase.rpc("search_patients", {
@@ -134,7 +162,6 @@ async function fetchPatients(searchTerm: string) {
       }
 
       const rows = (data ?? []) as PatientSearchRow[];
-      await cachePatients(rows);
       return rows;
     }
   });
@@ -142,12 +169,10 @@ async function fetchPatients(searchTerm: string) {
 
 async function fetchActiveTests() {
   const supabase = getSupabaseBrowserClient();
-  return resolveOfflineQuery<TestRow[]>({
-    cacheKey: "active-tests",
-    offline: () => getActiveTestsLocal(),
+  return resolveOnlineQuery<TestRow[]>({
     online: async () => {
       if (!supabase) {
-        return getActiveTestsLocal();
+        throw new Error("Supabase is not configured.");
       }
 
       const { data, error } = await supabase
@@ -160,7 +185,6 @@ async function fetchActiveTests() {
         throw new Error(error.message);
       }
 
-      await cacheTests((data ?? []) as TestRow[]);
       return (data ?? []) as TestRow[];
     }
   });
@@ -168,12 +192,10 @@ async function fetchActiveTests() {
 
 async function fetchRecentOrders() {
   const supabase = getSupabaseBrowserClient();
-  return resolveOfflineQuery<RecentOrderRow[]>({
-    cacheKey: "recent-orders",
-    offline: () => getRecentOrdersLocal(5),
+  return resolveOnlineQuery<RecentOrderRow[]>({
     online: async () => {
       if (!supabase) {
-        return getRecentOrdersLocal(5);
+        throw new Error("Supabase is not configured.");
       }
 
       const { data, error } = await supabase
@@ -188,7 +210,6 @@ async function fetchRecentOrders() {
         throw new Error(error.message);
       }
 
-      await cacheOrdersWithRelations((data ?? []) as Record<string, unknown>[]);
       return (data ?? []) as RecentOrderRow[];
     }
   });
@@ -196,12 +217,10 @@ async function fetchRecentOrders() {
 
 async function fetchOrderForEdit(orderId: string) {
   const supabase = getSupabaseBrowserClient();
-  return resolveOfflineQuery<RecentOrderRow | null>({
-    cacheKey: `order-edit:${orderId}`,
-    offline: () => getOrderWithTestsLocal(orderId),
+  return resolveOnlineQuery<RecentOrderRow | null>({
     online: async () => {
       if (!supabase) {
-        return getOrderWithTestsLocal(orderId);
+        throw new Error("Supabase is not configured.");
       }
 
       const { data, error } = await supabase
@@ -214,10 +233,6 @@ async function fetchOrderForEdit(orderId: string) {
 
       if (error) {
         throw new Error(error.message);
-      }
-
-      if (data) {
-        await cacheOrdersWithRelations([data as Record<string, unknown>]);
       }
 
       return (data as RecentOrderRow | null) ?? null;
@@ -309,6 +324,27 @@ export function OrdersManagement() {
       null,
     [editOrderQuery.data, editingOrderId, recentOrdersQuery.data]
   );
+
+  const printBillForOrder = async (orderId: string) => {
+    try {
+      const invoice = await fetchInvoiceForOrder(orderId);
+      printHtmlDocument(buildInvoicePrintHtml(invoice));
+      toast({
+        title: "Bill sent to printer",
+        description: `${invoice.invoice_number} is ready for printing.`,
+        variant: "success"
+      });
+    } catch (error) {
+      toast({
+        title: "Bill not printed automatically",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Open the bill from the button below to print manually.",
+        variant: "error"
+      });
+    }
+  };
 
   useEffect(() => {
     if (!patientSearchFromQuery) {
@@ -551,7 +587,7 @@ export function OrdersManagement() {
 
       const patientName = selectedPatient?.name || "Selected patient";
       if (editingOrder) {
-        const created = await addOfflineTestsToOrder({
+        const created = await addTestsToOrder({
           facilityId,
           order: {
             id: editingOrder.id,
@@ -596,10 +632,11 @@ export function OrdersManagement() {
           queryClient.invalidateQueries({ queryKey: ["billing-invoices"] }),
           queryClient.invalidateQueries({ queryKey: ["patients"] })
         ]);
+        await printBillForOrder(created.orderId);
         return;
       }
 
-      const created = await createOfflineOrderBundle({
+      const created = await createTestOrderBundle({
         facilityId,
         notes: parsed.data.notes.trim() || null,
         patient: {
@@ -626,7 +663,7 @@ export function OrdersManagement() {
       );
       toast({
         title: "Test request created",
-        description: `${created.orderNumber} has been queued with ${created.samples.length} sample label(s).`,
+        description: `${created.orderNumber} has ${created.samples.length} sample label(s).`,
         variant: "success"
       });
       setFormState(initialOrderFormState);
@@ -637,6 +674,7 @@ export function OrdersManagement() {
         queryClient.invalidateQueries({ queryKey: ["billing-invoices"] }),
         queryClient.invalidateQueries({ queryKey: ["patients"] })
       ]);
+      await printBillForOrder(created.orderId);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to create the test request.";

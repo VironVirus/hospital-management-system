@@ -1,9 +1,8 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { AuthProvider } from "@/components/auth-provider";
-import { OfflineProvider } from "@/components/offline-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ToastProvider } from "@/components/toast-provider";
 
@@ -26,21 +25,11 @@ export function Providers({ children }: { children: ReactNode }) {
       })
   );
 
-  useEffect(() => {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {
-        // Ignore registration issues in unsupported environments.
-      });
-    }
-  }, []);
-
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <ToastProvider>
-          <OfflineProvider>
-            <AuthProvider>{children}</AuthProvider>
-          </OfflineProvider>
+          <AuthProvider>{children}</AuthProvider>
         </ToastProvider>
       </ThemeProvider>
     </QueryClientProvider>

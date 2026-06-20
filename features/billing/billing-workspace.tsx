@@ -41,9 +41,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { printHtmlDocument } from "@/lib/print";
 import { canAccessBillingRole, canManageBillingRole } from "@/lib/guards";
-import { commitLocalMutation, resolveOfflineQuery } from "@/lib/offline-core";
-import { cacheInvoicesWithRelations, getInvoicesLocal } from "@/lib/offline-data";
-import { queueAuditLog, recordInvoicePaymentOffline } from "@/lib/offline-mutations";
+import { commitOnlineMutation, resolveOnlineQuery } from "@/lib/online-core";
+import { recordAuditLog, recordInvoicePayment } from "@/lib/online-mutations";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type { Json, TablesUpdate } from "@/types/supabase";
 
@@ -65,12 +64,10 @@ const initialPaymentFormState: PaymentFormState = {
 
 async function fetchInvoices() {
   const supabase = getSupabaseBrowserClient();
-  return resolveOfflineQuery<BillingInvoiceRow[]>({
-    cacheKey: "billing-invoices",
-    offline: () => getInvoicesLocal(),
+  return resolveOnlineQuery<BillingInvoiceRow[]>({
     online: async () => {
       if (!supabase) {
-        return getInvoicesLocal();
+        throw new Error("Supabase is not configured.");
       }
 
       const { data, error } = await supabase
@@ -85,7 +82,6 @@ async function fetchInvoices() {
         throw new Error(error.message);
       }
 
-      await cacheInvoicesWithRelations((data ?? []) as Record<string, unknown>[]);
       return (data ?? []) as BillingInvoiceRow[];
     }
   });
@@ -229,7 +225,7 @@ export function BillingWorkspace() {
       return;
     }
 
-    await queueAuditLog({
+    await recordAuditLog({
       action,
       actorId: user?.id ?? null,
       entityId,
@@ -267,14 +263,11 @@ export function BillingWorkspace() {
         updated_at: new Date().toISOString()
       };
 
-      await commitLocalMutation({
+      await commitOnlineMutation({
         action: "update",
-        critical: true,
         entity: "invoices",
-        facilityId: activeFacilityId,
-        payload: updatePayload,
-        recordId: selectedInvoice.id,
-        userId: user?.id ?? null
+        payload: updatePayload as Json,
+        recordId: selectedInvoice.id
       });
 
       await writeAuditLog("invoice_updated", selectedInvoice.id, {
@@ -314,7 +307,7 @@ export function BillingWorkspace() {
       setPaymentError(null);
       setPaymentSuccess(null);
 
-      await recordInvoicePaymentOffline({
+      await recordInvoicePayment({
         actorId: user?.id ?? null,
         amount: paymentForm.amount,
         facilityId: activeFacilityId,

@@ -112,8 +112,8 @@ export function buildReportBranding(
     supportLine: "support@lims.ng | +234 800 000 0000",
     footerNote:
       "Results should be interpreted alongside clinical findings and patient history.",
-    signatoryName: "Authorized Verifier",
-    signatoryTitle: "Head of Laboratory / Verifier",
+    signatoryName: "HOD of Lab / Chief Scientist",
+    signatoryTitle: "Head of Laboratory / Chief Scientist",
     logoUrl
   };
 }

@@ -42,18 +42,14 @@ import {
   sexOptions,
   type PatientFormValues
 } from "@/features/patients/schema";
-import {
-  formatPatientAge,
-  formatPatientDate
-} from "@/features/patients/patient-utils";
+import { formatPatientAge } from "@/features/patients/patient-utils";
 import { useToast } from "@/hooks/use-toast";
 import {
   canAccessPatientsRole,
   canManagePatientsRole,
   canRegisterPatientsRole
 } from "@/lib/guards";
-import { commitLocalMutation, generateLocalId, resolveOfflineQuery } from "@/lib/offline-core";
-import { cachePatients, searchPatientsLocal } from "@/lib/offline-data";
+import { commitOnlineMutation, generateId, resolveOnlineQuery } from "@/lib/online-core";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type { Database, TablesInsert } from "@/types/supabase";
 
@@ -72,12 +68,10 @@ function toNullable(value: string) {
 
 async function fetchPatients(searchTerm: string, page: number) {
   const supabase = getSupabaseBrowserClient();
-  return resolveOfflineQuery({
-    cacheKey: `patients:${searchTerm}:${page}`,
-    offline: () => searchPatientsLocal(searchTerm, page, PAGE_SIZE),
+  return resolveOnlineQuery({
     online: async () => {
       if (!supabase) {
-        return searchPatientsLocal(searchTerm, page, PAGE_SIZE);
+        throw new Error("Supabase is not configured.");
       }
 
       const { data, error } = await supabase.rpc("search_patients", {
@@ -91,7 +85,6 @@ async function fetchPatients(searchTerm: string, page: number) {
       }
 
       const rows = (data ?? []) as SearchPatientRow[];
-      await cachePatients(rows);
 
       const totalCount = rows[0]?.total_count ?? 0;
 
@@ -293,7 +286,7 @@ export function PatientManagement() {
       email: toNullable(parsed.data.email),
       emergency_contact: toNullable(parsed.data.emergency_contact),
       facility_id: facilityId,
-      id: generateLocalId("patient"),
+      id: generateId(),
       national_id: toNullable(parsed.data.national_id),
       lga: toNullable(parsed.data.lga),
       state: toNullable(parsed.data.state),
@@ -306,10 +299,9 @@ export function PatientManagement() {
 
     try {
       setSaving(true);
-      await commitLocalMutation({
+      await commitOnlineMutation({
         action: "insert",
         entity: "patients",
-        facilityId,
         payload,
         recordId: payload.id as string
       });
@@ -493,20 +485,20 @@ export function PatientManagement() {
               {patients.map((patient: SearchPatientRow) => (
                 <div
                   key={patient.id}
-                  className="grid gap-3 px-4 py-2.5 transition hover:bg-blue-50/50 lg:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.9fr)_auto]"
+                  className="grid gap-2 px-3 py-2.5 transition hover:bg-blue-50/50 lg:grid-cols-[minmax(260px,1.5fr)_minmax(220px,0.75fr)_auto] lg:items-center"
                 >
                   <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate text-sm font-semibold text-slate-950">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+                      <p className="min-w-0 break-words text-sm font-semibold leading-5 text-slate-950">
                         {patient.name}
                       </p>
-                      <Badge variant="secondary" className="shrink-0">
+                      <Badge variant="secondary" className="w-fit shrink-0">
                         {patient.lab_id}
                       </Badge>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 sm:grid-cols-4">
+                  <div className="grid grid-cols-3 gap-1.5 text-xs text-slate-600">
                     <span className="rounded-lg bg-slate-50 px-2 py-1">
                       Age: <strong className="text-slate-900">{formatPatientAge(patient.dob)}</strong>
                     </span>
@@ -516,27 +508,24 @@ export function PatientManagement() {
                     <span className="rounded-lg bg-slate-50 px-2 py-1">
                       Tests: <strong className="text-slate-900">{patient.order_count}</strong>
                     </span>
-                    <span className="rounded-lg bg-slate-50 px-2 py-1">
-                      {patient.ndpr_consent ? "NDPR ok" : "Consent due"}
-                    </span>
                   </div>
 
                   <div className="flex items-center gap-2 lg:justify-end">
-                    <Button asChild size="sm">
+                    <Button asChild size="sm" className="h-8 px-2 text-xs">
                       <Link href={`/patients/${patient.id}` as Route}>
                         Open
-                        <ArrowRight className="h-4 w-4" />
+                        <ArrowRight className="h-3.5 w-3.5" />
                       </Link>
                     </Button>
                     {canManagePatients ? (
-                      <Button asChild variant="outline" size="sm">
+                      <Button asChild variant="outline" size="sm" className="h-8 px-2 text-xs">
                         <Link
                           href={{
                             pathname: `/patients/${patient.id}` as Route,
                             query: { mode: "edit" }
                           }}
                         >
-                          <PencilLine className="h-4 w-4" />
+                          <PencilLine className="h-3.5 w-3.5" />
                           Edit
                         </Link>
                       </Button>

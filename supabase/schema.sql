@@ -327,6 +327,71 @@ as $$
   );
 $$;
 
+create or replace function public.current_user_has_role(allowed_roles public.app_role[])
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.role = any (allowed_roles)
+  );
+$$;
+
+create or replace function public.current_user_can_register_patients()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.current_user_has_role(array['Admin', 'Receptionist']::public.app_role[]);
+$$;
+
+create or replace function public.current_user_can_create_orders()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.current_user_has_role(array['Admin', 'Receptionist']::public.app_role[]);
+$$;
+
+create or replace function public.current_user_can_move_samples()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.current_user_has_role(array['Admin', 'Receptionist', 'LabScientist', 'Verifier']::public.app_role[]);
+$$;
+
+create or replace function public.current_user_can_enter_results()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.current_user_has_role(array['Admin', 'LabScientist']::public.app_role[]);
+$$;
+
+create or replace function public.current_user_can_update_results()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select public.current_user_has_role(array['Admin', 'LabScientist', 'Verifier']::public.app_role[]);
+$$;
+
 create or replace function public.current_user_facility_id()
 returns uuid
 language sql
@@ -858,13 +923,16 @@ as $$
   );
 $$;
 
+drop function if exists public.apply_inventory_transaction(uuid, text, numeric, text, text, text);
+
 create or replace function public.apply_inventory_transaction(
   target_item_id uuid,
   transaction_type_value text,
   quantity_value numeric,
   reason_value text default null,
   reference_number_value text default null,
-  notes_value text default null
+  notes_value text default null,
+  item_unit_cost_value numeric default null
 )
 returns table (
   transaction_id uuid,
@@ -883,6 +951,7 @@ declare
   next_balance numeric(12,2);
   quantity_delta numeric(12,2);
   normalized_type text;
+  normalized_unit_cost numeric(12,2);
   inserted_transaction public.inventory_transactions%rowtype;
 begin
   if target_item_id is null then
@@ -924,6 +993,10 @@ begin
     end;
 
   next_balance := coalesce(item_record.quantity, 0) + quantity_delta;
+  normalized_unit_cost := greatest(
+    coalesce(nullif(item_unit_cost_value, 0), item_record.unit_cost, 0),
+    0
+  );
 
   if next_balance < 0 then
     raise exception 'Insufficient stock. Current quantity is %', item_record.quantity;
@@ -932,6 +1005,10 @@ begin
   update public.inventory_items
   set
     quantity = next_balance,
+    unit_cost = case
+      when normalized_type = 'stock_in' and normalized_unit_cost > 0 then normalized_unit_cost
+      else unit_cost
+    end,
     last_stocked_at = case
       when normalized_type = 'stock_in' then now()
       else last_stocked_at
@@ -957,8 +1034,8 @@ begin
     item_record.id,
     normalized_type,
     quantity_delta,
-    coalesce(item_record.unit_cost, 0),
-    abs(quantity_delta) * coalesce(item_record.unit_cost, 0),
+    normalized_unit_cost,
+    abs(quantity_delta) * normalized_unit_cost,
     next_balance,
     nullif(btrim(reason_value), ''),
     nullif(btrim(reference_number_value), ''),
@@ -2170,7 +2247,10 @@ drop policy if exists "Facility users can insert patients" on public.patients;
 create policy "Facility users can insert patients"
 on public.patients
 for insert
-with check (public.facility_access_allowed(facility_id));
+with check (
+  public.facility_access_allowed(facility_id)
+  and public.current_user_can_register_patients()
+);
 
 drop policy if exists "Facility users can update patients" on public.patients;
 drop policy if exists "Admins can update patients" on public.patients;
@@ -2358,14 +2438,23 @@ drop policy if exists "Facility users can insert orders" on public.orders;
 create policy "Facility users can insert orders"
 on public.orders
 for insert
-with check (public.facility_access_allowed(facility_id));
+with check (
+  public.facility_access_allowed(facility_id)
+  and public.current_user_can_create_orders()
+);
 
 drop policy if exists "Facility users can update orders" on public.orders;
 create policy "Facility users can update orders"
 on public.orders
 for update
-using (public.facility_access_allowed(facility_id))
-with check (public.facility_access_allowed(facility_id));
+using (
+  public.facility_access_allowed(facility_id)
+  and public.current_user_can_move_samples()
+)
+with check (
+  public.facility_access_allowed(facility_id)
+  and public.current_user_can_move_samples()
+);
 
 drop policy if exists "Facility users can read order tests" on public.order_tests;
 create policy "Facility users can read order tests"
@@ -2377,14 +2466,23 @@ drop policy if exists "Facility users can insert order tests" on public.order_te
 create policy "Facility users can insert order tests"
 on public.order_tests
 for insert
-with check (public.order_record_in_current_facility(order_id));
+with check (
+  public.order_record_in_current_facility(order_id)
+  and public.current_user_can_create_orders()
+);
 
 drop policy if exists "Facility users can update order tests" on public.order_tests;
 create policy "Facility users can update order tests"
 on public.order_tests
 for update
-using (public.order_record_in_current_facility(order_id))
-with check (public.order_record_in_current_facility(order_id));
+using (
+  public.order_record_in_current_facility(order_id)
+  and public.current_user_can_move_samples()
+)
+with check (
+  public.order_record_in_current_facility(order_id)
+  and public.current_user_can_move_samples()
+);
 
 drop policy if exists "Facility users can read custody logs" on public.sample_custody_logs;
 create policy "Facility users can read custody logs"
@@ -2396,7 +2494,10 @@ drop policy if exists "Facility users can insert custody logs" on public.sample_
 create policy "Facility users can insert custody logs"
 on public.sample_custody_logs
 for insert
-with check (public.order_test_in_current_facility(order_test_id));
+with check (
+  public.order_test_in_current_facility(order_test_id)
+  and public.current_user_can_move_samples()
+);
 
 drop policy if exists "Facility users can read order test results" on public.order_test_results;
 create policy "Facility users can read order test results"
@@ -2408,14 +2509,23 @@ drop policy if exists "Facility users can insert order test results" on public.o
 create policy "Facility users can insert order test results"
 on public.order_test_results
 for insert
-with check (public.order_test_in_current_facility(order_test_id));
+with check (
+  public.order_test_in_current_facility(order_test_id)
+  and public.current_user_can_enter_results()
+);
 
 drop policy if exists "Facility users can update order test results" on public.order_test_results;
 create policy "Facility users can update order test results"
 on public.order_test_results
 for update
-using (public.order_test_in_current_facility(order_test_id))
-with check (public.order_test_in_current_facility(order_test_id));
+using (
+  public.order_test_in_current_facility(order_test_id)
+  and public.current_user_can_update_results()
+)
+with check (
+  public.order_test_in_current_facility(order_test_id)
+  and public.current_user_can_update_results()
+);
 
 drop policy if exists "Facility users can read audit logs" on public.audit_logs;
 create policy "Facility users can read audit logs"

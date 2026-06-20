@@ -1,16 +1,14 @@
 # LIMS Nigeria
 
-Offline-first Laboratory Information Management System for Nigerian labs, built with `Next.js 15`, `Supabase`, `Dexie`, `TanStack Query`, `Zod`, and PWA support.
+Online Laboratory Information Management System for Nigerian labs, built with `Next.js 15`, `Supabase`, `TanStack Query`, `Zod`, and Netlify deployment support.
 
 ## Stack
 
 - `Next.js 15` App Router + TypeScript
 - `Tailwind CSS` + custom `shadcn/ui`-style components
 - `Supabase` Auth + PostgreSQL + RLS
-- `Dexie.js` for IndexedDB offline cache
-- `TanStack Query` for server/local data orchestration
+- `TanStack Query` for server data orchestration and automatic UI refreshes
 - `@react-pdf/renderer` for receipts and reports
-- PWA assets with service worker, manifest, and offline fallback
 - Netlify-ready deployment
 
 ## Prerequisites
@@ -90,18 +88,9 @@ npm run typecheck
 
 The current project passes `npm run typecheck`.
 
-## Offline Support
+## Online-Only Operation
 
-The app includes:
-
-- IndexedDB mirroring for core Supabase tables
-- queued offline mutations
-- retry/sync when the device is back online
-- conflict tracking for critical records
-- service worker and offline fallback page
-- installable manifest for PWA behavior
-
-Admin users can review sync state from the admin dashboard.
+The app now writes directly to Supabase. Offline queues, IndexedDB sync, service workers, and conflict-review screens have been removed to keep production behavior fast, predictable, and Netlify-friendly.
 
 ## Core Modules Included
 

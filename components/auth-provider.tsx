@@ -9,9 +9,6 @@ import {
   type ReactNode
 } from "react";
 import type { Session, User } from "@supabase/supabase-js";
-import { db } from "@/lib/dexie";
-import { cacheProfiles } from "@/lib/offline-data";
-import { resolveOfflineQuery } from "@/lib/offline-core";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type { AppRole, UserProfile } from "@/lib/auth-types";
 
@@ -30,52 +27,43 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 async function loadProfile(userId: string) {
   const supabase = getSupabaseBrowserClient();
-  return resolveOfflineQuery<UserProfile | null>({
-    cacheKey: `profile:${userId}`,
-    offline: async () => (await db.profiles.get(userId)) ?? null,
-    online: async () => {
-      if (!supabase) {
-        return (await db.profiles.get(userId)) ?? null;
-      }
+  if (!supabase) {
+    return null;
+  }
 
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, display_name, email, avatar_url, facility_id, role, created_at, updated_at")
-        .eq("id", userId)
-        .maybeSingle();
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, display_name, email, avatar_url, facility_id, role, created_at, updated_at")
+    .eq("id", userId)
+    .maybeSingle();
 
-      if (error) {
-        const missingEmailColumn =
-          error.message.toLowerCase().includes("email") &&
-          error.message.toLowerCase().includes("profiles");
+  if (error) {
+    const missingEmailColumn =
+      error.message.toLowerCase().includes("email") &&
+      error.message.toLowerCase().includes("profiles");
 
-        if (!missingEmailColumn) {
-          return null;
-        }
-
-        const { data: fallbackData, error: fallbackError } = await supabase
-          .from("profiles")
-          .select("id, display_name, avatar_url, facility_id, role, created_at, updated_at")
-          .eq("id", userId)
-          .maybeSingle();
-
-        if (fallbackError || !fallbackData) {
-          return null;
-        }
-
-        const profileWithEmail = { ...fallbackData, email: null } as UserProfile;
-        await cacheProfiles([profileWithEmail]);
-        return profileWithEmail;
-      }
-
-      if (!data) {
-        return null;
-      }
-
-      await cacheProfiles([data as UserProfile]);
-      return data as UserProfile;
+    if (!missingEmailColumn) {
+      return null;
     }
-  });
+
+    const { data: fallbackData, error: fallbackError } = await supabase
+      .from("profiles")
+      .select("id, display_name, avatar_url, facility_id, role, created_at, updated_at")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (fallbackError || !fallbackData) {
+      return null;
+    }
+
+    return { ...fallbackData, email: null } as UserProfile;
+  }
+
+  if (!data) {
+    return null;
+  }
+
+  return data as UserProfile;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

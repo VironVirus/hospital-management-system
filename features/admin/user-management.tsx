@@ -22,7 +22,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { appRoles, type AppRole } from "@/lib/auth-types";
+import { appRoles, formatAppRole, type AppRole } from "@/lib/auth-types";
 import { isAdminRole } from "@/lib/guards";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type { Tables, TablesUpdate } from "@/types/supabase";
@@ -41,7 +41,7 @@ const roleDescriptions: Record<AppRole, string> = {
   Admin: "Full system access, user management, catalogue setup, and reports.",
   Receptionist: "Patient registration, test creation, billing support, and reception workflows.",
   LabScientist: "Sample handling, test worklists, result entry, inventory visibility.",
-  Verifier: "Result review, verification, sample tracking, and report access.",
+  Verifier: "HOD of Lab / Chief Scientist: result review, verification, sample tracking, and report access.",
   Accountant: "Billing, accounts, revenue summaries, expenses, and inventory cost visibility."
 };
 
@@ -273,7 +273,7 @@ export function UserManagementPanel() {
             <option value="all">All roles</option>
             {appRoles.map((appRole) => (
               <option key={appRole} value={appRole}>
-                {appRole}
+                {formatAppRole(appRole)}
               </option>
             ))}
           </select>
@@ -282,7 +282,9 @@ export function UserManagementPanel() {
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {appRoles.map((appRole) => (
             <div key={appRole} className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
-              <p className="text-sm font-semibold text-slate-950">{appRole}</p>
+              <p className="text-sm font-semibold text-slate-950">
+                {formatAppRole(appRole)}
+              </p>
               <p className="mt-1 text-xs leading-5 text-slate-600">{roleDescriptions[appRole]}</p>
             </div>
           ))}
@@ -329,7 +331,7 @@ export function UserManagementPanel() {
                         {profile.display_name || profile.email || "Unnamed staff"}
                       </p>
                       <Badge variant={profile.role === "Admin" ? "default" : "outline"}>
-                        {profile.role}
+                        {formatAppRole(profile.role)}
                       </Badge>
                       {isCurrentUser ? <Badge variant="secondary">You</Badge> : null}
                     </div>
@@ -365,7 +367,7 @@ export function UserManagementPanel() {
                       >
                         {appRoles.map((appRole) => (
                           <option key={appRole} value={appRole}>
-                            {appRole}
+                            {formatAppRole(appRole)}
                           </option>
                         ))}
                       </select>

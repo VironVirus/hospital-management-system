@@ -24,10 +24,10 @@ const deck = [
   {
     title: "TAPXORA LIMS APP",
     eyebrow: "Investor pitch deck",
-    subtitle: "Offline-first Laboratory Information Management System for Nigerian diagnostic laboratories",
+    subtitle: "Online Laboratory Information Management System for Nigerian diagnostic laboratories",
     bullets: [
       "Website: lims.tapxora.com",
-      "Built for patient registration, sample tracking, results, reporting, billing, inventory, accounting, and offline operations.",
+      "Built for patient registration, sample tracking, results, reporting, billing, inventory, accounting, and online operations.",
       "Contact: 07067038882"
     ],
     visual: "hero"
@@ -36,8 +36,8 @@ const deck = [
     title: "Executive Snapshot",
     eyebrow: "What investors should understand first",
     bullets: [
-      "Tapxora LIMS is a web-based, offline-first operating system for small and mid-sized laboratories.",
-      "The app is designed around Nigerian field realities: unstable internet, paper-heavy workflows, fragmented billing, and limited operational reporting.",
+      "Tapxora LIMS is a web-based operating system for small and mid-sized laboratories.",
+      "The app is designed around Nigerian field realities: paper-heavy workflows, fragmented billing, weak traceability, and limited operational reporting.",
       "It brings clinical workflow and business workflow into one system: samples, results, reports, inventory, payments, expenses, and revenue analysis.",
       "Current investor-sensitive data to insert: live customer count, monthly revenue, pipeline value, deployment cost, and churn."
     ],
@@ -47,7 +47,7 @@ const deck = [
     title: "Problem",
     eyebrow: "Pain points in Nigerian labs",
     bullets: [
-      "Internet instability can interrupt patient registration, result entry, reporting, billing, and end-of-day reconciliation.",
+      "Manual and disconnected workflows interrupt patient registration, result entry, reporting, billing, and end-of-day reconciliation.",
       "Many labs still depend on notebooks, spreadsheets, paper receipts, manual result templates, and disconnected inventory records.",
       "Sample traceability is weak when sample IDs, patient IDs, collection status, and result status are not tied into one workflow.",
       "Financial visibility is often delayed: owners may not know daily revenue, unpaid invoices, test-by-test income, expenses, and inventory-driven costs in one place.",
@@ -59,11 +59,11 @@ const deck = [
     title: "Solution",
     eyebrow: "Tapxora LIMS",
     bullets: [
-      "A secure, browser-based LIMS built with Next.js, Supabase, IndexedDB offline storage, and role-based workflows.",
+      "A secure, browser-based LIMS built with Next.js, Supabase, and role-based workflows.",
       "Supports the lab journey from patient registration to sample collection, result entry, verification, reporting, billing, accounting, and inventory.",
-      "Offline-first design lets staff keep working even when internet drops, then sync changes when the connection returns.",
+      "Direct online updates keep staff working from one central database without sync conflicts.",
       "Professional PDF reports and thermal-printer receipt support help labs look more credible while improving internal controls.",
-      "Role-based access supports Admin, Receptionist, Lab Scientist, Verifier, and Accountant workflows."
+      "Role-based access supports Admin, Receptionist, Lab Scientist, HOD of Lab / Chief Scientist, and Accountant workflows."
     ],
     visual: "solution"
   },
@@ -75,7 +75,7 @@ const deck = [
       "Test catalogue with category-based selection for Haematology, Blood Group Serology, Microbiology, Chemical Pathology, and Histopathology.",
       "Sample IDs use a date-coded 7-digit format, making collection dates traceable from the sample code.",
       "Results entry supports numeric, text, dropdown, and positive/negative test types.",
-      "Verification and reporting are separated so technicians enter results and verifiers approve them."
+      "Verification and reporting are separated so technicians enter results and the HOD of Lab / Chief Scientist approves them."
     ],
     visual: "screens"
   },
@@ -92,16 +92,16 @@ const deck = [
     visual: "workflow"
   },
   {
-    title: "Offline-First Advantage",
-    eyebrow: "Why this matters in Nigeria",
+    title: "Online-First Advantage",
+    eyebrow: "Why this matters for lab reliability",
     bullets: [
-      "Labs can continue core operations during poor connectivity instead of stopping registration, sample capture, result entry, or billing.",
-      "IndexedDB local storage mirrors core Supabase tables so the app remains usable in the browser.",
-      "Queued mutations sync in the background when the connection returns.",
-      "Conflict review tools let admins inspect, edit, retry, dismiss, or keep the remote copy when remote data has changed.",
-      "This is a practical reliability advantage for regions where power and internet quality vary by location and time."
+      "Every authorized staff member sees the same central Supabase data without local sync conflicts.",
+      "Direct database writes make patient registration, sample movement, billing, and reports reflect quickly across modules.",
+      "Server-side RLS and RPC functions keep sensitive clinical and financial operations controlled.",
+      "Netlify deployment reduces installation friction and keeps updates easy to roll out.",
+      "This architecture prioritizes speed, predictable behavior, and simpler public hosting."
     ],
-    visual: "offline"
+    visual: "online"
   },
   {
     title: "Accounting & Financial Reports",
@@ -143,11 +143,11 @@ const deck = [
     title: "Competitive Advantage",
     eyebrow: "Why Tapxora can win",
     bullets: [
-      "Offline-first workflow is central, not an afterthought.",
+      "Simple online workflow is central, not an afterthought.",
       "Designed around Nigerian laboratory and owner needs, including billing, receipts, expenses, and inventory.",
       "Traceable samples, verification, audit logs, and grouped reports improve clinical quality control.",
-      "Role-based access helps owners separate receptionist, scientist, verifier, accountant, and admin responsibilities.",
-      "Modern web deployment reduces installation friction while still supporting local offline continuity."
+      "Role-based access helps owners separate receptionist, scientist, HOD/chief scientist, accountant, and admin responsibilities.",
+      "Modern web deployment reduces installation friction while keeping the system easy to maintain."
     ],
     visual: "moat"
   },
@@ -155,7 +155,7 @@ const deck = [
     title: "Traction / Roadmap",
     eyebrow: "Current product and next milestones",
     bullets: [
-      "Current product: authentication, role management, patients, test catalogue, sample tracking, result entry, verification, reporting, billing, inventory, accounting, dashboards, audit logs, and offline sync.",
+      "Current product: authentication, role management, patients, test catalogue, sample tracking, result entry, verification, reporting, billing, inventory, accounting, dashboards, and audit logs.",
       "Current traction to insert: pilots, active labs, monthly active users, tests processed, revenue, or signed LOIs: __________.",
       "Next milestones: user acceptance testing, live deployment hardening, training materials, SMS/WhatsApp delivery, multi-branch administration, and deeper financial exports.",
       "Roadmap metric to insert: target number of pilot laboratories in next 3 to 6 months: __________.",
@@ -285,7 +285,7 @@ function addPptVisual(slide, type, x, y, w, h) {
   });
 
   if (type === "hero") {
-    addPptText(slide, "Offline-first LIMS", x + 0.35, y + 0.35, w - 0.7, 0.4, {
+    addPptText(slide, "Online LIMS", x + 0.35, y + 0.35, w - 0.7, 0.4, {
       bold: true,
       color: BRAND.blue,
       fontSize: 22
@@ -367,16 +367,16 @@ function addPptVisual(slide, type, x, y, w, h) {
   const labelsByType = {
     pain: ["Connectivity interruptions", "Paper records", "Billing leakage", "Weak traceability"],
     solution: ["Single workflow", "Role based access", "PDF reports", "Financial visibility"],
-    offline: ["IndexedDB cache", "Mutation queue", "Background sync", "Conflict review"],
+    online: ["Central database", "Direct updates", "RLS security", "Netlify hosting"],
     finance: ["Invoices", "Receipts", "Revenue", "Expenses"],
     pricing: ["Subscription", "Setup fee", "Add-ons", "Enterprise"],
-    moat: ["Offline-first", "Nigeria-focused", "Finance + clinical", "Audit ready"],
+    moat: ["Online-first", "Nigeria-focused", "Finance + clinical", "Audit ready"],
     roadmap: ["Pilot", "Harden", "Deploy", "Scale"],
     security: ["Auth", "RLS", "Audit logs", "NDPR consent"],
     financials: ["Labs", "MRR", "Gross margin", "CAC"],
     contact: ["lims.tapxora.com", "07067038882", "Demo access", "Investor follow-up"]
   };
-  const labels = labelsByType[type] || ["Tapxora", "LIMS", "Offline", "Reports"];
+  const labels = labelsByType[type] || ["Tapxora", "LIMS", "Online", "Reports"];
   labels.forEach((label, index) => {
     const row = Math.floor(index / 2);
     const col = index % 2;
@@ -509,10 +509,10 @@ function drawPdfText(doc, text, x, y, options = {}) {
 function drawPdfVisual(doc, type, x, y, w, h) {
   doc.roundedRect(x, y, w, h, 7).fillAndStroke(`#${BRAND.sky}`, `#${BRAND.line}`);
   const labels = {
-    hero: ["Offline-first LIMS", "Patients", "Samples", "Results", "Finance"],
+    hero: ["Online LIMS", "Patients", "Samples", "Results", "Finance"],
     screens: ["Dashboard", "Test request", "Report preview", "Accounting"],
     workflow: ["Registered", "Collected", "In Progress", "Entered", "Verified", "Reported"],
-    offline: ["Local cache", "Queue", "Sync", "Conflict review"],
+    online: ["Central data", "Live updates", "Secure RLS", "Reports"],
     finance: ["Invoices", "Receipts", "Revenue", "Expenses"],
     financials: ["Labs", "MRR", "Margin", "CAC"]
   }[type] || ["Workflow", "Roles", "Reports", "Analytics"];

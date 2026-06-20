@@ -12,12 +12,7 @@ export const metadata: Metadata = {
     template: "%s | LIMS Nigeria"
   },
   description:
-    "Offline-first laboratory management system for modern Nigerian labs.",
-  manifest: "/manifest.webmanifest",
-  appleWebApp: {
-    capable: true,
-    title: "LIMS Nigeria"
-  }
+    "Online laboratory management system for modern Nigerian labs."
 };
 
 export const viewport: Viewport = {

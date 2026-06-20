@@ -18,8 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { isAdminRole } from "@/lib/guards";
-import { commitLocalMutation, generateLocalId, resolveOfflineQuery } from "@/lib/offline-core";
-import { cacheTests, getTestsLocal } from "@/lib/offline-data";
+import { commitOnlineMutation, generateId, resolveOnlineQuery } from "@/lib/online-core";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type { Tables } from "@/types/supabase";
 import {
@@ -218,12 +217,10 @@ async function fetchTests({
   resultType: FilterResultType;
 }) {
   const supabase = getSupabaseBrowserClient();
-  return resolveOfflineQuery<TestRow[]>({
-    cacheKey: `tests:${query}:${category}:${status}:${resultType}`,
-    offline: () => getTestsLocal({ category, query, resultType, status }),
+  return resolveOnlineQuery<TestRow[]>({
     online: async () => {
       if (!supabase) {
-        return getTestsLocal({ category, query, resultType, status });
+        throw new Error("Supabase is not configured.");
       }
 
       let request = supabase
@@ -254,7 +251,6 @@ async function fetchTests({
       }
 
       const rows = (data ?? []) as TestRow[];
-      await cacheTests(rows);
       return rows.filter((row) => {
         if (category === "all") {
           return true;
@@ -475,7 +471,7 @@ export function TestCatalogueAdmin() {
     const payload = {
       category: parsed.data.category,
       created_at: currentTest?.created_at ?? now,
-      id: currentTest?.id ?? generateLocalId("test"),
+      id: currentTest?.id ?? generateId(),
       is_active: parsed.data.is_active,
       name: parsed.data.name,
       price: parsed.data.price,
@@ -493,7 +489,7 @@ export function TestCatalogueAdmin() {
 
     try {
       setSaving(true);
-      await commitLocalMutation({
+      await commitOnlineMutation({
         action: editingId ? "update" : "insert",
         entity: "tests",
         payload: editingId
@@ -545,7 +541,7 @@ export function TestCatalogueAdmin() {
     try {
       setDeletingId(id);
       setSubmitError(null);
-      await commitLocalMutation({
+      await commitOnlineMutation({
         action: "delete",
         entity: "tests",
         payload: { id },

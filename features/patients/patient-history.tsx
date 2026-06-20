@@ -45,13 +45,7 @@ import {
   canAccessPatientsRole,
   canManagePatientsRole
 } from "@/lib/guards";
-import { commitLocalMutation, resolveOfflineQuery } from "@/lib/offline-core";
-import {
-  cacheOrdersWithRelations,
-  cachePatients,
-  getPatientLocal,
-  getPatientOrdersLocal
-} from "@/lib/offline-data";
+import { commitOnlineMutation, resolveOnlineQuery } from "@/lib/online-core";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type { Tables, TablesUpdate } from "@/types/supabase";
 
@@ -117,12 +111,10 @@ function buildPatientFormState(patient: PatientRow): PatientFormValues {
 
 async function fetchPatient(patientId: string) {
   const supabase = getSupabaseBrowserClient();
-  return resolveOfflineQuery<PatientRow | null>({
-    cacheKey: `patient:${patientId}`,
-    offline: async () => (await getPatientLocal(patientId)) ?? null,
+  return resolveOnlineQuery<PatientRow | null>({
     online: async () => {
       if (!supabase) {
-        return (await getPatientLocal(patientId)) ?? null;
+        throw new Error("Supabase is not configured.");
       }
 
       const { data, error } = await supabase
@@ -135,10 +127,6 @@ async function fetchPatient(patientId: string) {
         throw new Error(error.message);
       }
 
-      if (data) {
-        await cachePatients([data]);
-      }
-
       return (data as PatientRow | null) ?? null;
     }
   });
@@ -146,12 +134,10 @@ async function fetchPatient(patientId: string) {
 
 async function fetchPatientOrders(patientId: string) {
   const supabase = getSupabaseBrowserClient();
-  return resolveOfflineQuery<OrderHistoryRow[]>({
-    cacheKey: `patient-orders:${patientId}`,
-    offline: () => getPatientOrdersLocal(patientId),
+  return resolveOnlineQuery<OrderHistoryRow[]>({
     online: async () => {
       if (!supabase) {
-        return getPatientOrdersLocal(patientId);
+        throw new Error("Supabase is not configured.");
       }
 
       const { data, error } = await supabase
@@ -166,7 +152,6 @@ async function fetchPatientOrders(patientId: string) {
         throw new Error(error.message);
       }
 
-      await cacheOrdersWithRelations((data ?? []) as Record<string, unknown>[]);
       return (data ?? []) as OrderHistoryRow[];
     }
   });
@@ -176,7 +161,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  const { facilityId, loading, role, user } = useAuth();
+  const { facilityId, loading, role } = useAuth();
   const { toast } = useToast();
   const [formState, setFormState] = useState<PatientFormValues>(initialPatientFormState);
   const [errors, setErrors] = useState<FormErrors>({});
@@ -270,14 +255,11 @@ export function PatientHistory({ patientId }: { patientId: string }) {
 
     try {
       setSaving(true);
-      await commitLocalMutation({
+      await commitOnlineMutation({
         action: "update",
-        critical: true,
         entity: "patients",
-        facilityId,
         payload: updatePayload,
-        recordId: patient.id,
-        userId: user?.id ?? null
+        recordId: patient.id
       });
 
       toast({
@@ -324,14 +306,11 @@ export function PatientHistory({ patientId }: { patientId: string }) {
 
     try {
       setDeleting(true);
-      await commitLocalMutation({
+      await commitOnlineMutation({
         action: "delete",
-        critical: true,
         entity: "patients",
-        facilityId,
         payload: { id: patient.id },
-        recordId: patient.id,
-        userId: user?.id ?? null
+        recordId: patient.id
       });
 
       toast({

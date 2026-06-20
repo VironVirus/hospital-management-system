@@ -7,7 +7,7 @@ import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatSampleStatus, type SampleStatus } from "@/features/orders/constants";
-import { commitLocalMutation, generateLocalId } from "@/lib/offline-core";
+import { commitOnlineMutation, generateId } from "@/lib/online-core";
 import type { Tables } from "@/types/supabase";
 
 type SampleLabel = {
@@ -109,19 +109,18 @@ export function SampleLabelSheet({
   samples: SampleLabel[];
 }) {
   const [printing, setPrinting] = useState(false);
-  const { facilityId, user } = useAuth();
+  const { user } = useAuth();
 
   const handlePrint = async () => {
     setPrinting(true);
 
     await Promise.all(
       samples.map((sample) => {
-        const logId = generateLocalId("custody");
+        const logId = generateId();
 
-        return commitLocalMutation({
+        return commitOnlineMutation({
           action: "insert",
           entity: "sample_custody_logs",
-          facilityId,
           payload: {
             action: "label_printed",
             actor_id: user?.id ?? null,
@@ -132,8 +131,7 @@ export function SampleLabelSheet({
             order_test_id: sample.order_test_id,
             to_status: sample.sample_status
           } satisfies Tables<"sample_custody_logs">,
-          recordId: logId,
-          userId: user?.id ?? null
+          recordId: logId
         });
       })
     );

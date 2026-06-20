@@ -40,19 +40,13 @@ import {
   canEnterResultsRole,
   canVerifyResultsRole
 } from "@/lib/guards";
+import { resolveOnlineQuery } from "@/lib/online-core";
 import {
-  cacheAuditLogs,
-  cacheOrderTestsWithRelations,
-  getAuditLogsLocal,
-  getResultsQueueLocal
-} from "@/lib/offline-data";
-import { resolveOfflineQuery } from "@/lib/offline-core";
-import {
-  queueAuditLog,
-  saveResultOffline,
-  updateSampleStatusOffline,
-  verifyResultOffline
-} from "@/lib/offline-mutations";
+  recordAuditLog,
+  saveResult,
+  updateSampleStatus,
+  verifyResult
+} from "@/lib/online-mutations";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type { Json, Tables } from "@/types/supabase";
 
@@ -104,12 +98,10 @@ function formatStatus(status: ResultStatus) {
 
 async function fetchResultsQueue() {
   const supabase = getSupabaseBrowserClient();
-  return resolveOfflineQuery<ResultQueueRow[]>({
-    cacheKey: "results-queue",
-    offline: () => getResultsQueueLocal(),
+  return resolveOnlineQuery<ResultQueueRow[]>({
     online: async () => {
       if (!supabase) {
-        return getResultsQueueLocal();
+        throw new Error("Supabase is not configured.");
       }
 
       const { data, error } = await supabase
@@ -125,7 +117,6 @@ async function fetchResultsQueue() {
         throw new Error(error.message);
       }
 
-      await cacheOrderTestsWithRelations((data ?? []) as Record<string, unknown>[]);
       return (data ?? []) as ResultQueueRow[];
     }
   });
@@ -137,12 +128,10 @@ async function fetchAuditLogs(resultId: string | null) {
   }
 
   const supabase = getSupabaseBrowserClient();
-  return resolveOfflineQuery<AuditLogRow[]>({
-    cacheKey: `result-audit:${resultId}`,
-    offline: () => getAuditLogsLocal("order_test_results", resultId),
+  return resolveOnlineQuery<AuditLogRow[]>({
     online: async () => {
       if (!supabase) {
-        return getAuditLogsLocal("order_test_results", resultId);
+        throw new Error("Supabase is not configured.");
       }
 
       const { data, error } = await supabase
@@ -157,7 +146,6 @@ async function fetchAuditLogs(resultId: string | null) {
         throw new Error(error.message);
       }
 
-      await cacheAuditLogs((data ?? []) as AuditLogRow[]);
       return (data ?? []) as AuditLogRow[];
     }
   });
@@ -356,7 +344,7 @@ export function ResultsWorkspace() {
       return;
     }
 
-    await queueAuditLog({
+    await recordAuditLog({
       action,
       actorId: user?.id ?? null,
       entityId: selectedResult?.id ?? selectedSample.id,
@@ -387,7 +375,7 @@ export function ResultsWorkspace() {
       setMarkingInProgress(true);
       setActionError(null);
       setActionSuccess(null);
-      await updateSampleStatusOffline({
+      await updateSampleStatus({
         actorId: user?.id ?? null,
         facilityId: activeFacilityId,
         nextStatus: "In_Progress",
@@ -434,7 +422,7 @@ export function ResultsWorkspace() {
       setActionError(null);
       setActionSuccess(null);
       const evaluation = evaluateResult(selectedTest, formValues);
-      await saveResultOffline({
+      await saveResult({
         abnormalFlag: evaluation.payload.abnormal_flag ?? false,
         abnormalReason: evaluation.payload.abnormal_reason ?? null,
         actorId: user?.id ?? null,
@@ -452,7 +440,7 @@ export function ResultsWorkspace() {
       toast({
         title: evaluation.payload.abnormal_flag ? "Out-of-range result saved" : "Result saved",
         description: evaluation.payload.abnormal_flag
-          ? evaluation.payload.abnormal_reason ?? "This result was marked for verifier review."
+          ? evaluation.payload.abnormal_reason ?? "This result was marked for HOD/chief scientist review."
           : `${selectedSample.sample_code} is ready for verification.`,
         variant: evaluation.payload.abnormal_flag ? "info" : "success"
       });
@@ -479,7 +467,7 @@ export function ResultsWorkspace() {
       setVerifying(true);
       setActionError(null);
       setActionSuccess(null);
-      await verifyResultOffline({
+      await verifyResult({
         actorId: user?.id ?? null,
         facilityId: activeFacilityId,
         orderTest: selectedSample,
@@ -539,7 +527,7 @@ export function ResultsWorkspace() {
               Results queue
             </CardTitle>
             <CardDescription>
-              Search queued samples for technician entry and verifier approval.
+              Search active samples for technician entry and HOD/chief scientist approval.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -623,7 +611,7 @@ export function ResultsWorkspace() {
           <CardHeader>
             <CardTitle>Result entry and verification</CardTitle>
             <CardDescription>
-              Technician entry, abnormal flagging, and verifier approval for the selected sample.
+              Technician entry, abnormal flagging, and HOD/chief scientist approval for the selected sample.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">

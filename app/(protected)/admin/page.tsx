@@ -2,14 +2,11 @@ import Link from "next/link";
 import { Activity, TestTube2, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { OfflineSyncPanel } from "@/features/admin/offline-sync-panel";
 import { UserManagementPanel } from "@/features/admin/user-management";
 
 export default function AdminPage() {
   return (
     <div className="space-y-4">
-      <OfflineSyncPanel />
-
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="border-blue-100">
           <CardHeader>

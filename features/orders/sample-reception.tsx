@@ -31,17 +31,9 @@ import {
 } from "@/features/orders/constants";
 import { useToast } from "@/hooks/use-toast";
 import { canAccessSampleReceptionRole } from "@/lib/guards";
-import {
-  cacheOrderTestsWithRelations,
-  cacheSampleCustodyLogs,
-  findSampleByCodeLocal,
-  getCustodyLogsLocal,
-  getReceptionQueueLocal
-} from "@/lib/offline-data";
-import { resolveOfflineQuery } from "@/lib/offline-core";
-import { updateSampleStatusOffline } from "@/lib/offline-mutations";
+import { resolveOnlineQuery } from "@/lib/online-core";
+import { updateSampleStatus } from "@/lib/online-mutations";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
-import type { Tables } from "@/types/supabase";
 
 type SampleLookupRow = {
   barcode_value: string;
@@ -107,12 +99,10 @@ function formatDateTime(value: string) {
 
 async function fetchSampleByCode(code: string) {
   const supabase = getSupabaseBrowserClient();
-  return resolveOfflineQuery<SampleLookupRow | null>({
-    cacheKey: `sample:${code}`,
-    offline: () => findSampleByCodeLocal(code),
+  return resolveOnlineQuery<SampleLookupRow | null>({
     online: async () => {
       if (!supabase) {
-        return findSampleByCodeLocal(code);
+        throw new Error("Supabase is not configured.");
       }
 
       const query = async (column: "sample_code" | "barcode_value") =>
@@ -133,10 +123,6 @@ async function fetchSampleByCode(code: string) {
         throw new Error(response.error.message);
       }
 
-      if (response.data) {
-        await cacheOrderTestsWithRelations([response.data as Record<string, unknown>]);
-      }
-
       return (response.data as SampleLookupRow | null) ?? null;
     }
   });
@@ -144,12 +130,10 @@ async function fetchSampleByCode(code: string) {
 
 async function fetchCustodyLogs(orderTestId: string) {
   const supabase = getSupabaseBrowserClient();
-  return resolveOfflineQuery<CustodyLogRow[]>({
-    cacheKey: `custody:${orderTestId}`,
-    offline: () => getCustodyLogsLocal(orderTestId),
+  return resolveOnlineQuery<CustodyLogRow[]>({
     online: async () => {
       if (!supabase) {
-        return getCustodyLogsLocal(orderTestId);
+        throw new Error("Supabase is not configured.");
       }
 
       const { data, error } = await supabase
@@ -163,7 +147,6 @@ async function fetchCustodyLogs(orderTestId: string) {
         throw new Error(error.message);
       }
 
-      await cacheSampleCustodyLogs((data ?? []) as Tables<"sample_custody_logs">[]);
       return (data ?? []) as CustodyLogRow[];
     }
   });
@@ -171,12 +154,10 @@ async function fetchCustodyLogs(orderTestId: string) {
 
 async function fetchReceptionQueue() {
   const supabase = getSupabaseBrowserClient();
-  return resolveOfflineQuery<QueueRow[]>({
-    cacheKey: "sample-reception-queue",
-    offline: () => getReceptionQueueLocal(),
+  return resolveOnlineQuery<QueueRow[]>({
     online: async () => {
       if (!supabase) {
-        return getReceptionQueueLocal();
+        throw new Error("Supabase is not configured.");
       }
 
       const { data, error } = await supabase
@@ -192,7 +173,6 @@ async function fetchReceptionQueue() {
         throw new Error(error.message);
       }
 
-      await cacheOrderTestsWithRelations((data ?? []) as Record<string, unknown>[]);
       return (data ?? []) as QueueRow[];
     }
   });
@@ -200,7 +180,7 @@ async function fetchReceptionQueue() {
 
 export function SampleReception() {
   const queryClient = useQueryClient();
-  const { role, loading, facilityId } = useAuth();
+  const { role, loading, facilityId, user } = useAuth();
   const { toast } = useToast();
   const [scanValue, setScanValue] = useState("");
   const [lookupValue, setLookupValue] = useState("");
@@ -294,11 +274,11 @@ export function SampleReception() {
       setUpdatingStatus(nextStatus);
       setStatusError(null);
       setStatusSuccess(null);
-      await updateSampleStatusOffline({
+      await updateSampleStatus({
         facilityId: activeFacilityId,
         nextStatus,
         sample: sampleQuery.data,
-        actorId: null
+        actorId: user?.id ?? null
       });
 
       setStatusSuccess(`Sample moved to ${formatSampleStatus(nextStatus)}.`);

@@ -16,7 +16,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
             centers.
           </h1>
           <p className="max-w-lg text-base leading-7 text-blue-100">
-            Secure access, offline resilience, and a clean medical interface
+            Secure access, fast online workflows, and a clean medical interface
             that stays calm under real-world pressure.
           </p>
         </div>
@@ -24,7 +24,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
         <div className="grid max-w-xl gap-4 sm:grid-cols-3">
           {[
             ["Auth", "Secure sign-in"],
-            ["Sync", "Queue offline work"],
+            ["Live", "Direct online updates"],
             ["RLS", "Protect clinical data"]
           ].map(([title, copy]) => (
             <div

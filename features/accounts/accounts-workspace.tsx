@@ -42,16 +42,9 @@ import {
   type AccountInvoiceRow
 } from "@/features/accounts/accounts-utils";
 import { useToast } from "@/hooks/use-toast";
-import { db } from "@/lib/dexie";
 import { canAccessAccountsRole, canManageAccountsRole } from "@/lib/guards";
-import { commitLocalMutation, generateLocalId, resolveOfflineQuery } from "@/lib/offline-core";
-import {
-  cacheExpenses,
-  cacheInventoryItems,
-  cacheInventoryTransactions,
-  cacheInvoicesWithRelations
-} from "@/lib/offline-data";
-import { queueAuditLog } from "@/lib/offline-mutations";
+import { commitOnlineMutation, generateId } from "@/lib/online-core";
+import { recordAuditLog } from "@/lib/online-mutations";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type { Json, Tables, TablesInsert } from "@/types/supabase";
 
@@ -96,207 +89,66 @@ async function fetchAccountsData(facilityId: string): Promise<AccountsData> {
   windowStart.setHours(0, 0, 0, 0);
   const startIso = windowStart.toISOString();
 
-  return resolveOfflineQuery<AccountsData>({
-    cacheKey: `accounts:${facilityId}`,
-    facilityId,
-    offline: async () => {
-      const [invoiceRows, paymentRows, expenseRows, inventoryItems, inventoryTransactions] =
-        await Promise.all([
-          db.invoices.where("facility_id").equals(facilityId).toArray(),
-          db.invoice_payments.where("facility_id").equals(facilityId).toArray(),
-          db.expenses.where("facility_id").equals(facilityId).toArray(),
-          db.inventory_items.where("facility_id").equals(facilityId).toArray(),
-          db.inventory_transactions.where("facility_id").equals(facilityId).toArray()
-        ]);
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
 
-      const recentInvoices = invoiceRows
-        .filter((invoice) => invoice.issued_at >= startIso)
-        .sort((left, right) => new Date(right.issued_at).getTime() - new Date(left.issued_at).getTime())
-        .slice(0, 220);
-
-      const invoiceIds = recentInvoices.map((invoice) => invoice.id);
-      const orderIds = [...new Set(recentInvoices.map((invoice) => invoice.order_id))];
-
-      const [invoiceItems, orders] = await Promise.all([
-        invoiceIds.length > 0 ? db.invoice_items.where("invoice_id").anyOf(invoiceIds).toArray() : [],
-        orderIds.length > 0 ? db.orders.bulkGet(orderIds) : []
-      ]);
-
-      const validOrders = orders.filter(Boolean) as Tables<"orders">[];
-      const patientIds = [...new Set(validOrders.map((order) => order.patient_id))];
-      const patients = patientIds.length > 0 ? await db.patients.bulkGet(patientIds) : [];
-
-      const orderTestIds = [
-        ...new Set(
-          invoiceItems.map((item) => item.order_test_id).filter((value): value is string => Boolean(value))
+  const [invoicesResponse, expensesResponse, transactionsResponse, inventoryResponse] =
+    await Promise.all([
+      supabase
+        .from("invoices")
+        .select(
+          "id, facility_id, order_id, invoice_number, subtotal, discount_amount, total_amount, amount_paid, payment_status, notes, issued_at, due_at, created_at, created_by, updated_at, orders(id, order_number, ordered_at, patients(id, name, lab_id, phone)), invoice_items(id, invoice_id, order_test_id, test_name, quantity, unit_price, line_total, created_at, order_tests(test_id, tests(id, name, category))), invoice_payments(id, facility_id, invoice_id, receipt_number, amount, payment_method, reference_number, notes, received_at, received_by, created_at)"
         )
-      ];
-      const orderTests = orderTestIds.length > 0 ? await db.order_tests.bulkGet(orderTestIds) : [];
-      const validOrderTests = orderTests.filter(Boolean) as Tables<"order_tests">[];
-      const testIds = [...new Set(validOrderTests.map((orderTest) => orderTest.test_id))];
-      const tests = testIds.length > 0 ? await db.tests.bulkGet(testIds) : [];
+        .eq("facility_id", facilityId)
+        .gte("issued_at", startIso)
+        .order("issued_at", { ascending: false })
+        .limit(220),
+      supabase
+        .from("expenses")
+        .select("*, inventory_items(id, name, category, unit)")
+        .eq("facility_id", facilityId)
+        .gte("expense_date", startIso.slice(0, 10))
+        .order("expense_date", { ascending: false })
+        .limit(240),
+      supabase
+        .from("inventory_transactions")
+        .select("*")
+        .eq("facility_id", facilityId)
+        .gte("created_at", startIso)
+        .order("created_at", { ascending: false })
+        .limit(480),
+      supabase
+        .from("inventory_items")
+        .select("*")
+        .eq("facility_id", facilityId)
+        .order("updated_at", { ascending: false })
+        .limit(240)
+    ]);
 
-      const paymentMap = new Map<string, Tables<"invoice_payments">[]>();
-      paymentRows
-        .filter((payment) => payment.received_at >= startIso)
-        .forEach((payment) => {
-          const current = paymentMap.get(payment.invoice_id) ?? [];
-          current.push(payment);
-          paymentMap.set(payment.invoice_id, current);
-        });
+  if (invoicesResponse.error) {
+    throw new Error(invoicesResponse.error.message);
+  }
 
-      const orderMap = new Map(validOrders.map((order) => [order.id, order]));
-      const patientMap = new Map(
-        (patients.filter(Boolean) as Tables<"patients">[]).map((row) => [row.id, row])
-      );
-      const orderTestMap = new Map(validOrderTests.map((row) => [row.id, row]));
-      const testMap = new Map(
-        (tests.filter(Boolean) as Tables<"tests">[]).map((row) => [row.id, row])
-      );
+  if (expensesResponse.error) {
+    throw new Error(expensesResponse.error.message);
+  }
 
-      const invoices = recentInvoices.map((invoice) => {
-        const order = orderMap.get(invoice.order_id) ?? null;
-        const patient = order ? patientMap.get(order.patient_id) ?? null : null;
+  if (transactionsResponse.error) {
+    throw new Error(transactionsResponse.error.message);
+  }
 
-        return {
-          ...invoice,
-          invoice_items: invoiceItems
-            .filter((item) => item.invoice_id === invoice.id)
-            .map((item) => {
-              const orderTest = item.order_test_id ? orderTestMap.get(item.order_test_id) ?? null : null;
-              const test = orderTest ? testMap.get(orderTest.test_id) ?? null : null;
+  if (inventoryResponse.error) {
+    throw new Error(inventoryResponse.error.message);
+  }
 
-              return {
-                ...item,
-                order_tests: orderTest
-                  ? {
-                      test_id: orderTest.test_id,
-                      tests: test
-                        ? {
-                            category: test.category,
-                            id: test.id,
-                            name: test.name
-                          }
-                        : null
-                    }
-                  : null
-              };
-            }),
-          invoice_payments: (paymentMap.get(invoice.id) ?? []).sort(
-            (left, right) =>
-              new Date(right.received_at).getTime() - new Date(left.received_at).getTime()
-          ),
-          orders: order
-            ? {
-                id: order.id,
-                order_number: order.order_number,
-                ordered_at: order.ordered_at,
-                patients: patient
-                  ? {
-                      id: patient.id,
-                      lab_id: patient.lab_id,
-                      name: patient.name,
-                      phone: patient.phone
-                    }
-                  : null
-              }
-            : null
-        } satisfies AccountInvoiceRow;
-      });
-
-      return {
-        expenses: expenseRows
-          .filter((expense) => expense.expense_date >= startIso.slice(0, 10))
-          .sort(
-            (left, right) =>
-              new Date(right.expense_date).getTime() - new Date(left.expense_date).getTime()
-          )
-          .slice(0, 240),
-        inventoryItems,
-        inventoryTransactions: inventoryTransactions
-          .filter((transaction) => transaction.created_at >= startIso)
-          .sort(
-            (left, right) =>
-              new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
-          )
-          .slice(0, 480),
-        invoices
-      };
-    },
-    online: async () => {
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
-      }
-
-      const [invoicesResponse, expensesResponse, transactionsResponse, inventoryResponse] =
-        await Promise.all([
-          supabase
-            .from("invoices")
-            .select(
-              "id, facility_id, order_id, invoice_number, subtotal, discount_amount, total_amount, amount_paid, payment_status, notes, issued_at, due_at, created_at, created_by, updated_at, orders(id, order_number, ordered_at, patients(id, name, lab_id, phone)), invoice_items(id, invoice_id, order_test_id, test_name, quantity, unit_price, line_total, created_at, order_tests(test_id, tests(id, name, category))), invoice_payments(id, facility_id, invoice_id, receipt_number, amount, payment_method, reference_number, notes, received_at, received_by, created_at)"
-            )
-            .gte("issued_at", startIso)
-            .order("issued_at", { ascending: false })
-            .limit(220),
-          supabase
-            .from("expenses")
-            .select("*, inventory_items(id, name, category, unit)")
-            .gte("expense_date", startIso.slice(0, 10))
-            .order("expense_date", { ascending: false })
-            .limit(240),
-          supabase
-            .from("inventory_transactions")
-            .select("*")
-            .gte("created_at", startIso)
-            .order("created_at", { ascending: false })
-            .limit(480),
-          supabase
-            .from("inventory_items")
-            .select("*")
-            .order("updated_at", { ascending: false })
-            .limit(240)
-        ]);
-
-      if (invoicesResponse.error) {
-        throw new Error(invoicesResponse.error.message);
-      }
-
-      if (expensesResponse.error) {
-        throw new Error(expensesResponse.error.message);
-      }
-
-      if (transactionsResponse.error) {
-        throw new Error(transactionsResponse.error.message);
-      }
-
-      if (inventoryResponse.error) {
-        throw new Error(inventoryResponse.error.message);
-      }
-
-      await Promise.all([
-        cacheInvoicesWithRelations((invoicesResponse.data ?? []) as Record<string, unknown>[]),
-        cacheExpenses(
-          ((expensesResponse.data ?? []).map((row) => {
-            const expense = { ...(row as Record<string, unknown>) };
-            delete expense.inventory_items;
-            return expense;
-          }) ?? []) as Tables<"expenses">[]
-        ),
-        cacheInventoryTransactions(
-          (transactionsResponse.data ?? []) as Tables<"inventory_transactions">[]
-        ),
-        cacheInventoryItems((inventoryResponse.data ?? []) as Tables<"inventory_items">[])
-      ]);
-
-      return {
-        expenses: (expensesResponse.data ?? []) as AccountExpenseRow[],
-        inventoryItems: (inventoryResponse.data ?? []) as Tables<"inventory_items">[],
-        inventoryTransactions:
-          (transactionsResponse.data ?? []) as Tables<"inventory_transactions">[],
-        invoices: (invoicesResponse.data ?? []) as AccountInvoiceRow[]
-      };
-    }
-  });
+  return {
+    expenses: (expensesResponse.data ?? []) as AccountExpenseRow[],
+    inventoryItems: (inventoryResponse.data ?? []) as Tables<"inventory_items">[],
+    inventoryTransactions:
+      (transactionsResponse.data ?? []) as Tables<"inventory_transactions">[],
+    invoices: (invoicesResponse.data ?? []) as AccountInvoiceRow[]
+  };
 }
 
 function SummaryTile({
@@ -487,7 +339,7 @@ export function AccountsWorkspace() {
       return;
     }
 
-    await queueAuditLog({
+    await recordAuditLog({
       action,
       actorId: user?.id ?? null,
       entityId,
@@ -523,7 +375,7 @@ export function AccountsWorkspace() {
 
     try {
       setSavingExpense(true);
-      const rowId = generateLocalId("expense");
+      const rowId = generateId();
       const row: TablesInsert<"expenses"> & { id: string } = {
         amount: parsed.data.amount,
         category: parsed.data.category,
@@ -537,14 +389,11 @@ export function AccountsWorkspace() {
         updated_at: new Date().toISOString()
       };
 
-      await commitLocalMutation({
+      await commitOnlineMutation({
         action: "insert",
-        critical: true,
         entity: "expenses",
-        facilityId: activeFacilityId,
-        payload: row,
-        recordId: rowId,
-        userId: user?.id ?? null
+        payload: row as Json,
+        recordId: rowId
       });
 
       await writeAuditLog("expense_created", rowId, {
@@ -589,14 +438,11 @@ export function AccountsWorkspace() {
 
     try {
       setDeletingExpenseId(expense.id);
-      await commitLocalMutation({
+      await commitOnlineMutation({
         action: "delete",
-        critical: true,
         entity: "expenses",
-        facilityId: activeFacilityId,
         payload: { id: expense.id },
-        recordId: expense.id,
-        userId: user?.id ?? null
+        recordId: expense.id
       });
 
       await writeAuditLog("expense_deleted", expense.id, {

@@ -44,24 +44,18 @@ import {
 import { printHtmlDocument } from "@/lib/print";
 import { useToast } from "@/hooks/use-toast";
 import { canAccessReportsRole } from "@/lib/guards";
-import {
-  cacheOrdersWithRelations,
-  getReportsQueueLocal
-} from "@/lib/offline-data";
-import { resolveOfflineQuery } from "@/lib/offline-core";
-import { markReportsReleasedOffline } from "@/lib/offline-mutations";
+import { resolveOnlineQuery } from "@/lib/online-core";
+import { markReportsReleased } from "@/lib/online-mutations";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 
 type ReportStatusFilter = "all" | "ready" | "reported" | "flagged";
 
 async function fetchReportsQueue() {
   const supabase = getSupabaseBrowserClient();
-  return resolveOfflineQuery<ReportOrderRow[]>({
-    cacheKey: "reports-queue",
-    offline: async () => (await getReportsQueueLocal()).filter(isReportableOrder),
+  return resolveOnlineQuery<ReportOrderRow[]>({
     online: async () => {
       if (!supabase) {
-        return (await getReportsQueueLocal()).filter(isReportableOrder);
+        throw new Error("Supabase is not configured.");
       }
 
       const { data, error } = await supabase
@@ -76,7 +70,6 @@ async function fetchReportsQueue() {
         throw new Error(error.message);
       }
 
-      await cacheOrdersWithRelations((data ?? []) as Record<string, unknown>[]);
       return ((data ?? []) as ReportOrderRow[]).filter(isReportableOrder);
     }
   });
@@ -231,7 +224,7 @@ export function ReportsWorkspace() {
       return;
     }
 
-    await markReportsReleasedOffline({
+    await markReportsReleased({
       action,
       actorId: user?.id ?? null,
       facilityId,
@@ -423,8 +416,8 @@ export function ReportsWorkspace() {
             Reporting access is restricted
           </CardTitle>
           <CardDescription className="text-red-800">
-            Only administrators, reception staff, and verifiers can release patient
-            reports.
+            Only administrators, reception staff, and the HOD of Lab / Chief Scientist
+            can release patient reports.
           </CardDescription>
         </CardHeader>
       </Card>
