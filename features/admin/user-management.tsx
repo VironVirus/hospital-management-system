@@ -23,7 +23,15 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { appRoles, formatAppRole, type AppRole } from "@/lib/auth-types";
+import {
+  formatApprovalStatus
+} from "@/lib/access-control";
+import {
+  appRoles,
+  formatAppRole,
+  type AppRole,
+  type ApprovalStatus
+} from "@/lib/auth-types";
 import { canAccessAdministrationRole, isSuperAdminRole } from "@/lib/guards";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type { Tables, TablesUpdate } from "@/types/supabase";
@@ -47,6 +55,7 @@ type StaffCreationForm = {
 };
 
 type CreatedStaffAccount = {
+  approval_status: ApprovalStatus;
   display_name: string;
   email: string;
   facility_code: string;
@@ -84,6 +93,7 @@ export function UserManagementPanel() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
+  const [approvalFilter, setApprovalFilter] = useState<ApprovalStatus | "all">("all");
   const [roleFilter, setRoleFilter] = useState<AppRole | "all">("all");
   const [facilityFilter, setFacilityFilter] = useState<string>("all");
   const [drafts, setDrafts] = useState<Record<string, StaffDraft>>({});
@@ -133,7 +143,7 @@ export function UserManagementPanel() {
       const { data, error } = await supabase
         .from("profiles")
         .select(
-          "id, display_name, email, avatar_url, facility_id, role, created_at, updated_at, facilities(id, name, code)"
+          "id, display_name, email, avatar_url, facility_id, role, approval_status, approval_note, approved_at, approved_by, created_at, updated_at, facilities(id, name, code)"
         )
         .order("created_at", { ascending: false });
 
@@ -201,6 +211,8 @@ export function UserManagementPanel() {
   const filteredStaff = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
     return (staffQuery.data ?? []).filter((profile) => {
+      const matchesApproval =
+        approvalFilter === "all" || profile.approval_status === approvalFilter;
       const matchesRole = roleFilter === "all" || profile.role === roleFilter;
       const matchesFacility =
         facilityFilter === "all" || profile.facility_id === facilityFilter;
@@ -216,12 +228,13 @@ export function UserManagementPanel() {
         .toLowerCase();
 
       return (
+        matchesApproval &&
         matchesRole &&
         matchesFacility &&
         (!normalizedSearch || haystack.includes(normalizedSearch))
       );
     });
-  }, [facilityFilter, roleFilter, searchTerm, staffQuery.data]);
+  }, [approvalFilter, facilityFilter, roleFilter, searchTerm, staffQuery.data]);
 
   const saveMutation = useMutation({
     mutationFn: async ({
@@ -266,6 +279,52 @@ export function UserManagementPanel() {
       toast({
         title: "Unable to update staff",
         description: error instanceof Error ? error.message : "The staff profile was not updated.",
+        variant: "error"
+      });
+    }
+  });
+
+  const reviewMutation = useMutation({
+    mutationFn: async ({
+      profile,
+      status
+    }: {
+      profile: StaffProfile;
+      status: ApprovalStatus;
+    }) => {
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase) {
+        throw new Error("Supabase is not configured.");
+      }
+
+      const payload: TablesUpdate<"profiles"> = {
+        approval_note: status === "Rejected" ? "Rejected by Super Admin" : null,
+        approval_status: status,
+        approved_at: status === "Approved" ? new Date().toISOString() : null,
+        approved_by: status === "Approved" || status === "Rejected" ? (user?.id ?? null) : null
+      };
+
+      const { error } = await supabase
+        .from("profiles")
+        .update(payload)
+        .eq("id", profile.id);
+
+      if (error) {
+        throw error;
+      }
+    },
+    onSuccess: async (_data, variables) => {
+      await queryClient.invalidateQueries({ queryKey: ["admin", "staff-profiles"] });
+      toast({
+        title: "Account review saved",
+        description: `${variables.profile.display_name || variables.profile.email || "This account"} is now ${formatApprovalStatus(variables.status)}.`,
+        variant: "success"
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Account review not saved",
+        description: error instanceof Error ? error.message : "Please try again.",
         variant: "error"
       });
     }
@@ -361,7 +420,10 @@ export function UserManagementPanel() {
       await queryClient.invalidateQueries({ queryKey: ["admin", "staff-profiles"] });
       toast({
         title: "Staff account created",
-        description: `${payload.user.display_name} can now sign in with ${payload.user.email}.`,
+        description:
+          payload.user.approval_status === "Approved"
+            ? `${payload.user.display_name} can now sign in with ${payload.user.email}.`
+            : `${payload.user.display_name} was created and is now waiting for Super Admin approval.`,
         variant: "success"
       });
     } catch (error) {
@@ -422,8 +484,9 @@ export function UserManagementPanel() {
       <CardContent className="space-y-5">
         <div className="rounded-2xl border border-blue-100 bg-blue-50/70 px-4 py-3 text-sm text-slate-700">
           New staff members appear here after registration. Assign them to the correct
-          facility, choose the right role, and save. Only the Super Admin can create or
-          assign <strong>Admin</strong> and <strong>Super Admin</strong> accounts.
+          facility, choose the right role, and save. Every new account stays pending until
+          the Super Admin approves it. Only the Super Admin can create or assign{" "}
+          <strong>Admin</strong> and <strong>Super Admin</strong> accounts.
         </div>
 
         <div className="rounded-3xl border border-slate-200 bg-slate-50/80 p-4 shadow-sm">
@@ -535,6 +598,9 @@ export function UserManagementPanel() {
                 {createdStaffAccount.facility_code}) as {formatAppRole(createdStaffAccount.role)}.
               </p>
               <p className="mt-1 text-xs text-emerald-900">
+                Approval status: <strong>{formatApprovalStatus(createdStaffAccount.approval_status)}</strong>
+              </p>
+              <p className="mt-1 text-xs text-emerald-900">
                 Login email: <strong>{createdStaffAccount.email}</strong>
               </p>
               {createdStaffAccount.temporary_password ? (
@@ -556,8 +622,8 @@ export function UserManagementPanel() {
         <div
           className={
             isSuperAdmin
-              ? "grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_220px]"
-              : "grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]"
+              ? "grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_220px_220px]"
+              : "grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px_220px]"
           }
         >
           <div className="relative">
@@ -569,6 +635,16 @@ export function UserManagementPanel() {
               placeholder="Search staff by name, email, role, or facility"
             />
           </div>
+          <select
+            className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
+            value={approvalFilter}
+            onChange={(event) => setApprovalFilter(event.target.value as ApprovalStatus | "all")}
+          >
+            <option value="all">All approvals</option>
+            <option value="Pending">Pending</option>
+            <option value="Approved">Approved</option>
+            <option value="Rejected">Rejected</option>
+          </select>
           <select
             className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
             value={roleFilter}
@@ -671,6 +747,9 @@ export function UserManagementPanel() {
                       >
                         {formatAppRole(profile.role)}
                       </Badge>
+                      <Badge variant="outline">
+                        {formatApprovalStatus(profile.approval_status)}
+                      </Badge>
                       {isCurrentUser ? <Badge variant="secondary">You</Badge> : null}
                     </div>
                     <p className="mt-1 truncate text-xs text-slate-500">
@@ -679,6 +758,9 @@ export function UserManagementPanel() {
                     <p className="mt-1 text-xs text-slate-500">
                       Joined {formatDateTime(profile.created_at)}
                     </p>
+                    {profile.approval_note ? (
+                      <p className="mt-1 text-xs text-amber-700">{profile.approval_note}</p>
+                    ) : null}
                   </div>
 
                   <div className="grid gap-3 lg:min-w-[620px] lg:grid-cols-[minmax(0,1fr)_180px_180px_auto]">
@@ -730,19 +812,57 @@ export function UserManagementPanel() {
                     </div>
 
                     <div className="flex items-end">
-                      <Button
-                        type="button"
-                        className="w-full"
-                        disabled={!hasChanges || isSaving || isLockedProfile}
-                        onClick={() => saveMutation.mutate({ draft, profile })}
-                      >
-                        {saveMutation.isPending ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <UserCog className="h-4 w-4" />
-                        )}
-                        Save changes
-                      </Button>
+                      <div className="flex w-full flex-col gap-2">
+                        <Button
+                          type="button"
+                          className="w-full"
+                          disabled={!hasChanges || isSaving || isLockedProfile}
+                          onClick={() => saveMutation.mutate({ draft, profile })}
+                        >
+                          {saveMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <UserCog className="h-4 w-4" />
+                          )}
+                          Save changes
+                        </Button>
+                        {isSuperAdmin ? (
+                          <div className="grid grid-cols-2 gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={
+                                reviewMutation.isPending ||
+                                profile.approval_status === "Approved"
+                              }
+                              onClick={() =>
+                                reviewMutation.mutate({
+                                  profile,
+                                  status: "Approved"
+                                })
+                              }
+                            >
+                              Approve
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled={
+                                reviewMutation.isPending ||
+                                profile.approval_status === "Rejected"
+                              }
+                              onClick={() =>
+                                reviewMutation.mutate({
+                                  profile,
+                                  status: "Rejected"
+                                })
+                              }
+                            >
+                              Reject
+                            </Button>
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 </div>

@@ -17,7 +17,7 @@ export function canManageFacilitiesRole(role: AppRole | null | undefined) {
 }
 
 export function canCreateFacilitiesRole(role: AppRole | null | undefined) {
-  return isSuperAdminRole(role);
+  return isAdminRole(role);
 }
 
 export function canAccessPatientsRole(role: AppRole | null | undefined) {

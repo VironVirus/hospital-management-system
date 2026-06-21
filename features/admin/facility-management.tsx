@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Building2,
@@ -30,6 +30,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { formatAppRole } from "@/lib/auth-types";
+import {
+  formatAccessDate,
+  formatApprovalStatus,
+  formatFacilityAccessMode
+} from "@/lib/access-control";
 import {
   canCreateFacilitiesRole,
   canManageFacilitiesRole,
@@ -74,7 +79,7 @@ const initialFormState: FacilityFormState = {
 };
 
 export function FacilityManagementPanel() {
-  const { facilityId, loading, role } = useAuth();
+  const { facilityId, loading, role, user } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [editingFacilityId, setEditingFacilityId] = useState<string | null>(null);
@@ -211,10 +216,23 @@ export function FacilityManagementPanel() {
     structureFilter
   ]);
 
+  useEffect(() => {
+    if (editingFacilityId) {
+      return;
+    }
+
+    setFormState((current) => ({
+      ...current,
+      mode: isSuperAdmin ? current.mode : "child",
+      parent_facility_id: current.parent_facility_id || facilityId || ""
+    }));
+  }, [editingFacilityId, facilityId, isSuperAdmin]);
+
   const resetForm = () => {
     setEditingFacilityId(null);
     setFormState({
       ...initialFormState,
+      mode: isSuperAdmin ? "standalone" : "child",
       parent_facility_id: facilityId ?? ""
     });
   };
@@ -248,8 +266,9 @@ export function FacilityManagementPanel() {
 
     const trimmedName = formState.name.trim();
     const normalizedCode = normalizeFacilityCode(formState.code);
+    const effectiveMode: FacilityMode = isSuperAdmin ? formState.mode : "child";
     const resolvedParentFacilityId =
-      formState.mode === "child" ? formState.parent_facility_id || facilityId || "" : "";
+      effectiveMode === "child" ? formState.parent_facility_id || facilityId || "" : "";
 
     if (!trimmedName || !normalizedCode) {
       toast({
@@ -260,7 +279,7 @@ export function FacilityManagementPanel() {
       return;
     }
 
-    if (formState.mode === "child" && !resolvedParentFacilityId) {
+    if (effectiveMode === "child" && !resolvedParentFacilityId) {
       toast({
         title: "Parent facility required",
         description: "Choose the parent facility for this branch before saving.",
@@ -301,7 +320,7 @@ export function FacilityManagementPanel() {
           ...(isSuperAdmin
             ? {
                 parent_facility_id:
-                  formState.mode === "child" ? resolvedParentFacilityId : null
+                  effectiveMode === "child" ? resolvedParentFacilityId : null
               }
             : {}),
           phone: cleanOptionalValue(formState.phone)
@@ -325,19 +344,31 @@ export function FacilityManagementPanel() {
         if (!canCreateFacilities) {
           toast({
             title: "Super Admin required",
-            description: "Only Super Admin users can create new facilities.",
+            description: "Only approved Admin and Super Admin users can create facilities.",
             variant: "error"
           });
           return;
         }
 
+        const isBranchRequest = !isSuperAdmin;
+        const accessStart = new Date().toISOString();
+
         const payload: TablesInsert<"facilities"> = {
           address: cleanOptionalValue(formState.address),
+          annual_fee: 300000,
+          approval_note: isBranchRequest ? "Awaiting Super Admin facility approval" : null,
+          approval_status: isBranchRequest ? "Pending" : "Approved",
+          approved_at: isBranchRequest ? null : accessStart,
+          approved_by: isBranchRequest ? null : (user?.id ?? null),
+          access_mode: isBranchRequest ? "Locked" : "Paid",
+          access_started_at: accessStart,
           code: normalizedCode,
+          created_by: user?.id ?? null,
           email: cleanOptionalValue(formState.email),
           is_active: formState.is_active,
           name: trimmedName,
-          parent_facility_id: formState.mode === "child" ? resolvedParentFacilityId : null,
+          parent_facility_id:
+            isBranchRequest || effectiveMode === "child" ? resolvedParentFacilityId : null,
           phone: cleanOptionalValue(formState.phone)
         };
 
@@ -348,9 +379,16 @@ export function FacilityManagementPanel() {
         }
 
         toast({
-          title: formState.mode === "child" ? "Branch facility created" : "Facility created",
+          title:
+            isBranchRequest
+              ? "Branch request submitted"
+              : formState.mode === "child"
+                ? "Branch facility created"
+                : "Facility created",
           description:
-            formState.mode === "child"
+            isBranchRequest
+              ? `${trimmedName} was created under ${facilityMap.get(resolvedParentFacilityId)?.name || activeFacility?.name || "your facility"} and is now waiting for Super Admin approval.`
+              : effectiveMode === "child"
               ? `${trimmedName} was added under ${facilityMap.get(resolvedParentFacilityId)?.name || activeFacility?.name || "the selected parent facility"}.`
               : `${trimmedName} was added as a standalone facility.`,
           variant: "success"
@@ -758,12 +796,24 @@ export function FacilityManagementPanel() {
                         ) : (
                           <Badge variant="outline">Standalone</Badge>
                         )}
+                        <Badge variant="outline">
+                          {formatApprovalStatus(facility.approval_status)}
+                        </Badge>
+                        <Badge variant="outline">
+                          {formatFacilityAccessMode(facility.access_mode)}
+                        </Badge>
                       </div>
                       <p className="mt-1 text-xs text-slate-500">
                         {parentFacility
                           ? `Parent facility: ${parentFacility.name}`
                           : "No parent facility assigned"}
                       </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Access window ends {formatAccessDate(facility.access_ends_at)}
+                      </p>
+                      {facility.approval_note ? (
+                        <p className="mt-1 text-xs text-amber-700">{facility.approval_note}</p>
+                      ) : null}
                       {facility.phone || facility.email ? (
                         <p className="mt-1 text-xs text-slate-500">
                           {[facility.phone, facility.email].filter(Boolean).join(" | ")}
@@ -901,7 +951,7 @@ export function FacilityManagementPanel() {
                 ? "Update the visible facility record, including its structure when allowed."
                 : isSuperAdmin
                   ? "Create either a standalone facility or a child branch from this panel."
-                  : "Only Super Admin users can create new facilities."}
+                  : "Branch Admins can request new child branches here. The Super Admin must approve them before activation."}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -957,7 +1007,13 @@ export function FacilityManagementPanel() {
                     </select>
                   </div>
                 </div>
-              ) : null}
+              ) : (
+                <div className="rounded-2xl border border-blue-100 bg-blue-50/60 px-4 py-3 text-sm text-slate-700">
+                  New branches created from this account will be attached under{" "}
+                  <strong>{activeFacility?.name || "your facility"}</strong> and will stay
+                  locked until the Super Admin approves them.
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="facility-name">Facility name</Label>
@@ -1083,7 +1139,9 @@ export function FacilityManagementPanel() {
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                   {editingFacilityId
                     ? "Save facility"
-                    : formState.mode === "child"
+                    : !isSuperAdmin
+                      ? "Request branch"
+                      : formState.mode === "child"
                       ? "Create branch"
                       : "Create facility"}
                 </Button>

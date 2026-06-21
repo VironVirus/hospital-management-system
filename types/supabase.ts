@@ -128,8 +128,17 @@ export type Database = {
       facilities: {
         Row: {
           address: string | null
+          annual_fee: number
+          approval_note: string | null
+          approval_status: Database["public"]["Enums"]["approval_status"]
+          approved_at: string | null
+          approved_by: string | null
+          access_ends_at: string | null
+          access_mode: Database["public"]["Enums"]["facility_access_mode"]
+          access_started_at: string | null
           code: string
           created_at: string
+          created_by: string | null
           email: string | null
           id: string
           is_active: boolean
@@ -140,8 +149,17 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          annual_fee?: number
+          approval_note?: string | null
+          approval_status?: Database["public"]["Enums"]["approval_status"]
+          approved_at?: string | null
+          approved_by?: string | null
+          access_ends_at?: string | null
+          access_mode?: Database["public"]["Enums"]["facility_access_mode"]
+          access_started_at?: string | null
           code: string
           created_at?: string
+          created_by?: string | null
           email?: string | null
           id?: string
           is_active?: boolean
@@ -152,8 +170,17 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          annual_fee?: number
+          approval_note?: string | null
+          approval_status?: Database["public"]["Enums"]["approval_status"]
+          approved_at?: string | null
+          approved_by?: string | null
+          access_ends_at?: string | null
+          access_mode?: Database["public"]["Enums"]["facility_access_mode"]
+          access_started_at?: string | null
           code?: string
           created_at?: string
+          created_by?: string | null
           email?: string | null
           id?: string
           is_active?: boolean
@@ -759,6 +786,10 @@ export type Database = {
       }
       profiles: {
         Row: {
+          approval_note: string | null
+          approval_status: Database["public"]["Enums"]["approval_status"]
+          approved_at: string | null
+          approved_by: string | null
           avatar_url: string | null
           created_at: string
           display_name: string | null
@@ -769,6 +800,10 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          approval_note?: string | null
+          approval_status?: Database["public"]["Enums"]["approval_status"]
+          approved_at?: string | null
+          approved_by?: string | null
           avatar_url?: string | null
           created_at?: string
           display_name?: string | null
@@ -779,6 +814,10 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          approval_note?: string | null
+          approval_status?: Database["public"]["Enums"]["approval_status"]
+          approved_at?: string | null
+          approved_by?: string | null
           avatar_url?: string | null
           created_at?: string
           display_name?: string | null
@@ -939,6 +978,24 @@ export type Database = {
       }
       current_user_can_manage_billing: { Args: never; Returns: boolean }
       current_user_can_manage_inventory: { Args: never; Returns: boolean }
+      current_user_access_snapshot: {
+        Args: never
+        Returns: {
+          access_message: string
+          access_state: string
+          annual_fee: number
+          facility_access_ends_at: string | null
+          facility_access_mode: Database["public"]["Enums"]["facility_access_mode"]
+          facility_access_started_at: string | null
+          facility_approval_status: Database["public"]["Enums"]["approval_status"]
+          facility_id: string | null
+          facility_is_active: boolean
+          facility_name: string | null
+          profile_approval_status: Database["public"]["Enums"]["approval_status"]
+          profile_id: string
+          role: Database["public"]["Enums"]["app_role"]
+        }[]
+      }
       current_user_facility_id: { Args: never; Returns: string }
       current_user_is_admin: { Args: never; Returns: boolean }
       default_facility_id: { Args: never; Returns: string }
@@ -1061,6 +1118,8 @@ export type Database = {
         | "LabScientist"
         | "Verifier"
         | "Accountant"
+      approval_status: "Pending" | "Approved" | "Rejected"
+      facility_access_mode: "Demo" | "FreeTrial" | "Paid" | "Locked"
       invoice_payment_status: "Unpaid" | "Partial" | "Paid"
       sample_status:
         | "Registered"
@@ -1204,6 +1263,8 @@ export const Constants = {
         "Verifier",
         "Accountant",
       ],
+      approval_status: ["Pending", "Approved", "Rejected"],
+      facility_access_mode: ["Demo", "FreeTrial", "Paid", "Locked"],
       sample_status: [
         "Registered",
         "Collected",

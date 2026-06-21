@@ -83,7 +83,9 @@ export default function RegisterPage() {
     }
 
     setLoading(false);
-    setSuccess("Account created. Check your email to confirm your account.");
+    setSuccess(
+      "Account created. Check your email to confirm it, then wait for Super Admin approval before using the workspace."
+    );
   };
 
   const sendMagicLink = async () => {
@@ -114,7 +116,9 @@ export default function RegisterPage() {
       return;
     }
 
-    setSuccess("Magic link sent. Check your email to continue.");
+    setSuccess(
+      "Magic link sent. Check your email to continue. New accounts still need Super Admin approval before access is granted."
+    );
   };
 
   return (
@@ -122,7 +126,8 @@ export default function RegisterPage() {
       <CardHeader className="space-y-2">
         <CardTitle className="text-2xl text-slate-950">Create an account</CardTitle>
         <CardDescription>
-          Register with email/password or request a magic link.
+          Register with email/password or request a magic link. Every new account must be
+          approved by the Super Admin before it can use the platform.
         </CardDescription>
       </CardHeader>
       <CardContent>

@@ -45,6 +45,31 @@ exception
 end
 $$;
 
+do $$
+begin
+  create type public.approval_status as enum (
+    'Pending',
+    'Approved',
+    'Rejected'
+  );
+exception
+  when duplicate_object then null;
+end
+$$;
+
+do $$
+begin
+  create type public.facility_access_mode as enum (
+    'Demo',
+    'FreeTrial',
+    'Paid',
+    'Locked'
+  );
+exception
+  when duplicate_object then null;
+end
+$$;
+
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
@@ -63,6 +88,15 @@ create table if not exists public.facilities (
   phone text,
   email text,
   is_active boolean not null default true,
+  approval_status public.approval_status not null default 'Approved',
+  approval_note text,
+  approved_at timestamptz,
+  approved_by uuid references auth.users(id) on delete set null,
+  created_by uuid references auth.users(id) on delete set null,
+  access_mode public.facility_access_mode not null default 'Paid',
+  access_started_at timestamptz,
+  access_ends_at timestamptz,
+  annual_fee numeric(12,2) not null default 300000,
   parent_facility_id uuid references public.facilities(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -82,6 +116,33 @@ alter table if exists public.facilities
 
 alter table if exists public.facilities
   add column if not exists is_active boolean not null default true;
+
+alter table if exists public.facilities
+  add column if not exists approval_status public.approval_status not null default 'Approved';
+
+alter table if exists public.facilities
+  add column if not exists approval_note text;
+
+alter table if exists public.facilities
+  add column if not exists approved_at timestamptz;
+
+alter table if exists public.facilities
+  add column if not exists approved_by uuid references auth.users(id) on delete set null;
+
+alter table if exists public.facilities
+  add column if not exists created_by uuid references auth.users(id) on delete set null;
+
+alter table if exists public.facilities
+  add column if not exists access_mode public.facility_access_mode not null default 'Paid';
+
+alter table if exists public.facilities
+  add column if not exists access_started_at timestamptz;
+
+alter table if exists public.facilities
+  add column if not exists access_ends_at timestamptz;
+
+alter table if exists public.facilities
+  add column if not exists annual_fee numeric(12,2) not null default 300000;
 
 insert into public.facilities (name, code)
 values ('Main Laboratory', 'MAIN-LAB')
@@ -108,6 +169,10 @@ create table if not exists public.profiles (
   avatar_url text,
   role public.app_role not null default 'Receptionist',
   facility_id uuid references public.facilities(id) on delete set null default public.default_facility_id(),
+  approval_status public.approval_status not null default 'Approved',
+  approval_note text,
+  approved_at timestamptz,
+  approved_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -119,6 +184,18 @@ alter table public.profiles
   add column if not exists email text;
 
 alter table public.profiles
+  add column if not exists approval_status public.approval_status not null default 'Approved';
+
+alter table public.profiles
+  add column if not exists approval_note text;
+
+alter table public.profiles
+  add column if not exists approved_at timestamptz;
+
+alter table public.profiles
+  add column if not exists approved_by uuid references auth.users(id) on delete set null;
+
+alter table public.profiles
   alter column facility_id set default public.default_facility_id();
 
 update public.profiles profile
@@ -126,6 +203,40 @@ set email = auth_user.email
 from auth.users auth_user
 where profile.id = auth_user.id
   and profile.email is null;
+
+update public.profiles
+set approval_status = 'Approved',
+    approved_at = coalesce(approved_at, now())
+where approval_status is null;
+
+update public.facilities
+set approval_status = coalesce(approval_status, 'Approved'::public.approval_status),
+    approved_at = case
+      when coalesce(approval_status, 'Approved'::public.approval_status)::text = 'Approved'
+        then coalesce(approved_at, now())
+      else approved_at
+    end,
+    access_mode = coalesce(access_mode, 'Paid'::public.facility_access_mode),
+    access_started_at = coalesce(access_started_at, created_at, now()),
+    access_ends_at = coalesce(
+      access_ends_at,
+      case
+        when coalesce(access_mode, 'Paid'::public.facility_access_mode) = 'Paid'::public.facility_access_mode
+          then coalesce(created_at, now()) + interval '1 year'
+        when coalesce(access_mode, 'Paid'::public.facility_access_mode) = 'Demo'::public.facility_access_mode
+          then coalesce(created_at, now()) + interval '7 days'
+        when coalesce(access_mode, 'Paid'::public.facility_access_mode) = 'FreeTrial'::public.facility_access_mode
+          then coalesce(created_at, now()) + interval '30 days'
+        else null
+      end
+    )
+where approval_status is null
+   or access_mode is null
+   or access_started_at is null
+   or (
+     access_mode::text in ('Demo', 'FreeTrial', 'Paid')
+     and access_ends_at is null
+   );
 
 create table if not exists public.patients (
   id uuid primary key default gen_random_uuid(),
@@ -346,6 +457,7 @@ as $$
     select 1
     from public.profiles p
     where p.id = auth.uid()
+      and p.approval_status::text = 'Approved'
       and p.role::text in ('SuperAdmin', 'Admin')
   );
 $$;
@@ -361,7 +473,23 @@ as $$
     select 1
     from public.profiles p
     where p.id = auth.uid()
+      and p.approval_status::text = 'Approved'
       and p.role::text = 'SuperAdmin'
+  );
+$$;
+
+create or replace function public.current_user_is_approved()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.profiles p
+    where p.id = auth.uid()
+      and p.approval_status::text = 'Approved'
   );
 $$;
 
@@ -376,6 +504,7 @@ as $$
     select 1
     from public.profiles p
     where p.id = auth.uid()
+      and p.approval_status::text = 'Approved'
       and p.role::text = any (allowed_roles)
   );
 $$;
@@ -483,6 +612,78 @@ as $$
   limit 1;
 $$;
 
+create or replace function public.facility_scope_contains(root_facility_id uuid, target_facility_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with recursive facility_scope as (
+    select f.id
+    from public.facilities f
+    where f.id = root_facility_id
+
+    union all
+
+    select child.id
+    from public.facilities child
+    inner join facility_scope scope
+      on child.parent_facility_id = scope.id
+  )
+  select exists (
+    select 1
+    from facility_scope
+    where id = target_facility_id
+  );
+$$;
+
+create or replace function public.facility_management_scope_allowed(target_facility_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select auth.role() = 'authenticated'
+    and target_facility_id is not null
+    and exists (
+      select 1
+      from public.profiles p
+      where p.id = auth.uid()
+        and p.approval_status::text = 'Approved'
+        and p.facility_id is not null
+        and (
+          p.role::text = 'SuperAdmin'
+          or public.facility_scope_contains(p.facility_id, target_facility_id)
+        )
+    );
+$$;
+
+create or replace function public.facility_service_active(target_facility_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.facilities f
+    where f.id = target_facility_id
+      and f.approval_status::text = 'Approved'
+      and f.is_active = true
+      and (
+        f.access_mode::text = 'Paid'
+        or (
+          f.access_mode::text in ('Demo', 'FreeTrial')
+          and f.access_ends_at is not null
+          and now() <= f.access_ends_at
+        )
+      )
+  );
+$$;
+
 create or replace function public.facility_access_allowed(target_facility_id uuid)
 returns boolean
 language sql
@@ -496,12 +697,101 @@ as $$
       select 1
       from public.profiles p
       where p.id = auth.uid()
+        and p.approval_status::text = 'Approved'
         and p.facility_id is not null
         and (
           p.role::text = 'SuperAdmin'
-          or p.facility_id = target_facility_id
+          or (
+            public.facility_scope_contains(p.facility_id, target_facility_id)
+            and public.facility_service_active(target_facility_id)
+          )
         )
     );
+$$;
+
+create or replace function public.current_user_access_snapshot()
+returns table (
+  profile_id uuid,
+  role public.app_role,
+  facility_id uuid,
+  facility_name text,
+  profile_approval_status public.approval_status,
+  facility_approval_status public.approval_status,
+  facility_access_mode public.facility_access_mode,
+  facility_access_started_at timestamptz,
+  facility_access_ends_at timestamptz,
+  facility_is_active boolean,
+  annual_fee numeric,
+  access_state text,
+  access_message text
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    p.id,
+    p.role,
+    p.facility_id,
+    f.name,
+    p.approval_status,
+    coalesce(f.approval_status, 'Pending'::public.approval_status),
+    coalesce(f.access_mode, 'Locked'::public.facility_access_mode),
+    f.access_started_at,
+    f.access_ends_at,
+    coalesce(f.is_active, false),
+    coalesce(f.annual_fee, 300000),
+    case
+      when p.approval_status::text = 'Rejected' then 'account_rejected'
+      when p.approval_status::text <> 'Approved' then 'account_pending'
+      when p.role::text = 'SuperAdmin' then 'active'
+      when p.facility_id is null then 'facility_unassigned'
+      when f.id is null then 'facility_missing'
+      when f.approval_status::text = 'Rejected' then 'facility_rejected'
+      when f.approval_status::text <> 'Approved' then 'facility_pending'
+      when coalesce(f.is_active, false) = false then 'facility_inactive'
+      when f.access_mode::text = 'Locked' then 'payment_required'
+      when f.access_mode::text = 'Demo' and (f.access_ends_at is null or now() > f.access_ends_at)
+        then 'demo_expired'
+      when f.access_mode::text = 'FreeTrial' and (f.access_ends_at is null or now() > f.access_ends_at)
+        then 'trial_expired'
+      when f.access_mode::text = 'Paid' and f.access_ends_at is not null and now() > f.access_ends_at
+        then 'subscription_expired'
+      else 'active'
+    end,
+    case
+      when p.approval_status::text = 'Rejected'
+        then coalesce(nullif(btrim(p.approval_note), ''), 'Your account request was rejected. Contact the platform owner for review.')
+      when p.approval_status::text <> 'Approved'
+        then 'Your account is waiting for Super Admin approval before you can use the platform.'
+      when p.role::text = 'SuperAdmin'
+        then 'Super Admin access is active.'
+      when p.facility_id is null
+        then 'Your account has not been assigned to a facility yet.'
+      when f.id is null
+        then 'The facility linked to your account could not be found.'
+      when f.approval_status::text = 'Rejected'
+        then coalesce(nullif(btrim(f.approval_note), ''), 'This facility request was rejected by the Super Admin.')
+      when f.approval_status::text <> 'Approved'
+        then 'This facility or branch is waiting for Super Admin approval.'
+      when coalesce(f.is_active, false) = false
+        then 'This facility is currently inactive. Contact support to reactivate it.'
+      when f.access_mode::text = 'Locked'
+        then 'Access is locked. Please pay the annual reconnect fee of N300,000 to restore service.'
+      when f.access_mode::text = 'Demo' and (f.access_ends_at is null or now() > f.access_ends_at)
+        then 'Your one-week demo has ended. Switch this facility to a paid plan to continue.'
+      when f.access_mode::text = 'FreeTrial' and (f.access_ends_at is null or now() > f.access_ends_at)
+        then 'Your one-month free trial has ended. Please pay the annual reconnect fee of N300,000 to continue.'
+      when f.access_mode::text = 'Paid' and f.access_ends_at is not null and now() > f.access_ends_at
+        then 'The annual subscription has expired. Renew with N300,000 to reconnect this facility.'
+      else 'Access is active.'
+    end
+  from public.profiles p
+  left join public.facilities f
+    on f.id = p.facility_id
+  where p.id = auth.uid()
+  limit 1;
 $$;
 
 create or replace function public.patient_in_current_facility(target_patient_id uuid)
@@ -532,6 +822,92 @@ begin
 
   if new.parent_facility_id = new.id then
     raise exception 'A facility cannot be its own parent';
+  end if;
+
+  return new;
+end;
+$$;
+
+create or replace function public.sync_facility_access_window()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+declare
+  previous_access_mode public.facility_access_mode;
+  previous_access_started_at timestamptz;
+  start_value timestamptz;
+begin
+  previous_access_mode := case
+    when tg_op = 'UPDATE' then old.access_mode
+    else null
+  end;
+
+  previous_access_started_at := case
+    when tg_op = 'UPDATE' then old.access_started_at
+    else null
+  end;
+
+  if new.access_mode is null then
+    new.access_mode := 'Paid'::public.facility_access_mode;
+  end if;
+
+  if new.approval_status is null then
+    new.approval_status := 'Approved'::public.approval_status;
+  end if;
+
+  if new.access_mode::text = 'Locked' then
+    if new.access_started_at is null then
+      new.access_started_at := coalesce(
+        previous_access_started_at,
+        now()
+      );
+    end if;
+
+    return new;
+  end if;
+
+  start_value := coalesce(
+    new.access_started_at,
+    previous_access_started_at,
+    now()
+  );
+  new.access_started_at := start_value;
+
+  if tg_op = 'INSERT'
+    or new.access_mode is distinct from previous_access_mode
+    or new.access_started_at is distinct from previous_access_started_at
+    or new.access_ends_at is null then
+    new.access_ends_at := case
+      when new.access_mode::text = 'Demo' then start_value + interval '7 days'
+      when new.access_mode::text = 'FreeTrial' then start_value + interval '30 days'
+      when new.access_mode::text = 'Paid' then start_value + interval '1 year'
+      else new.access_ends_at
+    end;
+  end if;
+
+  return new;
+end;
+$$;
+
+create or replace function public.prevent_non_super_admin_facility_control_changes()
+returns trigger
+language plpgsql
+as $$
+begin
+  if auth.uid() is not null
+    and (
+      new.approval_status is distinct from old.approval_status
+      or new.approval_note is distinct from old.approval_note
+      or new.approved_at is distinct from old.approved_at
+      or new.approved_by is distinct from old.approved_by
+      or new.access_mode is distinct from old.access_mode
+      or new.access_started_at is distinct from old.access_started_at
+      or new.access_ends_at is distinct from old.access_ends_at
+      or new.annual_fee is distinct from old.annual_fee
+    )
+    and not public.current_user_is_super_admin() then
+    raise exception 'Only the Super Admin can change facility approval and subscription controls';
   end if;
 
   return new;
@@ -1389,7 +1765,15 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.profiles (id, display_name, email, avatar_url, facility_id)
+  insert into public.profiles (
+    id,
+    display_name,
+    email,
+    avatar_url,
+    facility_id,
+    approval_status,
+    approval_note
+  )
   values (
     new.id,
     coalesce(
@@ -1399,7 +1783,9 @@ begin
     ),
     new.email,
     new.raw_user_meta_data ->> 'avatar_url',
-    public.default_facility_id()
+    public.default_facility_id(),
+    'Pending'::public.approval_status,
+    'Awaiting Super Admin approval'
   )
   on conflict (id) do nothing;
 
@@ -1416,8 +1802,22 @@ begin
     and (
       new.role is distinct from old.role
       or new.facility_id is distinct from old.facility_id
+      or new.approval_status is distinct from old.approval_status
+      or new.approval_note is distinct from old.approval_note
+      or new.approved_at is distinct from old.approved_at
+      or new.approved_by is distinct from old.approved_by
     )
   then
+    if (
+      new.approval_status is distinct from old.approval_status
+      or new.approval_note is distinct from old.approval_note
+      or new.approved_at is distinct from old.approved_at
+      or new.approved_by is distinct from old.approved_by
+    )
+    and not public.current_user_is_super_admin() then
+      raise exception 'Only the Super Admin can approve or reject platform accounts';
+    end if;
+
     if not public.current_user_is_admin() then
       raise exception 'Only Admin or Super Admin users can change user roles or facility assignments';
     end if;
@@ -2383,10 +2783,20 @@ create trigger set_facilities_updated_at
 before update on public.facilities
 for each row execute procedure public.set_updated_at();
 
+drop trigger if exists sync_facility_access_window on public.facilities;
+create trigger sync_facility_access_window
+before insert or update on public.facilities
+for each row execute procedure public.sync_facility_access_window();
+
 drop trigger if exists prevent_non_super_admin_facility_reparent on public.facilities;
 create trigger prevent_non_super_admin_facility_reparent
 before update on public.facilities
 for each row execute procedure public.prevent_non_super_admin_facility_reparent();
+
+drop trigger if exists prevent_non_super_admin_facility_control_changes on public.facilities;
+create trigger prevent_non_super_admin_facility_control_changes
+before update on public.facilities
+for each row execute procedure public.prevent_non_super_admin_facility_control_changes();
 
 drop trigger if exists set_profiles_updated_at on public.profiles;
 create trigger set_profiles_updated_at
@@ -2678,7 +3088,7 @@ drop policy if exists "Users can read visible facilities" on public.facilities;
 create policy "Users can read visible facilities"
 on public.facilities
 for select
-using (public.facility_access_allowed(id));
+using (public.facility_management_scope_allowed(id));
 
 drop policy if exists "Admins can manage facilities" on public.facilities;
 drop policy if exists "Scoped admins can update facilities" on public.facilities;
@@ -2691,16 +3101,16 @@ on public.facilities
 for update
 using (
   public.current_user_is_admin()
-  and public.facility_access_allowed(id)
+  and public.facility_management_scope_allowed(id)
 )
 with check (
   public.current_user_is_admin()
-  and public.facility_access_allowed(id)
+  and public.facility_management_scope_allowed(id)
   and (parent_facility_id is null or parent_facility_id <> id)
   and (
     not public.current_user_is_super_admin()
     or parent_facility_id is null
-    or public.facility_access_allowed(parent_facility_id)
+    or public.facility_management_scope_allowed(parent_facility_id)
   )
 );
 
@@ -2711,8 +3121,21 @@ with check (
   public.current_user_is_super_admin()
   and (
     parent_facility_id is null
-    or public.facility_access_allowed(parent_facility_id)
+    or public.facility_management_scope_allowed(parent_facility_id)
   )
+);
+
+drop policy if exists "Scoped admins can request child facilities" on public.facilities;
+create policy "Scoped admins can request child facilities"
+on public.facilities
+for insert
+with check (
+  public.current_user_is_admin()
+  and not public.current_user_is_super_admin()
+  and parent_facility_id is not null
+  and public.facility_management_scope_allowed(parent_facility_id)
+  and approval_status::text = 'Pending'
+  and access_mode::text = 'Locked'
 );
 
 create policy "Super admins can delete facilities"
@@ -2720,7 +3143,7 @@ on public.facilities
 for delete
 using (
   public.current_user_is_super_admin()
-  and public.facility_access_allowed(id)
+  and public.facility_management_scope_allowed(id)
   and id <> public.current_user_facility_id()
 );
 
@@ -2750,7 +3173,7 @@ on public.profiles
 for select
 using (
   public.current_user_is_admin()
-  and public.facility_access_allowed(facility_id)
+  and (facility_id is null or public.facility_management_scope_allowed(facility_id))
   and (role::text <> 'SuperAdmin' or public.current_user_is_super_admin())
 );
 
@@ -2761,12 +3184,12 @@ on public.profiles
 for update
 using (
   public.current_user_is_admin()
-  and public.facility_access_allowed(facility_id)
+  and (facility_id is null or public.facility_management_scope_allowed(facility_id))
   and (role::text <> 'SuperAdmin' or public.current_user_is_super_admin())
 )
 with check (
   public.current_user_is_admin()
-  and public.facility_access_allowed(facility_id)
+  and (facility_id is null or public.facility_management_scope_allowed(facility_id))
   and (role::text <> 'SuperAdmin' or public.current_user_is_super_admin())
 );
 
@@ -2777,7 +3200,7 @@ on public.profiles
 for insert
 with check (
   public.current_user_is_admin()
-  and public.facility_access_allowed(facility_id)
+  and (facility_id is null or public.facility_management_scope_allowed(facility_id))
   and (role::text <> 'SuperAdmin' or public.current_user_is_super_admin())
 );
 

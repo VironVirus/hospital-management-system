@@ -99,7 +99,8 @@ export default function LoginPage() {
       <CardHeader className="space-y-2">
         <CardTitle className="text-2xl text-slate-950">Sign in</CardTitle>
         <CardDescription>
-          Use email/password or a magic link to enter the laboratory workspace.
+          Use email/password or a magic link to enter the laboratory workspace. Accounts
+          still waiting for Super Admin approval will be held outside the main app.
         </CardDescription>
       </CardHeader>
       <CardContent>

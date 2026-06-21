@@ -28,6 +28,11 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { formatAppRole, type AppRole } from "@/lib/auth-types";
+import {
+  formatAccessDate,
+  formatApprovalStatus,
+  formatFacilityAccessMode
+} from "@/lib/access-control";
 import { canManageFacilitiesRole, isSuperAdminRole } from "@/lib/guards";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type { TablesUpdate } from "@/types/supabase";
@@ -76,11 +81,12 @@ const demotionRoles: AppRole[] = [
 ];
 
 export function FacilityDetailsPanel({ facilityRecordId }: FacilityDetailsPanelProps) {
-  const { facilityId, loading, role } = useAuth();
+  const { facilityId, loading, role, user } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [formState, setFormState] = useState<FacilityFormState>(emptyForm);
   const [profileSaving, setProfileSaving] = useState(false);
+  const [controlSaving, setControlSaving] = useState(false);
   const [deleteSaving, setDeleteSaving] = useState(false);
   const [reassigning, setReassigning] = useState(false);
   const [demotingAdminId, setDemotingAdminId] = useState<string | null>(null);
@@ -89,6 +95,15 @@ export function FacilityDetailsPanel({ facilityRecordId }: FacilityDetailsPanelP
   const [replacementFallbackRole, setReplacementFallbackRole] =
     useState<AppRole>("Receptionist");
   const [demotionRoleByAdmin, setDemotionRoleByAdmin] = useState<Record<string, AppRole>>({});
+  const [controlState, setControlState] = useState<{
+    access_mode: "Demo" | "FreeTrial" | "Paid" | "Locked";
+    approval_note: string;
+    approval_status: "Pending" | "Approved" | "Rejected";
+  }>({
+    access_mode: "Paid",
+    approval_note: "",
+    approval_status: "Approved"
+  });
   const canManageFacilities = canManageFacilitiesRole(role);
   const isSuperAdmin = isSuperAdminRole(role);
 
@@ -173,6 +188,11 @@ export function FacilityDetailsPanel({ facilityRecordId }: FacilityDetailsPanelP
       name: viewedFacility.name,
       parent_facility_id: viewedFacility.parent_facility_id ?? "",
       phone: viewedFacility.phone ?? ""
+    });
+    setControlState({
+      access_mode: viewedFacility.access_mode,
+      approval_note: viewedFacility.approval_note ?? "",
+      approval_status: viewedFacility.approval_status
     });
   }, [viewedFacility]);
 
@@ -362,6 +382,87 @@ export function FacilityDetailsPanel({ facilityRecordId }: FacilityDetailsPanelP
       });
     } finally {
       setDeleteSaving(false);
+    }
+  };
+
+  const handleSaveAccessControls = async () => {
+    if (!viewedFacility) {
+      return;
+    }
+
+    if (!isSuperAdmin) {
+      toast({
+        title: "Super Admin required",
+        description: "Only the Super Admin can approve facilities or switch trial modes.",
+        variant: "error"
+      });
+      return;
+    }
+
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) {
+      toast({
+        title: "Supabase is not configured",
+        description: "Set your public Supabase environment variables first.",
+        variant: "error"
+      });
+      return;
+    }
+
+    try {
+      setControlSaving(true);
+      const now = new Date().toISOString();
+      const effectiveMode =
+        controlState.approval_status === "Approved" ? controlState.access_mode : "Locked";
+      const shouldResetWindow =
+        effectiveMode !== viewedFacility.access_mode ||
+        controlState.approval_status !== viewedFacility.approval_status;
+
+      const payload: TablesUpdate<"facilities"> = {
+        access_ends_at: effectiveMode === "Locked" ? null : undefined,
+        access_mode: effectiveMode,
+        access_started_at:
+          effectiveMode === "Locked"
+            ? viewedFacility.access_started_at ?? now
+            : shouldResetWindow
+              ? now
+              : viewedFacility.access_started_at ?? now,
+        approval_note: cleanOptionalValue(controlState.approval_note),
+        approval_status: controlState.approval_status,
+        approved_at: controlState.approval_status === "Approved" ? now : null,
+        approved_by:
+          controlState.approval_status === "Approved" ||
+          controlState.approval_status === "Rejected"
+            ? (user?.id ?? null)
+            : null
+      };
+
+      const { error } = await supabase
+        .from("facilities")
+        .update(payload)
+        .eq("id", viewedFacility.id);
+
+      if (error) {
+        throw error;
+      }
+
+      await invalidateFacilityQueries();
+      toast({
+        title: "Facility controls updated",
+        description:
+          controlState.approval_status === "Approved"
+            ? `${viewedFacility.name} is now ${formatFacilityAccessMode(effectiveMode)}.`
+            : `${viewedFacility.name} is marked ${formatApprovalStatus(controlState.approval_status)} and remains locked.`,
+        variant: "success"
+      });
+    } catch (error) {
+      toast({
+        title: "Facility controls could not be updated",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "error"
+      });
+    } finally {
+      setControlSaving(false);
     }
   };
 
@@ -577,6 +678,12 @@ export function FacilityDetailsPanel({ facilityRecordId }: FacilityDetailsPanelP
               <Badge variant="secondary">{viewedFacility.code}</Badge>
               <Badge variant={viewedFacility.is_active ? "default" : "secondary"}>
                 {viewedFacility.is_active ? "Active" : "Inactive"}
+              </Badge>
+              <Badge variant="outline">
+                {formatApprovalStatus(viewedFacility.approval_status)}
+              </Badge>
+              <Badge variant="outline">
+                {formatFacilityAccessMode(viewedFacility.access_mode)}
               </Badge>
               {viewedFacility.id === facilityId ? <Badge variant="outline">Your facility</Badge> : null}
             </div>
@@ -805,6 +912,93 @@ export function FacilityDetailsPanel({ facilityRecordId }: FacilityDetailsPanelP
         </Card>
 
         <div className="space-y-6">
+          <Card className="border-blue-100 shadow-soft">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ShieldCheck className="h-5 w-5 text-blue-700" />
+                Approval and access controls
+              </CardTitle>
+              <CardDescription>
+                Approve or reject this facility, and switch it between demo, free trial, paid, or locked service.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="facility-approval-status">Approval status</Label>
+                  <select
+                    id="facility-approval-status"
+                    className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                    value={controlState.approval_status}
+                    onChange={(event) =>
+                      setControlState((current) => ({
+                        ...current,
+                        approval_status: event.target.value as "Pending" | "Approved" | "Rejected"
+                      }))
+                    }
+                    disabled={!isSuperAdmin}
+                  >
+                    <option value="Pending">Pending approval</option>
+                    <option value="Approved">Approved</option>
+                    <option value="Rejected">Rejected</option>
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="facility-access-mode">Access mode</Label>
+                  <select
+                    id="facility-access-mode"
+                    className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                    value={controlState.approval_status === "Approved" ? controlState.access_mode : "Locked"}
+                    onChange={(event) =>
+                      setControlState((current) => ({
+                        ...current,
+                        access_mode: event.target.value as "Demo" | "FreeTrial" | "Paid" | "Locked"
+                      }))
+                    }
+                    disabled={!isSuperAdmin || controlState.approval_status !== "Approved"}
+                  >
+                    <option value="Demo">Demo (1 week)</option>
+                    <option value="FreeTrial">Free trial (1 month)</option>
+                    <option value="Paid">Paid (1 year)</option>
+                    <option value="Locked">Locked</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="facility-approval-note">Approval note</Label>
+                <Textarea
+                  id="facility-approval-note"
+                  rows={3}
+                  value={controlState.approval_note}
+                  onChange={(event) =>
+                    setControlState((current) => ({
+                      ...current,
+                      approval_note: event.target.value
+                    }))
+                  }
+                  placeholder="Optional note for this approval or rejection"
+                  disabled={!isSuperAdmin}
+                />
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                <p>
+                  Current window ends: <strong>{formatAccessDate(viewedFacility.access_ends_at)}</strong>
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Demo lasts 7 days, Free Trial lasts 30 days, and Paid resets to a one-year access window from the day you switch it on.
+                </p>
+              </div>
+
+              <Button type="button" disabled={!isSuperAdmin || controlSaving} onClick={handleSaveAccessControls}>
+                {controlSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Save approval and access
+              </Button>
+            </CardContent>
+          </Card>
+
           <Card className="border-blue-100 shadow-soft">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">

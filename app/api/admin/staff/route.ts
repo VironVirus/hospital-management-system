@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { AppRole } from "@/lib/auth-types";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
-import type { Tables } from "@/types/supabase";
+import type { Tables, TablesInsert } from "@/types/supabase";
 
 export const runtime = "nodejs";
 
@@ -24,7 +24,7 @@ const requestSchema = z.object({
   role: z.enum(allowedRoleValues)
 });
 
-type ActorProfile = Pick<Tables<"profiles">, "facility_id" | "id" | "role">;
+type ActorProfile = Pick<Tables<"profiles">, "approval_status" | "facility_id" | "id" | "role">;
 type FacilitySummary = Pick<Tables<"facilities">, "code" | "id" | "name">;
 
 function generateTemporaryPassword() {
@@ -69,7 +69,7 @@ export async function POST(request: NextRequest) {
 
   const { data: actorProfileData, error: actorError } = await supabase
     .from("profiles")
-    .select("id, role, facility_id")
+    .select("id, role, facility_id, approval_status")
     .eq("id", user.id)
     .single();
   const actorProfile = (actorProfileData ?? null) as ActorProfile | null;
@@ -80,6 +80,13 @@ export async function POST(request: NextRequest) {
 
   if (!["SuperAdmin", "Admin"].includes(actorProfile.role)) {
     return NextResponse.json({ error: "Only Admin or Super Admin users can create staff accounts." }, { status: 403 });
+  }
+
+  if (actorProfile.approval_status !== "Approved") {
+    return NextResponse.json(
+      { error: "Your admin account must be approved before you can create staff accounts." },
+      { status: 403 }
+    );
   }
 
   if (!canCreateRole(actorProfile.role, parsed.data.role)) {
@@ -124,6 +131,10 @@ export async function POST(request: NextRequest) {
   const normalizedEmail = parsed.data.email.trim().toLowerCase();
   const password = parsed.data.password?.trim() || generateTemporaryPassword();
   const passwordWasGenerated = !parsed.data.password?.trim();
+  const autoApprove = actorProfile.role === "SuperAdmin";
+  const approvalStatus: TablesInsert<"profiles">["approval_status"] = autoApprove
+    ? "Approved"
+    : "Pending";
 
   const { data: existingProfileData } = await adminClient
     .from("profiles")
@@ -155,7 +166,11 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const profilePayload = {
+  const profilePayload: TablesInsert<"profiles"> = {
+    approval_note: autoApprove ? null : "Awaiting Super Admin approval",
+    approval_status: approvalStatus,
+    approved_at: autoApprove ? new Date().toISOString() : null,
+    approved_by: autoApprove ? actorProfile.id : null,
     display_name: parsed.data.display_name.trim(),
     email: normalizedEmail,
     facility_id: facility.id,
@@ -185,6 +200,7 @@ export async function POST(request: NextRequest) {
       facility_name: facility.name,
       id: createdUser.user.id,
       password_was_generated: passwordWasGenerated,
+      approval_status: profilePayload.approval_status,
       role: parsed.data.role
     }
   });

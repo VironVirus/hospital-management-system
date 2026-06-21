@@ -14,7 +14,7 @@ export type FacilityStructureFilter = "all" | "standalone" | "child";
 export type FacilityAdminFilter = "all" | "with-admin" | "without-admin";
 
 const facilitySelect =
-  "id, name, code, address, phone, email, is_active, parent_facility_id, created_at, updated_at";
+  "id, name, code, address, phone, email, is_active, approval_status, approval_note, approved_at, approved_by, access_mode, access_started_at, access_ends_at, annual_fee, created_by, parent_facility_id, created_at, updated_at";
 
 export function normalizeFacilityCode(value: string) {
   return value

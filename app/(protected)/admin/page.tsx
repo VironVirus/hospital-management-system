@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { FacilityManagementPanel } from "@/features/admin/facility-management";
 import { LabBrandingSettingsPanel } from "@/features/admin/lab-branding-settings";
+import { PlatformBackupPanel } from "@/features/admin/platform-backup-panel";
 import { UserManagementPanel } from "@/features/admin/user-management";
 import { canAccessAdministrationRole } from "@/lib/guards";
 
@@ -124,6 +125,8 @@ export default function AdminPage() {
       <FacilityManagementPanel />
 
       <UserManagementPanel />
+
+      <PlatformBackupPanel />
 
       <LabBrandingSettingsPanel />
     </div>
