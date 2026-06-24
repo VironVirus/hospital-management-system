@@ -692,17 +692,17 @@ security definer
 set search_path = public
 as $$
   select auth.role() = 'authenticated'
-    and target_facility_id is not null
     and exists (
       select 1
       from public.profiles p
       where p.id = auth.uid()
         and p.approval_status::text = 'Approved'
-        and p.facility_id is not null
         and (
           p.role::text = 'SuperAdmin'
           or (
-            public.facility_scope_contains(p.facility_id, target_facility_id)
+            p.facility_id is not null
+            and target_facility_id is not null
+            and p.facility_id = target_facility_id
             and public.facility_service_active(target_facility_id)
           )
         )
@@ -916,7 +916,7 @@ $$;
 
 create table if not exists public.tests (
   id uuid primary key default gen_random_uuid(),
-  test_code text not null unique default public.generate_test_code(),
+  test_code text not null default public.generate_test_code(),
   facility_id uuid references public.facilities(id) on delete restrict,
   name text not null,
   category text,
@@ -953,6 +953,10 @@ alter table if exists public.tests
 
 alter table if exists public.tests
   drop constraint if exists tests_test_code_key;
+
+drop index if exists public.tests_test_code_key;
+
+drop index if exists public.tests_name_key;
 
 create unique index if not exists tests_scope_test_code_key
   on public.tests (
@@ -1002,6 +1006,7 @@ begin
   if to_regclass('public.test_catalog') is not null then
     insert into public.tests (
       id,
+      facility_id,
       name,
       price,
       result_type,
@@ -1013,6 +1018,7 @@ begin
     )
     select
       id,
+      public.default_facility_id(),
       name,
       price_ngn,
       'text',
@@ -1118,6 +1124,111 @@ alter table if exists public.order_tests
 
 alter table if exists public.order_tests
   drop constraint if exists order_tests_barcode_value_key;
+
+create or replace function public.migrate_shared_tests_to_facility_scoped()
+returns void
+language plpgsql
+set search_path = public
+as $$
+declare
+  facility_record record;
+  shared_test record;
+  resolved_test_id uuid;
+begin
+  create temporary table if not exists shared_test_clone_map (
+    source_test_id uuid not null,
+    facility_id uuid not null,
+    clone_test_id uuid not null,
+    primary key (source_test_id, facility_id)
+  ) on commit drop;
+
+  truncate shared_test_clone_map;
+
+  for shared_test in
+    select *
+    from public.tests
+    where facility_id is null
+  loop
+    for facility_record in
+      select id
+      from public.facilities
+    loop
+      select existing.id
+      into resolved_test_id
+      from public.tests existing
+      where existing.facility_id = facility_record.id
+        and (
+          upper(existing.test_code) = upper(shared_test.test_code)
+          or lower(existing.name) = lower(shared_test.name)
+        )
+      order by
+        case when upper(existing.test_code) = upper(shared_test.test_code) then 0 else 1 end,
+        existing.created_at asc
+      limit 1;
+
+      if resolved_test_id is null then
+        insert into public.tests (
+          id,
+          test_code,
+          facility_id,
+          name,
+          category,
+          price,
+          result_type,
+          reference_range,
+          unit,
+          is_active,
+          created_at,
+          updated_at
+        )
+        values (
+          gen_random_uuid(),
+          shared_test.test_code,
+          facility_record.id,
+          shared_test.name,
+          shared_test.category,
+          shared_test.price,
+          shared_test.result_type,
+          shared_test.reference_range,
+          shared_test.unit,
+          shared_test.is_active,
+          shared_test.created_at,
+          shared_test.updated_at
+        )
+        returning id
+        into resolved_test_id;
+      end if;
+
+      insert into shared_test_clone_map (
+        source_test_id,
+        facility_id,
+        clone_test_id
+      )
+      values (
+        shared_test.id,
+        facility_record.id,
+        resolved_test_id
+      )
+      on conflict (source_test_id, facility_id) do update
+      set clone_test_id = excluded.clone_test_id;
+    end loop;
+  end loop;
+
+  update public.order_tests ot
+  set test_id = mapping.clone_test_id
+  from shared_test_clone_map mapping,
+       public.orders o
+  where ot.test_id = mapping.source_test_id
+    and o.id = ot.order_id
+    and o.facility_id = mapping.facility_id
+    and ot.test_id is distinct from mapping.clone_test_id;
+
+  delete from public.tests
+  where facility_id is null;
+end;
+$$;
+
+select public.migrate_shared_tests_to_facility_scoped();
 
 create table if not exists public.sample_custody_logs (
   id uuid primary key default gen_random_uuid(),
@@ -1442,7 +1553,7 @@ as $$
     join public.orders o on o.id = target_order_id
     where t.id = target_test_id
       and public.facility_access_allowed(o.facility_id)
-      and (t.facility_id is null or t.facility_id = o.facility_id)
+      and t.facility_id = o.facility_id
   );
 $$;
 
@@ -2120,7 +2231,7 @@ begin
   end if;
 
   if not public.facility_access_allowed(result_record.facility_id) then
-    raise exception 'You can only verify results inside your assigned facility or branch group';
+    raise exception 'You can only verify results inside your assigned facility';
   end if;
 
   update public.order_test_results
@@ -2567,7 +2678,7 @@ begin
   from public.tests t
   where t.id = any (selected_test_ids)
     and t.is_active = true
-    and (t.facility_id is null or t.facility_id = created_order.facility_id)
+    and t.facility_id = created_order.facility_id
   on conflict on constraint order_tests_order_id_test_id_key do nothing;
 
   get diagnostics inserted_count = row_count;
@@ -2762,6 +2873,9 @@ end
 $$;
 
 alter table public.patients
+  alter column facility_id set not null;
+
+alter table public.tests
   alter column facility_id set not null;
 
 alter table public.patients
@@ -3173,7 +3287,13 @@ on public.profiles
 for select
 using (
   public.current_user_is_admin()
-  and (facility_id is null or public.facility_management_scope_allowed(facility_id))
+  and (
+    public.current_user_is_super_admin()
+    or (
+      facility_id is not null
+      and public.facility_access_allowed(facility_id)
+    )
+  )
   and (role::text <> 'SuperAdmin' or public.current_user_is_super_admin())
 );
 
@@ -3184,12 +3304,24 @@ on public.profiles
 for update
 using (
   public.current_user_is_admin()
-  and (facility_id is null or public.facility_management_scope_allowed(facility_id))
+  and (
+    public.current_user_is_super_admin()
+    or (
+      facility_id is not null
+      and public.facility_access_allowed(facility_id)
+    )
+  )
   and (role::text <> 'SuperAdmin' or public.current_user_is_super_admin())
 )
 with check (
   public.current_user_is_admin()
-  and (facility_id is null or public.facility_management_scope_allowed(facility_id))
+  and (
+    public.current_user_is_super_admin()
+    or (
+      facility_id is not null
+      and public.facility_access_allowed(facility_id)
+    )
+  )
   and (role::text <> 'SuperAdmin' or public.current_user_is_super_admin())
 );
 
@@ -3200,7 +3332,13 @@ on public.profiles
 for insert
 with check (
   public.current_user_is_admin()
-  and (facility_id is null or public.facility_management_scope_allowed(facility_id))
+  and (
+    public.current_user_is_super_admin()
+    or (
+      facility_id is not null
+      and public.facility_access_allowed(facility_id)
+    )
+  )
   and (role::text <> 'SuperAdmin' or public.current_user_is_super_admin())
 );
 
@@ -3694,7 +3832,8 @@ on public.tests
 for select
 using (
   auth.role() = 'authenticated'
-  and (facility_id is null or public.facility_access_allowed(facility_id))
+  and facility_id is not null
+  and public.facility_access_allowed(facility_id)
 );
 
 drop policy if exists "Admins can manage tests" on public.tests;
@@ -3717,9 +3856,11 @@ on public.tests
 for all
 using (
   public.current_user_is_super_admin()
-  and (facility_id is null or public.facility_access_allowed(facility_id))
+  and facility_id is not null
+  and public.facility_access_allowed(facility_id)
 )
 with check (
   public.current_user_is_super_admin()
-  and (facility_id is null or public.facility_access_allowed(facility_id))
+  and facility_id is not null
+  and public.facility_access_allowed(facility_id)
 );

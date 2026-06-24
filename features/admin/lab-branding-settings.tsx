@@ -16,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { canAccessAdministrationRole } from "@/lib/guards";
+import { canAccessAdministrationRole, isSuperAdminRole } from "@/lib/guards";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 
 export type LabBrandingSettings = {
@@ -119,12 +119,15 @@ export function LabBrandingSettingsPanel({
   const [form, setForm] = useState<BrandingFormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const canAccessAdministration = canAccessAdministrationRole(role);
+  const isSuperAdmin = isSuperAdminRole(role);
   const targetFacilityId = facilityIdOverride ?? facilityId;
+  const canManageTargetFacility =
+    Boolean(targetFacilityId) && (isSuperAdmin || targetFacilityId === facilityId);
 
   const brandingQuery = useQuery({
     queryKey: ["lab-branding", targetFacilityId],
     queryFn: () => fetchLabBrandingSettings(targetFacilityId as string),
-    enabled: Boolean(targetFacilityId) && canAccessAdministration
+    enabled: Boolean(targetFacilityId) && canAccessAdministration && canManageTargetFacility
   });
 
   useEffect(() => {
@@ -167,6 +170,20 @@ export function LabBrandingSettingsPanel({
     return null;
   }
 
+  if (targetFacilityId && !canManageTargetFacility) {
+    return (
+      <Card className="border-amber-200 bg-amber-50 shadow-sm">
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>
+            Facility Admins can edit branding only for their own facility. Use your own
+            branch workspace, or sign in as Super Admin to edit another facility.
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
   const updateField = (key: keyof BrandingFormState, value: string) => {
     setForm((current) => ({ ...current, [key]: value }));
   };
@@ -176,6 +193,16 @@ export function LabBrandingSettingsPanel({
       toast({
         title: "Facility required",
         description: "Assign this admin account to a facility before saving branding.",
+        variant: "error"
+      });
+      return;
+    }
+
+    if (!canManageTargetFacility) {
+      toast({
+        title: "Facility access required",
+        description:
+          "You can only update branding for the facility currently assigned to your account.",
         variant: "error"
       });
       return;

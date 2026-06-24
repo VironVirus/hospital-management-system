@@ -330,16 +330,9 @@ async function fetchActiveTests() {
         throw new Error(error.message);
       }
 
-      return ((data ?? []) as TestRow[]).sort((left, right) => {
-        const leftRank = left.facility_id ? 0 : 1;
-        const rightRank = right.facility_id ? 0 : 1;
-
-        if (leftRank !== rightRank) {
-          return leftRank - rightRank;
-        }
-
-        return left.name.localeCompare(right.name);
-      });
+      return ((data ?? []) as TestRow[]).sort((left, right) =>
+        left.name.localeCompare(right.name)
+      );
     }
   });
 }
@@ -668,20 +661,13 @@ export function OrdersManagement() {
   }, [deferredRecentSearch, recentOrdersQuery.data, recentPriorityFilter, recentStatusFilter]);
 
   const visibleTests = useMemo(() => {
-    const scopedTests = (testsQuery.data ?? []).filter(
-      (test) => !test.facility_id || test.facility_id === effectiveTestFacilityId
-    );
+    if (!effectiveTestFacilityId) {
+      return [];
+    }
 
-    return scopedTests.sort((left, right) => {
-      const leftRank = left.facility_id === effectiveTestFacilityId ? 0 : 1;
-      const rightRank = right.facility_id === effectiveTestFacilityId ? 0 : 1;
-
-      if (leftRank !== rightRank) {
-        return leftRank - rightRank;
-      }
-
-      return left.name.localeCompare(right.name);
-    });
+    return (testsQuery.data ?? [])
+      .filter((test) => test.facility_id === effectiveTestFacilityId)
+      .sort((left, right) => left.name.localeCompare(right.name));
   }, [effectiveTestFacilityId, testsQuery.data]);
 
   const testsById = useMemo(
@@ -1792,13 +1778,10 @@ export function OrdersManagement() {
                                        {renderHighlightedText(test.test_code, testSearch)} -{" "}
                                        {renderHighlightedText(test.name, testSearch)}
                                      </p>
-                                     <p className="text-xs text-slate-500">
-                                      {getTestCategoryLabel(test.category)} /{" "}
-                                      {test.facility_id
-                                        ? test.facilities?.code || "Branch"
-                                        : "Shared"}{" "}
-                                      / N{Number(test.price).toLocaleString("en-NG")}
-                                      </p>
+                                      <p className="text-xs text-slate-500">
+                                        {getTestCategoryLabel(test.category)} / N
+                                        {Number(test.price).toLocaleString("en-NG")}
+                                       </p>
                                      </div>
                                      <ArrowRight className="mt-0.5 h-4 w-4 text-slate-400" />
                                    </button>
@@ -1841,9 +1824,6 @@ export function OrdersManagement() {
                                 <p className="text-xs text-slate-500">
                                   {getTestCategoryLabel(test.category)}
                                   {test.unit ? ` • ${test.unit}` : ""}
-                                  {test.facility_id
-                                    ? ` • ${test.facilities?.code || "Branch"}`
-                                    : " • Shared"}
                                 </p>
                                 <p className="text-sm text-slate-600">
                                   N{Number(test.price).toLocaleString("en-NG")}

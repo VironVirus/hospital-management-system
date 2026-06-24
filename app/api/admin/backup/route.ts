@@ -1,4 +1,3 @@
-import PDFDocument from "pdfkit";
 import { NextRequest, NextResponse } from "next/server";
 import type { AccessSnapshot } from "@/lib/access-control";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -30,6 +29,37 @@ type ScopedFacility = Pick<
   | "phone"
   | "updated_at"
 >;
+
+const AUTH_USER_REFERENCE_COLUMNS = new Set([
+  "actor_id",
+  "approved_by",
+  "collected_by",
+  "created_by",
+  "entered_by",
+  "ordered_by",
+  "received_by",
+  "updated_by",
+  "verified_by"
+]);
+
+const BACKUP_CONFLICT_TARGETS: Record<string, string[]> = {
+  audit_logs: ["id"],
+  expenses: ["id"],
+  facilities: ["id"],
+  invoice_items: ["id"],
+  invoice_payments: ["id"],
+  invoices: ["id"],
+  inventory_items: ["id"],
+  inventory_transactions: ["id"],
+  lab_branding_settings: ["facility_id"],
+  order_test_results: ["id"],
+  order_tests: ["id"],
+  orders: ["id"],
+  patients: ["id"],
+  profiles: ["id"],
+  sample_custody_logs: ["id"],
+  tests: ["id"]
+};
 
 function escapeHtml(value: unknown) {
   return String(value ?? "")
@@ -81,38 +111,124 @@ function normalizeRows<T extends Record<string, unknown>>(rows: T[]) {
   );
 }
 
-function collectDescendantFacilityIds(
-  facilities: ScopedFacility[],
-  rootFacilityId: string
-) {
-  const childrenByParent = new Map<string, ScopedFacility[]>();
+function quoteSqlIdentifier(identifier: string) {
+  return `"${identifier.replaceAll('"', '""')}"`;
+}
 
-  facilities.forEach((facility) => {
-    if (!facility.parent_facility_id) {
-      return;
-    }
-
-    const current = childrenByParent.get(facility.parent_facility_id) ?? [];
-    current.push(facility);
-    childrenByParent.set(facility.parent_facility_id, current);
-  });
-
-  const ids = new Set<string>();
-  const queue = [rootFacilityId];
-
-  while (queue.length > 0) {
-    const currentId = queue.shift();
-    if (!currentId || ids.has(currentId)) {
-      continue;
-    }
-
-    ids.add(currentId);
-    for (const child of childrenByParent.get(currentId) ?? []) {
-      queue.push(child.id);
-    }
+function toSqlLiteral(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "null";
   }
 
-  return Array.from(ids);
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? String(value) : "null";
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+
+  if (typeof value === "object") {
+    return `'${JSON.stringify(value).replaceAll("'", "''")}'`;
+  }
+
+  return `'${String(value).replaceAll("'", "''")}'`;
+}
+
+function toSqlExpression(_table: string, column: string, value: unknown) {
+  if (value === null || value === undefined) {
+    return "null";
+  }
+
+  if (AUTH_USER_REFERENCE_COLUMNS.has(column)) {
+    return `(select id from auth.users where id = ${toSqlLiteral(value)})`;
+  }
+
+  return toSqlLiteral(value);
+}
+
+function buildSqlUpsertStatements(table: string, rows: Array<Record<string, unknown>>) {
+  if (rows.length === 0) {
+    return `-- ${table}: no rows\n`;
+  }
+
+  const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
+  const quotedColumns = columns.map(quoteSqlIdentifier).join(", ");
+  const conflictColumns = BACKUP_CONFLICT_TARGETS[table] ?? ["id"];
+  const conflictTarget = conflictColumns.map(quoteSqlIdentifier).join(", ");
+  const updateAssignments = columns
+    .filter((column) => !conflictColumns.includes(column))
+    .map((column) => `${quoteSqlIdentifier(column)} = excluded.${quoteSqlIdentifier(column)}`)
+    .join(",\n    ");
+
+  return rows
+    .map((row) => {
+      const selectList = columns
+        .map(
+          (column) =>
+            `${toSqlExpression(table, column, row[column])} as ${quoteSqlIdentifier(column)}`
+        )
+        .join(",\n  ");
+
+      const whereClause =
+        table === "profiles" && row["id"]
+          ? `\nwhere exists (select 1 from auth.users where id = ${toSqlLiteral(row["id"])})`
+          : "";
+
+      const conflictClause =
+        updateAssignments.length > 0
+          ? `\non conflict (${conflictTarget}) do update set\n    ${updateAssignments};`
+          : `\non conflict (${conflictTarget}) do nothing;`;
+
+      return `insert into public.${quoteSqlIdentifier(table)} (${quotedColumns})\nselect\n  ${selectList}${whereClause}${conflictClause}`;
+    })
+    .join("\n\n");
+}
+
+function buildSqlRestoreScript(args: {
+  backupPayload: {
+    data: Record<string, Array<Record<string, unknown>>>;
+  };
+  exportDate: string;
+  facilityRows: ScopedFacility[];
+}) {
+  const data = args.backupPayload.data ?? {};
+  const orderedTables = [
+    "facilities",
+    "profiles",
+    "tests",
+    "patients",
+    "orders",
+    "order_tests",
+    "order_test_results",
+    "sample_custody_logs",
+    "inventory_items",
+    "inventory_transactions",
+    "invoices",
+    "invoice_items",
+    "invoice_payments",
+    "expenses",
+    "audit_logs",
+    "lab_branding_settings"
+  ] as const;
+
+  const sections = orderedTables.map((table) => {
+    const rows = (data[table] ?? []) as Array<Record<string, unknown>>;
+    return `-- ${table}\n${buildSqlUpsertStatements(table, rows)}`;
+  });
+
+  return `-- Tapxora LIMS SQL backup
+-- Generated: ${args.exportDate}
+-- Facilities: ${args.facilityRows.map((facility) => `${facility.name} (${facility.code})`).join(", ")}
+-- Restore note: this script expects the Tapxora LIMS schema to already exist.
+-- Profiles are restored only when matching auth.users rows already exist in the target project.
+
+begin;
+
+${sections.join("\n\n")}
+
+commit;
+`;
 }
 
 async function fetchByFacility<T extends { facility_id: string | null }>(
@@ -137,63 +253,6 @@ async function fetchByFacility<T extends { facility_id: string | null }>(
   return (data ?? []) as T[];
 }
 
-function createPdfSummaryBuffer(args: {
-  actor: ActorProfile;
-  exportDate: string;
-  facilityRows: ScopedFacility[];
-  summaryRows: Array<{ label: string; value: number | string }>;
-}) {
-  return new Promise<Buffer>((resolve, reject) => {
-    const doc = new PDFDocument({
-      info: {
-        Title: "Tapxora LIMS Backup Summary",
-        Author: "Tapxora LIMS"
-      },
-      margin: 48
-    });
-    const chunks: Buffer[] = [];
-
-    doc.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
-
-    doc.fontSize(22).fillColor("#0f172a").text("Tapxora LIMS Backup Summary");
-    doc.moveDown(0.5);
-    doc.fontSize(11).fillColor("#475569").text(`Generated: ${args.exportDate}`);
-    doc.text(`Requested by: ${args.actor.display_name || args.actor.email || args.actor.id}`);
-    doc.text(`Role: ${args.actor.role}`);
-    doc.moveDown();
-
-    doc.fontSize(14).fillColor("#0f172a").text("Facilities in this export");
-    doc.moveDown(0.4);
-    args.facilityRows.forEach((facility) => {
-      doc
-        .fontSize(11)
-        .fillColor("#111827")
-        .text(
-          `${facility.name} (${facility.code}) | ${facility.approval_status} | ${facility.access_mode}`
-        );
-    });
-
-    doc.moveDown();
-    doc.fontSize(14).fillColor("#0f172a").text("Export contents");
-    doc.moveDown(0.4);
-    args.summaryRows.forEach((row) => {
-      doc.fontSize(11).fillColor("#111827").text(`${row.label}: ${row.value}`);
-    });
-
-    doc.moveDown();
-    doc
-      .fontSize(10)
-      .fillColor("#475569")
-      .text(
-        "This PDF is a backup summary. Use the Excel workbook for human-readable detailed records and the JSON export for structured backup/restore workflows."
-      );
-
-    doc.end();
-  });
-}
-
 export async function GET(request: NextRequest) {
   const authResponse = NextResponse.next();
   const supabase = createSupabaseServerClient(request, authResponse);
@@ -206,7 +265,7 @@ export async function GET(request: NextRequest) {
   }
 
   const format = request.nextUrl.searchParams.get("format") ?? "json";
-  if (!["json", "excel", "pdf"].includes(format)) {
+  if (!["json", "excel", "sql"].includes(format)) {
     return NextResponse.json({ error: "Unsupported backup format." }, { status: 400 });
   }
 
@@ -278,7 +337,7 @@ export async function GET(request: NextRequest) {
     actor.role === "SuperAdmin"
       ? allFacilities.map((facility) => facility.id)
       : actor.facility_id
-        ? collectDescendantFacilityIds(allFacilities, actor.facility_id)
+        ? [actor.facility_id]
         : [];
 
   if (facilityIds.length === 0) {
@@ -475,17 +534,16 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const pdfBuffer = await createPdfSummaryBuffer({
-    actor,
+  const restoreScript = buildSqlRestoreScript({
+    backupPayload,
     exportDate,
-    facilityRows,
-    summaryRows
+    facilityRows
   });
 
-  return new NextResponse(new Uint8Array(pdfBuffer), {
+  return new NextResponse(restoreScript, {
     headers: {
-      "Content-Disposition": `attachment; filename="tapxora-lims-backup-summary-${new Date().toISOString().slice(0, 10)}.pdf"`,
-      "Content-Type": "application/pdf"
+      "Content-Disposition": `attachment; filename="tapxora-lims-backup-${new Date().toISOString().slice(0, 10)}.sql"`,
+      "Content-Type": "application/sql; charset=utf-8"
     }
   });
 }

@@ -48,8 +48,7 @@ type CatalogueTestRow = TestRow & {
 type FilterStatus = "all" | "active" | "inactive";
 type FilterResultType = "all" | TestRow["result_type"];
 type FilterCategory = "all" | "uncategorized" | TestCategory;
-type FilterScope = "all" | "shared" | "facility";
-type FormScope = "shared" | "facility";
+type FilterScope = "all" | "current";
 type FormErrors = Partial<Record<string, string>>;
 
 const initialFormState: TestFormValues = {
@@ -216,13 +215,15 @@ async function fetchTests({
   category,
   status,
   resultType,
-  scope
+  scope,
+  viewerFacilityId
 }: {
   query: string;
   category: FilterCategory;
   status: FilterStatus;
   resultType: FilterResultType;
   scope: FilterScope;
+  viewerFacilityId: string | null;
 }) {
   const supabase = getSupabaseBrowserClient();
   return resolveOnlineQuery<CatalogueTestRow[]>({
@@ -261,11 +262,7 @@ async function fetchTests({
       const rows = (data ?? []) as CatalogueTestRow[];
       return rows
         .filter((row) => {
-          if (scope === "shared" && row.facility_id !== null) {
-            return false;
-          }
-
-          if (scope === "facility" && row.facility_id === null) {
+          if (scope === "current" && viewerFacilityId && row.facility_id !== viewerFacilityId) {
             return false;
           }
 
@@ -280,16 +277,7 @@ async function fetchTests({
 
           return normalizedCategory === category;
         })
-        .sort((left, right) => {
-          const leftRank = left.facility_id ? 1 : 0;
-          const rightRank = right.facility_id ? 1 : 0;
-
-          if (leftRank !== rightRank) {
-            return leftRank - rightRank;
-          }
-
-          return left.name.localeCompare(right.name);
-        });
+        .sort((left, right) => left.name.localeCompare(right.name));
     }
   });
 }
@@ -304,7 +292,6 @@ export function TestCatalogueAdmin() {
   const [categoryFilter, setCategoryFilter] = useState<FilterCategory>("all");
   const [scopeFilter, setScopeFilter] = useState<FilterScope>("all");
   const [formState, setFormState] = useState<TestFormValues>(initialFormState);
-  const [formScope, setFormScope] = useState<FormScope>("shared");
   const [targetFacilityId, setTargetFacilityId] = useState<string>("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [errors, setErrors] = useState<FormErrors>({});
@@ -346,7 +333,8 @@ export function TestCatalogueAdmin() {
         query,
         resultType,
         scope: scopeFilter,
-        status
+        status,
+        viewerFacilityId: facilityId ?? null
       }),
     enabled: canAccessAdministration,
     staleTime: 60_000,
@@ -389,10 +377,7 @@ export function TestCatalogueAdmin() {
     }
 
     setTargetFacilityId((current) => current || defaultFacilityId);
-    if (!isSuperAdmin) {
-      setFormScope("facility");
-    }
-  }, [facilityId, isSuperAdmin, visibleFacilities]);
+  }, [facilityId, visibleFacilities]);
 
   if (loading) {
     return (
@@ -486,7 +471,6 @@ export function TestCatalogueAdmin() {
   const resetForm = () => {
     setEditingId(null);
     setFormState(initialFormState);
-    setFormScope(isSuperAdmin ? "shared" : "facility");
     setTargetFacilityId(facilityId ?? visibleFacilities[0]?.id ?? "");
     setErrors({});
     setSubmitError(null);
@@ -497,7 +481,6 @@ export function TestCatalogueAdmin() {
     setErrors({});
     setSubmitError(null);
     setSubmitSuccess(null);
-    setFormScope(test.facility_id ? "facility" : "shared");
     setTargetFacilityId(test.facility_id ?? facilityId ?? visibleFacilities[0]?.id ?? "");
     setFormState({
       id: test.id,
@@ -556,10 +539,9 @@ export function TestCatalogueAdmin() {
     const currentTest = editingId
       ? tests.find((test) => test.id === editingId) ?? null
       : null;
-    const resolvedFacilityId =
-      formScope === "shared" ? null : targetFacilityId || facilityId || null;
+    const resolvedFacilityId = targetFacilityId || facilityId || null;
 
-    if (formScope === "facility" && !resolvedFacilityId) {
+    if (!resolvedFacilityId) {
       setSubmitError("Choose the facility that should own this test before saving.");
       return;
     }
@@ -647,8 +629,8 @@ export function TestCatalogueAdmin() {
 
     if (!canManageTarget) {
       toast({
-        title: "Super Admin required",
-        description: "Shared tests can only be edited or deleted by the Super Admin.",
+        title: "Facility mismatch",
+        description: "This test belongs to another facility and cannot be changed from here.",
         variant: "error"
       });
       return;
@@ -758,7 +740,7 @@ export function TestCatalogueAdmin() {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_220px_180px_180px_180px]">
+              <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_220px_180px_180px_220px]">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
                 <Input
@@ -785,15 +767,14 @@ export function TestCatalogueAdmin() {
                 <option value="uncategorized">Uncategorized</option>
               </select>
 
-              <select
-                className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
-                value={scopeFilter}
-                onChange={(event) => setScopeFilter(event.target.value as FilterScope)}
-              >
-                <option value="all">Shared + facility tests</option>
-                <option value="shared">Shared tests only</option>
-                <option value="facility">Facility tests only</option>
-              </select>
+                <select
+                  className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
+                  value={scopeFilter}
+                  onChange={(event) => setScopeFilter(event.target.value as FilterScope)}
+                >
+                  <option value="all">All visible facilities</option>
+                  <option value="current">My facility only</option>
+                </select>
 
               <select
                 className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
@@ -877,22 +858,13 @@ export function TestCatalogueAdmin() {
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          {test.facility_id ? (
-                            <div className="space-y-1">
-                              <Badge variant="outline">Facility-specific</Badge>
-                              <p className="text-xs text-slate-500">
-                                {test.facilities?.name || "Scoped branch"}{" "}
-                                {test.facilities?.code ? `(${test.facilities.code})` : ""}
-                              </p>
-                            </div>
-                          ) : (
-                            <div className="space-y-1">
-                              <Badge>Shared</Badge>
-                              <p className="text-xs text-slate-500">
-                                Available across every allowed branch
-                              </p>
-                            </div>
-                          )}
+                          <div className="space-y-1">
+                            <Badge variant="outline">Facility-owned</Badge>
+                            <p className="text-xs text-slate-500">
+                              {test.facilities?.name || "Assigned facility"}{" "}
+                              {test.facilities?.code ? `(${test.facilities.code})` : ""}
+                            </p>
+                          </div>
                         </td>
                         <td className="px-4 py-3 capitalize text-slate-700">
                           {test.result_type}
@@ -955,50 +927,34 @@ export function TestCatalogueAdmin() {
               {editingId ? "Edit test" : "Add test"}
             </CardTitle>
             <CardDescription>
-              Define pricing, result type, branch scope, unit, and reference range rules.
+              Define pricing, result type, owning facility, unit, and reference range rules.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form className="space-y-4" onSubmit={handleSubmit}>
               <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                <p className="text-sm font-semibold text-slate-950">Availability scope</p>
+                <p className="text-sm font-semibold text-slate-950">Owning facility</p>
                 <p className="mt-1 text-xs leading-5 text-slate-600">
-                  Shared tests are available everywhere. Facility-specific tests stay inside one
-                  branch only.
+                  Every test belongs to exactly one facility. Catalogues do not leak across
+                  facilities or child branches.
                 </p>
 
                 {isSuperAdmin ? (
-                  <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="test-scope">Scope</Label>
-                      <select
-                        id="test-scope"
-                        className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"
-                        value={formScope}
-                        onChange={(event) => setFormScope(event.target.value as FormScope)}
-                      >
-                        <option value="shared">Shared across branches</option>
-                        <option value="facility">Facility-specific</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="test-facility">Facility</Label>
-                      <select
-                        id="test-facility"
-                        className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"
-                        value={targetFacilityId}
-                        onChange={(event) => setTargetFacilityId(event.target.value)}
-                        disabled={formScope !== "facility"}
-                      >
-                        <option value="">Select facility</option>
-                        {visibleFacilities.map((facility) => (
-                          <option key={facility.id} value={facility.id}>
-                            {facility.name} ({facility.code})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                  <div className="mt-3 space-y-2">
+                    <Label htmlFor="test-facility">Facility</Label>
+                    <select
+                      id="test-facility"
+                      className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                      value={targetFacilityId}
+                      onChange={(event) => setTargetFacilityId(event.target.value)}
+                    >
+                      <option value="">Select facility</option>
+                      {visibleFacilities.map((facility) => (
+                        <option key={facility.id} value={facility.id}>
+                          {facility.name} ({facility.code})
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 ) : (
                   <div className="mt-3 rounded-xl border border-blue-100 bg-white px-3 py-3 text-sm text-slate-700">

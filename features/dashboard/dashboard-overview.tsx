@@ -107,7 +107,10 @@ function isToday(value: string | null | undefined) {
   );
 }
 
-async function fetchDashboardData(): Promise<DashboardData> {
+async function fetchDashboardData(args: {
+  facilityId: string;
+  isSuperAdmin: boolean;
+}): Promise<DashboardData> {
   const supabase = getSupabaseBrowserClient();
   const windowStart = new Date();
   windowStart.setDate(windowStart.getDate() - 29);
@@ -117,6 +120,17 @@ async function fetchDashboardData(): Promise<DashboardData> {
   if (!supabase) {
     throw new Error("Supabase is not configured.");
   }
+
+  const facilitiesQuery = args.isSuperAdmin
+    ? supabase
+        .from("facilities")
+        .select("id, name, code, parent_facility_id")
+        .order("name", { ascending: true })
+    : supabase
+        .from("facilities")
+        .select("id, name, code, parent_facility_id")
+        .eq("id", args.facilityId)
+        .order("name", { ascending: true });
 
   const [
     worklistResponse,
@@ -158,10 +172,7 @@ async function fetchDashboardData(): Promise<DashboardData> {
         .gte("created_at", startIso)
         .order("created_at", { ascending: false })
         .limit(240),
-      supabase
-        .from("facilities")
-        .select("id, name, code, parent_facility_id")
-        .order("name", { ascending: true })
+      facilitiesQuery
     ]);
 
   if (worklistResponse.error) {
@@ -477,8 +488,8 @@ function BranchDashboardPanel({ data }: { data: DashboardData | undefined }) {
       <CardHeader>
         <CardTitle>Branch / multi-facility dashboard</CardTitle>
         <CardDescription>
-          Compares visible branch activity. Super Admin users assigned to a parent
-          facility can view child branches.
+          Compares branch activity for Super Admin oversight while daily operations stay
+          isolated inside each facility.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3 xl:grid-cols-3">
@@ -517,14 +528,15 @@ function BranchDashboardPanel({ data }: { data: DashboardData | undefined }) {
 }
 
 export function DashboardOverview() {
-  const { facilityId, loading } = useAuth();
+  const { facilityId, loading, role } = useAuth();
+  const isSuperAdmin = role === "SuperAdmin";
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [exportingWorkbook, setExportingWorkbook] = useState(false);
 
   const dashboardQuery = useQuery({
-    queryKey: ["dashboard-overview", facilityId],
-    queryFn: fetchDashboardData,
+    queryKey: ["dashboard-overview", facilityId, isSuperAdmin],
+    queryFn: () => fetchDashboardData({ facilityId: facilityId as string, isSuperAdmin }),
     enabled: Boolean(facilityId),
     staleTime: 60_000,
     gcTime: 5 * 60_000,
@@ -768,7 +780,7 @@ export function DashboardOverview() {
         worklist={dashboardQuery.data?.worklist ?? []}
       />
 
-      <BranchDashboardPanel data={dashboardQuery.data} />
+      {isSuperAdmin ? <BranchDashboardPanel data={dashboardQuery.data} /> : null}
 
       <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <ChartShell

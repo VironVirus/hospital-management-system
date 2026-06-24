@@ -475,7 +475,7 @@ export function UserManagementPanel() {
             </CardTitle>
             <CardDescription>
               Staff register with email/password first. Admins can manage only the staff in
-              their own facility. Super Admins can manage branch staff across their network.
+              their own facility. Super Admins keep the wider cross-facility oversight.
             </CardDescription>
           </div>
           <Badge variant="outline">{filteredStaff.length} staff shown</Badge>

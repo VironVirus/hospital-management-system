@@ -34,14 +34,14 @@ function downloadBlob(blob: Blob, filename: string) {
 export function PlatformBackupPanel() {
   const { accessState, facilityName, role } = useAuth();
   const { toast } = useToast();
-  const [exportingFormat, setExportingFormat] = useState<"json" | "excel" | "pdf" | null>(null);
+  const [exportingFormat, setExportingFormat] = useState<"json" | "excel" | "sql" | null>(null);
   const canAccessAdministration = canAccessAdministrationRole(role);
 
   if (!canAccessAdministration) {
     return null;
   }
 
-  const handleExport = async (format: "json" | "excel" | "pdf") => {
+  const handleExport = async (format: "json" | "excel" | "sql") => {
     try {
       setExportingFormat(format);
       const response = await fetch(`/api/admin/backup?format=${format}`, {
@@ -59,7 +59,7 @@ export function PlatformBackupPanel() {
           ? "tapxora-lims-backup.json"
           : format === "excel"
             ? "tapxora-lims-backup.xls"
-            : "tapxora-lims-backup-summary.pdf";
+            : "tapxora-lims-backup.sql";
 
       downloadBlob(
         blob,
@@ -73,7 +73,7 @@ export function PlatformBackupPanel() {
             ? "Structured JSON backup downloaded for restore workflows."
             : format === "excel"
               ? "Detailed Excel backup workbook downloaded."
-              : "Backup summary PDF downloaded.",
+              : "SQL restore script downloaded for database import.",
         variant: "success"
       });
     } catch (error) {
@@ -105,7 +105,7 @@ export function PlatformBackupPanel() {
             {role === "SuperAdmin"
               ? "Super Admin scope"
               : facilityName
-                ? `${facilityName} and child branches`
+                ? facilityName
                 : "Current facility scope"}
           </Badge>
         </div>
@@ -113,8 +113,8 @@ export function PlatformBackupPanel() {
       <CardContent className="space-y-4">
         <div className="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4 text-sm text-slate-700">
           The Excel export is meant for human review, the JSON export is the structured backup
-          that can be used for restore workflows, and the PDF gives a quick audit-friendly
-          summary of what was exported.
+          payload, and the SQL export is the easiest way to restore or import this facility
+          into another Tapxora database with the same schema.
         </div>
 
         <div className="grid gap-3 md:grid-cols-3">
@@ -136,13 +136,13 @@ export function PlatformBackupPanel() {
             Export JSON backup
           </Button>
 
-          <Button type="button" variant="outline" disabled={Boolean(exportingFormat)} onClick={() => handleExport("pdf")}>
-            {exportingFormat === "pdf" ? (
+          <Button type="button" variant="outline" disabled={Boolean(exportingFormat)} onClick={() => handleExport("sql")}>
+            {exportingFormat === "sql" ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <FileText className="h-4 w-4" />
             )}
-            Export PDF summary
+            Export SQL restore
           </Button>
         </div>
 
