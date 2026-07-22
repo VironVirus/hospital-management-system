@@ -11,11 +11,14 @@ declare global {
 function databaseOptions() {
   const uri = process.env.DATABASE_URL;
   if (uri) return uri;
-  const host = process.env.DB_HOST || process.env.DATABASE_HOST;
+  const configuredHost = process.env.DB_HOST || process.env.DATABASE_HOST;
   const database = process.env.DB_NAME || process.env.DATABASE_NAME;
   const user = process.env.DB_USER || process.env.DATABASE_USERNAME;
   const password = process.env.DB_PASSWORD || process.env.DATABASE_PASSWORD;
-  if (!host || !database || !user) return null;
+  if (!configuredHost || !database || !user) return null;
+  // Hostinger grants local MySQL users over IPv4. Node can resolve "localhost"
+  // to IPv6 (::1), which MySQL treats as a different host identity.
+  const host = configuredHost === "localhost" ? "127.0.0.1" : configuredHost;
   return {
     host,
     database,
