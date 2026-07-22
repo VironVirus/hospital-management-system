@@ -1,4 +1,4 @@
-import type { Enums } from "@/types/supabase";
+import type { Enums } from "@/types/database";
 
 export type SampleStatus = Enums<"sample_status">;
 

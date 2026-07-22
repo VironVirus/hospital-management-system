@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatSampleStatus, type SampleStatus } from "@/features/orders/constants";
 import { commitOnlineMutation, generateId } from "@/lib/online-core";
-import type { Tables } from "@/types/supabase";
+import type { Tables } from "@/types/database";
 
 type SampleLabel = {
   barcode_value: string;

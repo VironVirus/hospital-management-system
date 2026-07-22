@@ -1,158 +1,80 @@
-# LIMS Nigeria
+# St Gianna Specialist Hospital HMS
 
-Online Laboratory Information Management System for Nigerian labs, built with `Next.js 15`, `Supabase`, `TanStack Query`, `Zod`, and Netlify deployment support.
+A cost-conscious, single-hospital management system for **St Gianna Specialist Hospital**, No 6, 18 Road, Upper North, Transekulu, Enugu, Enugu State.
 
 ## Stack
 
-- `Next.js 15` App Router + TypeScript
-- `Tailwind CSS` + custom `shadcn/ui`-style components
-- `Supabase` Auth + PostgreSQL + RLS
-- `TanStack Query` for server data orchestration and automatic UI refreshes
-- `@react-pdf/renderer` for receipts and reports
-- Netlify-ready deployment
+- Next.js 15, React, and TypeScript
+- Hostinger Business Node.js Web App hosting
+- Hostinger MySQL using the lightweight `mysql2` driver
+- Secure scrypt password hashing from Node.js itself
+- Server-side MySQL sessions in HTTP-only cookies
+- Tailwind CSS, TanStack Query, and Zod
 
-## Prerequisites
+There are no external database, authentication, image-storage, or SaaS runtime dependencies. Patient and hospital data consist of text, selections, dates, and numeric records stored in MySQL.
 
-- Node.js 20+
-- npm 10+
-- Supabase project
+## Hospital Workflows
 
-## Environment Variables
+- Permanent Hospital IDs and longitudinal patient records
+- Reception, outpatient, emergency, inpatient, and telemedicine encounters
+- Doctor documentation, diagnoses, ICD-10 codes, clinical plans, and reports
+- Nursing triage, vital signs, wards, beds, admissions, and discharge
+- Pharmacy catalogue, stock, prescriptions, and dispensing
+- Radiology requests, scheduling, findings, reports, and automatic charges
+- Laboratory orders, samples, results, verification, reports, and quality control
+- Patient billing, receipts, balances, income, expenses, and accounts
+- Store inventory, receipts, issues, expiry dates, and reorder monitoring
+- Admin-created staff accounts with department-specific permissions
 
-Create `.env.local` from `.env.example` and set:
+This installation supports one hospital only. There is no public signup and the system does not upload patient images.
 
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_ID.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
-SUPABASE_SECRET_KEY=YOUR_SUPABASE_SECRET_KEY
-# Optional legacy fallback:
-# SUPABASE_SERVICE_ROLE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY
-SUPABASE_PROJECT_ID=YOUR_PROJECT_ID
-```
+## Local Development
 
-## Install
-
-```bash
-npm install
-```
-
-## Supabase Setup
-
-1. Open the Supabase SQL editor.
-2. Run [`supabase/schema.sql`](/C:/Users/user/Desktop/lab/supabase/schema.sql).
-3. In Authentication:
-   - Enable `Email` sign-in.
-   - Enable magic links.
-   - Set the site URL for local and Netlify usage.
-4. Add redirect URLs:
-   - `http://localhost:3000/auth/callback`
-   - `http://localhost:3068/auth/callback`
-   - `https://YOUR_NETLIFY_SITE.netlify.app/auth/callback`
-5. Create the first user account.
-6. Promote that user to `Admin` in Supabase if needed.
-
-Example role update:
-
-```sql
-update public.profiles
-set role = 'Admin'
-where id = 'YOUR_USER_UUID';
-```
-
-## Generate Supabase Types
-
-If the Supabase CLI is installed:
+Requirements: Node.js 22+, pnpm 11+, and MySQL 8 or compatible MariaDB.
 
 ```bash
-npx supabase gen types typescript --project-id YOUR_PROJECT_ID --schema public > types/supabase.ts
+cp .env.example .env.local
+pnpm install --frozen-lockfile
+pnpm dev
 ```
 
-Project helper:
+The application automatically creates all required MySQL tables and the hospital record when it starts. When the database has no Admin, `HMS_ADMIN_EMAIL` and `HMS_ADMIN_PASSWORD` create the first Admin automatically. All later staff accounts must be created under **Administration → Staff & roles**.
 
-```bash
-npm run supabase:types
+## Hostinger Business Deployment
+
+1. In hPanel, create a MySQL database and database user.
+2. Push this repository to your GitHub repository.
+3. In hPanel, select **Websites → Add website → Node.js Web App**.
+4. Connect the GitHub repository and select the production branch.
+5. Use these build settings:
+
+```text
+Framework: Next.js
+Node.js: 22
+Package manager: pnpm
+Install: pnpm install --frozen-lockfile
+Build: pnpm build
+Start: pnpm start
 ```
 
-## Run Locally
+6. Add the variables from `.env.example` using the actual Hostinger MySQL credentials.
+7. Deploy. The schema and first Admin initialize automatically.
+8. Sign in, create the remaining staff accounts, and replace/remove `HMS_ADMIN_PASSWORD` from hPanel after confirming the Admin account works.
 
-```bash
-npm run dev
-```
-
-The app will be available at [http://localhost:3000](http://localhost:3000).
+Hostinger supplies `PORT`; do not set a fixed application port. The `pnpm start` command serves the optimized Next.js production build, including its CSS and browser assets.
 
 ## Verification
 
-Run the project typecheck:
-
 ```bash
-npm run typecheck
+pnpm typecheck
+pnpm lint
+pnpm build
 ```
 
-The current project passes `npm run typecheck`.
+## Backups and Cost Control
 
-## Online-Only Operation
-
-The app now writes directly to Supabase. Offline queues, IndexedDB sync, service workers, and conflict-review screens have been removed to keep production behavior fast, predictable, and Netlify-friendly.
-
-## Core Modules Included
-
-- Authentication and role-aware navigation
-- Patient management with NDPR consent capture
-- Test catalogue management
-- Orders and sample tracking
-- Results entry and verification
-- Professional report generation
-- Inventory management
-- Billing and receipts
-- Dashboards
-- Full audit log viewer
-- Lab branding settings for reports
-- Branch / multi-facility dashboard support
-- QC controls, calibration logs, and analyzer maintenance
-
-## Netlify Deployment
-
-Recommended Netlify settings:
-
-- Build command: `npm run build`
-- Publish directory: `.next`
-
-Set these environment variables in Netlify:
-
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_PROJECT_ID`
-
-If you use Netlify’s Next.js runtime, keep the project as a standard Next.js app and let Netlify detect it automatically.
-
-## Backup and Restore
-
-Before public launch, enable scheduled Supabase backups and run a restore drill. Follow the runbook in [`docs/backup-restore-runbook.md`](/C:/Users/user/Desktop/lab/docs/backup-restore-runbook.md).
-
-## Important Post-Update Step
-
-If your Supabase project was created before the latest patient-consent polish, rerun [`supabase/schema.sql`](/C:/Users/user/Desktop/lab/supabase/schema.sql) so these fields exist:
-
-- `patients.ndpr_consent`
-- `patients.ndpr_consent_at`
-
-This is required for the patient registration form and patient history view to work correctly.
-
-## Security Notes
-
-- RLS is enabled across the main operational tables.
-- Facility-scoped access is enforced in SQL policies.
-- Role changes remain restricted to administrators.
-- HOD of Lab / Chief Scientist verification uses a dedicated `verify_result` RPC instead of broad result-row update permission.
-- Audit logs capture key operational changes.
-
-## Useful Commands
-
-```bash
-npm run dev
-npm run build
-npm run start
-npm run typecheck
-npm run supabase:types
-```
+- Use Hostinger Business while its CPU, RAM, and I/O graphs remain healthy.
+- Enable Hostinger database/site backups and periodically download an encrypted off-site SQL backup.
+- Do not add Redis, object storage, a VPS, or paid external services unless measured usage requires them.
+- Do not commit `.env` files, SQL dumps, passwords, or patient exports to GitHub.
+- Upgrade hosting only after monitoring shows the Business plan is consistently constrained.

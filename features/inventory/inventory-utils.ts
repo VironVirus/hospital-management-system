@@ -1,4 +1,4 @@
-import type { Tables } from "@/types/supabase";
+import type { Tables } from "@/types/database";
 
 export type InventoryItemRow = Tables<"inventory_items">;
 export type InventoryTransactionRow = Tables<"inventory_transactions">;

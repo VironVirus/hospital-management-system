@@ -1,5 +1,5 @@
-import type { Json } from "@/types/supabase";
-import { getSupabaseBrowserClient } from "@/lib/supabase";
+import type { Json } from "@/types/database";
+import { getAppClient } from "@/lib/app-client";
 
 export function generateId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -24,12 +24,12 @@ export async function commitOnlineMutation({
   payload: Json;
   recordId: string;
 }) {
-  const supabase = getSupabaseBrowserClient();
-  if (!supabase) {
-    throw new Error("Supabase is not configured.");
+  const database = getAppClient();
+  if (!database) {
+    throw new Error("MySQL is not configured.");
   }
 
-  const client = supabase as unknown as {
+  const client = database as unknown as {
     from: (table: string) => {
       delete: () => {
         eq: (column: string, value: string) => Promise<{ error: Error | null }>;

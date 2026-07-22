@@ -45,8 +45,8 @@ import { useToast } from "@/hooks/use-toast";
 import { canAccessAccountsRole, canManageAccountsRole } from "@/lib/guards";
 import { commitOnlineMutation, generateId } from "@/lib/online-core";
 import { recordAuditLog } from "@/lib/online-mutations";
-import { getSupabaseBrowserClient } from "@/lib/supabase";
-import type { Json, Tables, TablesInsert } from "@/types/supabase";
+import { getAppClient } from "@/lib/app-client";
+import type { Json, Tables, TablesInsert } from "@/types/database";
 
 type AccountsData = {
   expenses: AccountExpenseRow[];
@@ -83,19 +83,19 @@ const initialExpenseFormState: ExpenseFormState = {
 };
 
 async function fetchAccountsData(facilityId: string): Promise<AccountsData> {
-  const supabase = getSupabaseBrowserClient();
+  const database = getAppClient();
   const windowStart = new Date();
   windowStart.setMonth(windowStart.getMonth() - 11, 1);
   windowStart.setHours(0, 0, 0, 0);
   const startIso = windowStart.toISOString();
 
-  if (!supabase) {
-    throw new Error("Supabase is not configured.");
+  if (!database) {
+    throw new Error("MySQL is not configured.");
   }
 
   const [invoicesResponse, expensesResponse, transactionsResponse, inventoryResponse] =
     await Promise.all([
-      supabase
+      database
         .from("invoices")
         .select(
           "id, facility_id, order_id, invoice_number, subtotal, discount_amount, total_amount, amount_paid, payment_status, notes, issued_at, due_at, created_at, created_by, updated_at, orders(id, order_number, ordered_at, patients(id, name, lab_id, phone)), invoice_items(id, invoice_id, order_test_id, test_name, quantity, unit_price, line_total, created_at, order_tests(test_id, tests(id, name, category))), invoice_payments(id, facility_id, invoice_id, receipt_number, amount, payment_method, reference_number, notes, received_at, received_by, created_at)"
@@ -104,21 +104,21 @@ async function fetchAccountsData(facilityId: string): Promise<AccountsData> {
         .gte("issued_at", startIso)
         .order("issued_at", { ascending: false })
         .limit(220),
-      supabase
+      database
         .from("expenses")
         .select("*, inventory_items(id, name, category, unit)")
         .eq("facility_id", facilityId)
         .gte("expense_date", startIso.slice(0, 10))
         .order("expense_date", { ascending: false })
         .limit(240),
-      supabase
+      database
         .from("inventory_transactions")
         .select("*")
         .eq("facility_id", facilityId)
         .gte("created_at", startIso)
         .order("created_at", { ascending: false })
         .limit(480),
-      supabase
+      database
         .from("inventory_items")
         .select("*")
         .eq("facility_id", facilityId)
@@ -369,7 +369,7 @@ export function AccountsWorkspace() {
     }
 
     if (!activeFacilityId) {
-      setExpenseError("Assign a facility before posting expenses.");
+      setExpenseError("Complete the hospital setup before posting expenses.");
       return;
     }
 
@@ -514,7 +514,7 @@ export function AccountsWorkspace() {
             Accounts access is restricted
           </CardTitle>
           <CardDescription className="text-red-800">
-            Only Super Admin, Admin, and Accountant users can access income, expenditure,
+            Only Admin and Accountant users can access income, expenditure,
             and cashflow analysis.
           </CardDescription>
         </CardHeader>
@@ -528,7 +528,7 @@ export function AccountsWorkspace() {
         <CardHeader>
           <CardTitle className="text-amber-950">Facility assignment required</CardTitle>
           <CardDescription className="text-amber-900">
-            Assign a facility to <span className="font-medium">{profile?.display_name || "this user"}</span> before
+            Complete the hospital setup for <span className="font-medium">{profile?.display_name || "this user"}</span> before
             using the accounts workspace.
           </CardDescription>
         </CardHeader>

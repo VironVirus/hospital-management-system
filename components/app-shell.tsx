@@ -6,20 +6,26 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 import {
   Activity,
+  BedDouble,
   Bell,
-  Boxes,
   Building2,
   CircleUserRound,
   ClipboardPlus,
   FileText,
   FlaskConical,
+  HeartPulse,
+  Hospital,
+  KeyRound,
   LogOut,
   Menu,
   MoonStar,
+  Pill,
   ScanLine,
+  ScanSearch,
   ShieldCheck,
   SunMedium,
   Stethoscope,
+  Store,
   TestTube2,
   X,
   Wallet
@@ -30,7 +36,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { appRoles, formatAppRole, type AppRole } from "@/lib/auth-types";
+import { formatAppRole, type AppRole } from "@/lib/auth-types";
 
 type NavigationItem = {
   href: Route;
@@ -40,95 +46,120 @@ type NavigationItem = {
 };
 
 const navigation: NavigationItem[] = [
-  { href: "/dashboard", label: "Dashboard", icon: Activity, roles: appRoles },
+  { href: "/hospital", label: "Hospital Overview", icon: Hospital, roles: ["Admin", "Doctor", "Nurse"] as AppRole[] },
+  {
+    href: "/clinical",
+    label: "Doctor & Clinical",
+    icon: HeartPulse,
+    roles: ["Admin", "Receptionist", "Doctor", "Nurse", "LabScientist", "Pharmacist", "Radiologist"] as AppRole[]
+  },
+  {
+    href: "/wards",
+    label: "Nursing & Wards",
+    icon: BedDouble,
+    roles: ["Admin", "Doctor", "Nurse", "Receptionist"] as AppRole[]
+  },
   {
     href: "/patients",
-    label: "Patients",
+    label: "Reception & Patients",
     icon: Building2,
-    roles: ["SuperAdmin", "Admin", "Receptionist", "LabScientist"] as AppRole[]
+    roles: ["Admin", "Receptionist", "LabScientist", "Doctor", "Nurse", "Pharmacist", "Radiologist"] as AppRole[]
   },
   {
     href: "/inventory",
-    label: "Inventory",
-    icon: Boxes,
-    roles: ["SuperAdmin", "Admin", "LabScientist", "Accountant"] as AppRole[]
+    label: "Store & Inventory",
+    icon: Store,
+    roles: ["Admin", "LabScientist", "Accountant", "Storekeeper", "Pharmacist"] as AppRole[]
   },
+  {
+    href: "/pharmacy",
+    label: "Pharmacy",
+    icon: Pill,
+    roles: ["Admin", "Doctor", "Nurse", "Pharmacist", "Storekeeper"] as AppRole[]
+  },
+  {
+    href: "/radiology",
+    label: "Radiology",
+    icon: ScanSearch,
+    roles: ["Admin", "Receptionist", "Doctor", "Nurse", "Radiologist", "Accountant"] as AppRole[]
+  },
+  {
+    href: "/hospital-billing",
+    label: "Patient Billing",
+    icon: Wallet,
+    roles: ["Admin", "Receptionist", "Accountant", "Doctor", "Nurse"] as AppRole[]
+  },
+  { href: "/dashboard", label: "Laboratory", icon: Activity, roles: ["Admin", "Receptionist", "LabScientist", "Verifier", "Accountant"] as AppRole[] },
   {
     href: "/orders",
     label: "Tests",
     icon: ClipboardPlus,
-    roles: ["SuperAdmin", "Admin", "Receptionist", "LabScientist"] as AppRole[]
+    roles: ["Admin", "Receptionist", "LabScientist"] as AppRole[]
   },
   {
     href: "/orders/reception",
     label: "Sample Reception",
     icon: ScanLine,
-    roles: ["SuperAdmin", "Admin", "Receptionist", "LabScientist", "Verifier"] as AppRole[]
+    roles: ["Admin", "Receptionist", "LabScientist", "Verifier"] as AppRole[]
   },
   {
     href: "/results",
     label: "Results",
     icon: Stethoscope,
-    roles: ["SuperAdmin", "Admin", "LabScientist", "Verifier"] as AppRole[]
+    roles: ["Admin", "LabScientist", "Verifier"] as AppRole[]
   },
   {
     href: "/qc",
     label: "Quality Control",
     icon: FlaskConical,
-    roles: ["SuperAdmin", "Admin", "LabScientist", "Verifier"] as AppRole[]
+    roles: ["Admin", "LabScientist", "Verifier"] as AppRole[]
   },
   {
     href: "/reports",
     label: "Reports",
     icon: FileText,
-    roles: ["SuperAdmin", "Admin", "Receptionist", "Verifier"] as AppRole[]
+    roles: ["Admin", "Receptionist", "Verifier"] as AppRole[]
   },
   {
     href: "/accounts",
     label: "Accounts",
     icon: Wallet,
-    roles: ["SuperAdmin", "Admin", "Accountant"] as AppRole[]
+    roles: ["Admin", "Accountant"] as AppRole[]
   },
   {
     href: "/billing",
     label: "Billing",
     icon: Wallet,
-    roles: ["SuperAdmin", "Admin", "Accountant"] as AppRole[]
+    roles: ["Admin", "Accountant"] as AppRole[]
   },
   {
     href: "/admin",
     label: "Administration",
     icon: ShieldCheck,
-    roles: ["SuperAdmin", "Admin"] as AppRole[]
-  },
-  {
-    href: "/admin/facilities",
-    label: "Facilities",
-    icon: Building2,
-    roles: ["SuperAdmin", "Admin"] as AppRole[]
+    roles: ["Admin"] as AppRole[]
   },
   {
     href: "/admin/tests",
     label: "Test Catalogue",
     icon: TestTube2,
-    roles: ["SuperAdmin", "Admin"] as AppRole[]
+    roles: ["Admin"] as AppRole[]
   },
   {
     href: "/admin/audit",
     label: "Audit Logs",
     icon: Activity,
-    roles: ["SuperAdmin", "Admin"] as AppRole[]
+    roles: ["Admin"] as AppRole[]
   }
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { profile, role, user, loading } = useAuth();
+  const { facilityName, profile, role, user, loading } = useAuth();
   const { resolvedTheme, toggleTheme } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const visibleNavigation =
-    role ? navigation.filter((item) => item.roles.includes(role)) : navigation;
+    role ? navigation.filter((item) => item.roles.includes(role)) : [];
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -138,12 +169,12 @@ export function AppShell({ children }: { children: ReactNode }) {
     <>
       <div className="flex items-center gap-3 px-5 py-3">
         <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 to-sky-400 text-white shadow-soft">
-          <FlaskConical className="h-5 w-5" />
+          <Hospital className="h-5 w-5" />
         </div>
         <div>
-          <p className="text-sm font-semibold text-slate-950 dark:text-slate-50">LIMS Nigeria</p>
+          <p className="text-sm font-semibold text-slate-950 dark:text-slate-50">St Gianna Specialist Hospital</p>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Online laboratory suite
+            Transekulu, Enugu
           </p>
         </div>
       </div>
@@ -196,10 +227,10 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
           <div className="flex items-center justify-between gap-4">
             <p className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">
-              Facility
+              Hospital
             </p>
             <Badge variant="secondary">
-              {profile?.facility_id ? "Assigned" : "Pending setup"}
+              {facilityName || "Hospital"}
             </Badge>
           </div>
           <div className="flex gap-2">
@@ -223,6 +254,12 @@ export function AppShell({ children }: { children: ReactNode }) {
               </Link>
             </Button>
           </div>
+          <Button asChild variant="ghost" className="h-9 w-full justify-start">
+            <Link href="/account">
+              <KeyRound className="h-4 w-4" />
+              Change password
+            </Link>
+          </Button>
         </div>
       </div>
     </>
@@ -269,10 +306,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               </Button>
               <div>
                 <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                  Laboratory dashboard
+                  Hospital operations
                 </p>
                 <h1 className="text-lg font-semibold text-slate-950 dark:text-slate-50">
-                  Operational overview
+                  Connected patient care
                 </h1>
               </div>
             </div>

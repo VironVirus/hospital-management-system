@@ -1,96 +1,36 @@
-# Tapxora LIMS Backup and Restore Runbook
+# St Gianna HMS MySQL Backup and Restore Runbook
 
-This runbook should be completed before public launch. It covers Supabase PostgreSQL data, file assets referenced by the app, and the operational restore drill.
+Patient, clinical, laboratory, pharmacy, radiology, inventory, staff, and financial data are stored in the Hostinger MySQL database. Treat every backup as confidential medical data.
 
-## Backup Strategy
+## Backup Policy
 
-- Enable Supabase automated backups before onboarding live laboratories. Use a paid Supabase plan that includes scheduled backups and point-in-time recovery if the lab will store production patient data.
-- Run a manual backup before every schema change, major deployment, or bulk data import.
-- Keep at least one encrypted off-platform backup copy controlled by the business owner or system administrator.
-- Test restore procedures monthly. A backup that has never been restored is only a hope, not a recovery plan.
+- Keep Hostinger automatic backups enabled.
+- Create a manual backup before every deployment that changes the database.
+- Download an encrypted off-site backup at least monthly.
+- Test restoration into a separate staging database every three months.
+- Never commit database dumps to GitHub.
 
-## What Must Be Backed Up
+## Manual Backup
 
-- Supabase PostgreSQL database: patients, tests, orders, results, invoices, inventory, users/profiles, QC logs, audit logs, and branding settings.
-- Supabase Auth users: included in managed Supabase backups, but exports should be handled carefully because they contain sensitive identity data.
-- Supabase Storage buckets if used for report logos or uploaded assets.
-- Netlify environment variable names, not secret values in public documentation.
-- Current `supabase/schema.sql` and application release commit SHA.
-
-## Supabase Scheduled Backups
-
-1. Open the Supabase project dashboard.
-2. Go to `Project Settings` then `Database`.
-3. Review the `Backups` section.
-4. Upgrade the project if scheduled backups or point-in-time recovery are not available on the current plan.
-5. Confirm the backup schedule, retention period, and restore options.
-6. Record the backup owner, restore approver, and emergency contact in your internal operations notes.
-
-Recommended launch policy:
-
-- Daily automated backups for production.
-- Manual backup immediately before running a new schema.
-- Monthly restore drill into a separate staging Supabase project.
-- Immediate backup after a successful large migration.
-
-## Manual Backup With Supabase CLI
-
-Install the Supabase CLI locally if it is not already installed:
+Use hPanel/phpMyAdmin Export, selecting SQL format and all tables. If remote MySQL access is enabled, use:
 
 ```bash
-npm install --save-dev supabase
+mysqldump --single-transaction --routines --triggers \
+  -h YOUR_DB_HOST -u YOUR_DB_USER -p YOUR_DB_NAME \
+  > st-gianna-hms-YYYY-MM-DD.sql
 ```
-
-Log in and dump the database:
-
-```bash
-npx supabase login
-npx supabase db dump --project-id YOUR_PROJECT_ID --file backups/tapxora-lims-YYYY-MM-DD.sql
-```
-
-Do not commit backup files to GitHub. Store them in a secure encrypted location.
-
-## Manual Backup With `pg_dump`
-
-If using direct database credentials:
-
-```bash
-pg_dump "postgresql://postgres:YOUR_PASSWORD@YOUR_HOST:5432/postgres" --format=custom --file=tapxora-lims-YYYY-MM-DD.dump
-```
-
-Use a secure terminal and avoid pasting production passwords into shared chat or public logs.
 
 ## Restore Drill
 
-1. Create a separate staging Supabase project.
-2. Restore the backup into staging, not production.
-3. Set staging environment variables in a local `.env.local` or Netlify preview site.
-4. Confirm login, patient search, test request creation, result entry, verification, report PDF, billing, inventory, and QC logs.
-5. Record the restore date, backup file used, who performed it, and any issues found.
-
-Supabase CLI restore example:
+1. Create a separate staging MySQL database.
+2. Import the SQL backup through phpMyAdmin or the MySQL client.
+3. Configure a staging deployment with the staging credentials.
+4. Verify staff login, patient search, clinical records, laboratory workflow, radiology, pharmacy, billing, accounts, and inventory.
+5. Record the backup date, restore date, operator, and any issues.
 
 ```bash
-psql "postgresql://postgres:STAGING_PASSWORD@STAGING_HOST:5432/postgres" < backups/tapxora-lims-YYYY-MM-DD.sql
+mysql -h STAGING_DB_HOST -u STAGING_DB_USER -p STAGING_DB_NAME \
+  < st-gianna-hms-YYYY-MM-DD.sql
 ```
 
-For `pg_dump --format=custom` backups:
-
-```bash
-pg_restore --clean --if-exists --no-owner --dbname="postgresql://postgres:STAGING_PASSWORD@STAGING_HOST:5432/postgres" tapxora-lims-YYYY-MM-DD.dump
-```
-
-## Production Restore Rules
-
-- Do not restore production while users are actively entering data unless downtime has been announced.
-- Take a final emergency backup before any destructive restore.
-- Restore into staging first whenever possible.
-- After restore, verify RLS policies, admin user access, report branding, result verification RPC, and invoice totals.
-- Keep an incident note describing what happened, what was restored, and the exact time range affected.
-
-## Security Notes
-
-- Backup files contain patient and financial records. Treat them as confidential medical data.
-- Never upload backups into GitHub, WhatsApp groups, public Google Drive folders, or unencrypted email.
-- Limit backup access to trusted administrators only.
-- Rotate database credentials if a backup or connection string is exposed.
+Before restoring production, announce downtime, take a final backup, and confirm the target database name twice.

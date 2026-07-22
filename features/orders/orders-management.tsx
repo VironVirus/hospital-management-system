@@ -73,9 +73,9 @@ import {
 } from "@/lib/online-mutations";
 import { resolveOnlineQuery } from "@/lib/online-core";
 import { printHtmlDocument } from "@/lib/print";
-import { getSupabaseBrowserClient } from "@/lib/supabase";
+import { getAppClient } from "@/lib/app-client";
 import { cn } from "@/lib/utils";
-import type { Database, Tables } from "@/types/supabase";
+import type { Database, Tables } from "@/types/database";
 
 type PatientSearchRow =
   Database["public"]["Functions"]["search_patients"]["Returns"][number];
@@ -252,13 +252,13 @@ async function waitForInvoiceRetry(ms: number) {
 }
 
 async function fetchInvoiceForOrder(orderId: string) {
-  const supabase = getSupabaseBrowserClient();
-  if (!supabase) {
-    throw new Error("Supabase is not configured.");
+  const database = getAppClient();
+  if (!database) {
+    throw new Error("MySQL is not configured.");
   }
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
-    const { data, error } = await supabase
+    const { data, error } = await database
       .from("invoices")
       .select(invoicePrintSelect)
       .eq("order_id", orderId)
@@ -289,14 +289,14 @@ function formatDateTime(value: string) {
 }
 
 async function fetchPatients(searchTerm: string) {
-  const supabase = getSupabaseBrowserClient();
+  const database = getAppClient();
   return resolveOnlineQuery<PatientSearchRow[]>({
     online: async () => {
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
+      if (!database) {
+        throw new Error("MySQL is not configured.");
       }
 
-      const { data, error } = await supabase.rpc("search_patients", {
+      const { data, error } = await database.rpc("search_patients", {
         search_term: searchTerm.trim() || null,
         page_number: 1,
         page_size: 12
@@ -313,14 +313,14 @@ async function fetchPatients(searchTerm: string) {
 }
 
 async function fetchActiveTests() {
-  const supabase = getSupabaseBrowserClient();
+  const database = getAppClient();
   return resolveOnlineQuery<TestRow[]>({
     online: async () => {
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
+      if (!database) {
+        throw new Error("MySQL is not configured.");
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await database
         .from("tests")
         .select("*, facilities(id, name, code)")
         .eq("is_active", true)
@@ -338,14 +338,14 @@ async function fetchActiveTests() {
 }
 
 async function fetchRecentOrders() {
-  const supabase = getSupabaseBrowserClient();
+  const database = getAppClient();
   return resolveOnlineQuery<RecentOrderRow[]>({
     online: async () => {
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
+      if (!database) {
+        throw new Error("MySQL is not configured.");
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await database
         .from("orders")
         .select(
           "id, order_number, status, priority, notes, created_at, patient_id, facility_id, ordered_at, ordered_by, reported_at, updated_at, patients(id, name, lab_id, phone), order_tests(id, order_id, test_id, sample_code, status, specimen_label, barcode_value, qr_value, created_at, updated_at, collected_at, collected_by, in_progress_at, results_entered_at, verified_at, reported_at, tests(id, name))"
@@ -363,7 +363,7 @@ async function fetchRecentOrders() {
 }
 
 async function fetchFacilityBundles(facilityId: string) {
-  const supabase = getSupabaseBrowserClient() as unknown as {
+  const database = getAppClient() as unknown as {
     from: (table: "test_bundles") => {
       select: (columns: string) => {
         eq: (
@@ -385,11 +385,11 @@ async function fetchFacilityBundles(facilityId: string) {
   } | null;
   return resolveOnlineQuery<TestBundleRow[]>({
     online: async () => {
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
+      if (!database) {
+        throw new Error("MySQL is not configured.");
       }
 
-      const response = await supabase
+      const response = await database
         .from("test_bundles")
         .select("*")
         .eq("facility_id", facilityId)
@@ -406,18 +406,18 @@ async function fetchFacilityBundles(facilityId: string) {
 }
 
 async function bumpBundleUsage(bundleId: string) {
-  const supabase = getSupabaseBrowserClient() as unknown as {
+  const database = getAppClient() as unknown as {
     rpc: (
       functionName: "bump_test_bundle_usage",
       args: { target_bundle_id: string }
     ) => Promise<{ error: Error | null }>;
   } | null;
 
-  if (!supabase) {
+  if (!database) {
     return;
   }
 
-  const { error } = await supabase.rpc("bump_test_bundle_usage", {
+  const { error } = await database.rpc("bump_test_bundle_usage", {
     target_bundle_id: bundleId
   });
 
@@ -427,14 +427,14 @@ async function bumpBundleUsage(bundleId: string) {
 }
 
 async function fetchOrderForEdit(orderId: string) {
-  const supabase = getSupabaseBrowserClient();
+  const database = getAppClient();
   return resolveOnlineQuery<RecentOrderRow | null>({
     online: async () => {
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
+      if (!database) {
+        throw new Error("MySQL is not configured.");
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await database
         .from("orders")
         .select(
           "id, order_number, status, priority, notes, created_at, patient_id, facility_id, ordered_at, ordered_by, reported_at, updated_at, patients(id, name, lab_id, phone), order_tests(id, order_id, test_id, sample_code, status, specimen_label, barcode_value, qr_value, created_at, updated_at, collected_at, collected_by, in_progress_at, results_entered_at, verified_at, reported_at, tests(id, name))"
@@ -889,7 +889,7 @@ export function OrdersManagement() {
         <CardHeader>
           <CardTitle className="text-amber-950">Facility assignment required</CardTitle>
           <CardDescription className="text-amber-900">
-            Assign a facility to this user before creating or viewing tests.
+            Complete the hospital setup before creating or viewing tests.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -961,7 +961,7 @@ export function OrdersManagement() {
     setErrors((current) => ({ ...current, selected_test_ids: undefined }));
     toast({
       title: `Editing ${bundle.name}`,
-      description: "Adjust the selected tests, then update the facility bundle.",
+      description: "Adjust the selected tests, then update the saved test bundle.",
       variant: "success"
     });
   };
@@ -1069,7 +1069,7 @@ export function OrdersManagement() {
     if (selectedTests.length === 0) {
       toast({
         title: "Select tests first",
-        description: "Choose at least one test before saving a facility bundle.",
+        description: "Choose at least one test before saving a test bundle.",
         variant: "error"
       });
       return;
@@ -1078,7 +1078,7 @@ export function OrdersManagement() {
     setSavingBundle(true);
 
     try {
-      const supabase = getSupabaseBrowserClient() as unknown as {
+      const database = getAppClient() as unknown as {
         from: (table: "test_bundles") => {
           insert: (payload: Record<string, unknown>) => Promise<{ error: Error | null }>;
           update: (payload: Record<string, unknown>) => {
@@ -1096,8 +1096,8 @@ export function OrdersManagement() {
       };
 
       const { error } = editingBundleId
-        ? await supabase.from("test_bundles").update(payload).eq("id", editingBundleId)
-        : await supabase.from("test_bundles").insert(payload);
+        ? await database.from("test_bundles").update(payload).eq("id", editingBundleId)
+        : await database.from("test_bundles").insert(payload);
 
       if (error) {
         throw error;
@@ -1111,7 +1111,7 @@ export function OrdersManagement() {
         title: editingBundleId ? "Facility bundle updated" : "Facility bundle saved",
         description: editingBundleId
           ? `${trimmedName} now reflects the current test selection.`
-          : `${trimmedName} is now available for this facility.`,
+          : `${trimmedName} is now available for this hospital.`,
         variant: "success"
       });
     } catch (error) {
@@ -1129,7 +1129,7 @@ export function OrdersManagement() {
     setDeletingBundleId(bundleId);
 
     try {
-      const supabase = getSupabaseBrowserClient() as unknown as {
+      const database = getAppClient() as unknown as {
         from: (table: "test_bundles") => {
           delete: () => {
             eq: (
@@ -1140,7 +1140,7 @@ export function OrdersManagement() {
         };
       };
 
-      const { error } = await supabase.from("test_bundles").delete().eq("id", bundleId);
+      const { error } = await database.from("test_bundles").delete().eq("id", bundleId);
 
       if (error) {
         throw error;
@@ -1154,7 +1154,7 @@ export function OrdersManagement() {
       });
       toast({
         title: "Bundle removed",
-        description: `${bundleNameValue} was removed from this facility.`,
+        description: `${bundleNameValue} was removed from this hospital.`,
         variant: "success"
       });
     } catch (error) {
@@ -1597,8 +1597,8 @@ export function OrdersManagement() {
                         onChange={(event) => setBundleName(event.target.value)}
                         placeholder={
                           editingBundleId
-                            ? "Rename this saved facility bundle"
-                            : "Save current selection as a facility bundle"
+                            ? "Rename this saved test bundle"
+                            : "Save current selection as a test bundle"
                         }
                         className={cn(frontDeskMode && "h-12 text-base")}
                       />
@@ -1671,7 +1671,7 @@ export function OrdersManagement() {
                         ))}
                         {resolvedBundles.length === 0 ? (
                           <p className="text-xs text-slate-500">
-                            No saved facility bundles yet.
+                            No saved test bundles yet.
                           </p>
                         ) : null}
                       </div>
@@ -2084,7 +2084,7 @@ export function OrdersManagement() {
             !recentOrdersQuery.isError &&
             (recentOrdersQuery.data ?? []).length === 0 ? (
               <div className="rounded-2xl border border-dashed border-blue-200 bg-blue-50/60 px-5 py-8 text-center text-sm text-slate-600">
-                No tests created yet in this facility.
+                No tests created yet for this hospital.
               </div>
             ) : null}
 

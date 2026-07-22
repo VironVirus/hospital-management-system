@@ -1,5 +1,6 @@
 # Node / Next.js
 node_modules/
+.pnpm-store/
 .next/
 out/
 coverage/
@@ -31,6 +32,3 @@ Thumbs.db
 
 # Netlify
 .netlify/
-
-# Supabase local CLI state
-supabase/.temp/

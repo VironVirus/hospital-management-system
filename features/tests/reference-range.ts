@@ -1,4 +1,4 @@
-import type { Tables } from "@/types/supabase";
+import type { Tables } from "@/types/database";
 
 type ReferenceRange = Tables<"tests">["reference_range"];
 

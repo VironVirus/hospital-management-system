@@ -36,7 +36,7 @@ export default function LogoutPage() {
       <CardHeader className="space-y-2">
         <CardTitle className="text-2xl text-slate-950">Signing you out</CardTitle>
         <CardDescription>
-          Your session is being cleared from the browser and Supabase.
+          Your secure hospital session is being cleared.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

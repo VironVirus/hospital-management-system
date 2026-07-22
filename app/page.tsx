@@ -12,17 +12,17 @@ export default function HomePage() {
         <section className="space-y-8">
           <div className="inline-flex items-center gap-2 rounded-full border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 shadow-sm">
             <ShieldCheck className="h-4 w-4" />
-            Online LIMS for Nigerian laboratories
+            Connected hospital management for Nigerian healthcare
           </div>
 
           <div className="space-y-4">
             <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl lg:text-6xl">
-              Clean, reliable lab operations powered directly by Supabase.
+              One complete hospital record for every patient.
             </h1>
             <p className="max-w-2xl text-lg leading-8 text-slate-600">
-              This starter ships with Next.js 15, Supabase auth, React Query,
-              Zod validation, and online workflows designed for clinics,
-              diagnostic centers, and hospital laboratories.
+              St Gianna Specialist Hospital connects registration, clinical encounters, wards,
+              vital signs, diagnosis, pharmacy, laboratory, billing, accounts,
+              and stores under each patient&apos;s permanent Hospital ID.
             </p>
           </div>
 
@@ -30,19 +30,16 @@ export default function HomePage() {
             <Button asChild size="lg">
               <Link href="/login">Open secure workspace</Link>
             </Button>
-            <Button asChild variant="secondary" size="lg">
-              <Link href="/register">Create account</Link>
-            </Button>
             <Button asChild variant="outline" size="lg">
-              <Link href="/dashboard">View dashboard shell</Link>
+              <Link href="/hospital">View hospital workspace</Link>
             </Button>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
             {[
-              ["Supabase", "Auth, PostgreSQL, and RLS"],
-              ["Supabase", "Direct database updates"],
-              ["Netlify", "Simple hosting and deploy previews"]
+              ["Hostinger MySQL", "Hospital records and secure staff sessions"],
+              ["Next.js", "One application for every department"],
+              ["Hostinger", "Standalone Node.js deployment"]
             ].map(([title, description]) => (
               <Card key={title} className="bg-white/80 backdrop-blur">
                 <CardHeader className="pb-3">
@@ -57,14 +54,14 @@ export default function HomePage() {
         <Card className="overflow-hidden border-blue-100 bg-white/90 shadow-xl shadow-blue-100/70 backdrop-blur">
           <CardHeader className="bg-gradient-to-br from-blue-600 to-sky-500 text-white">
             <Badge className="w-fit bg-white/15 text-white hover:bg-white/20">
-              LIMS Control Center
+              St Gianna Specialist Hospital
             </Badge>
             <CardTitle className="text-2xl text-white">
-              Ready for lab workflows, not just a demo.
+              Ready for hospital and clinic workflows.
             </CardTitle>
             <CardDescription className="text-blue-50">
-              The initial layout is organized for patient registration, test
-              orders, results review, billing, and reporting.
+              The workspace is organized for longitudinal patient care from
+              first presentation through discharge and follow-up.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5 p-6">
@@ -73,7 +70,7 @@ export default function HomePage() {
               <div>
                 <p className="font-medium text-slate-900">Online reliability</p>
                 <p className="text-sm text-slate-600">
-                  Direct Supabase updates keep worklists current without sync conflicts.
+                  Server-side MySQL updates keep departmental worklists consistent.
                 </p>
               </div>
             </div>
@@ -93,11 +90,11 @@ export default function HomePage() {
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="rounded-lg bg-slate-50 p-4">
                 <p className="text-slate-500">Authentication</p>
-                <p className="mt-1 font-semibold text-slate-900">Supabase Auth</p>
+                <p className="mt-1 font-semibold text-slate-900">Admin-created accounts</p>
               </div>
               <div className="rounded-lg bg-slate-50 p-4">
                 <p className="text-slate-500">Hosting</p>
-                <p className="mt-1 font-semibold text-slate-900">Netlify-ready</p>
+                <p className="mt-1 font-semibold text-slate-900">Hostinger-ready</p>
               </div>
             </div>
           </CardContent>

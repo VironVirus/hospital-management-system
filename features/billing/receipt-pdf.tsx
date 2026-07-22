@@ -2,7 +2,6 @@
 
 import {
   Document,
-  Image as PdfImage,
   Page,
   StyleSheet,
   Text,
@@ -46,12 +45,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 6,
     textAlign: "center",
-    width: 30
-  },
-  logoImage: {
-    borderRadius: 10,
-    height: 30,
-    marginBottom: 6,
     width: 30
   },
   brandTitle: {
@@ -154,11 +147,9 @@ const styles = StyleSheet.create({
 
 export function ReceiptDocument({
   invoice,
-  logoUrl,
   payment
 }: {
   invoice: BillingInvoiceRow;
-  logoUrl?: string;
   payment: NonNullable<BillingInvoiceRow["invoice_payments"]>[number];
 }) {
   const patient = invoice.orders?.patients;
@@ -170,15 +161,11 @@ export function ReceiptDocument({
     <Document title="Payment receipt">
       <Page size={[THERMAL_WIDTH, pageHeight]} style={styles.page}>
         <View style={styles.header}>
-          {logoUrl ? (
-            <PdfImage src={logoUrl} style={styles.logoImage} />
-          ) : (
-            <View style={styles.logoFallback}>
-              <Text>LN</Text>
-            </View>
-          )}
+          <View style={styles.logoFallback}>
+            <Text>SG</Text>
+          </View>
           <Text style={styles.brandTitle}>
-            {facility?.name || "LIMS Nigeria Diagnostics"}
+            {facility?.name || "St Gianna Specialist Hospital"}
           </Text>
           <Text style={styles.brandMeta}>
             {facility?.code || "Clinical laboratory billing desk"}

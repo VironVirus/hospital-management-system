@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 
-const STORAGE_KEY = "tapxora-front-desk-mode";
-const EVENT_NAME = "tapxora-front-desk-mode-change";
+const STORAGE_KEY = "st-gianna-front-desk-mode";
+const EVENT_NAME = "st-gianna-front-desk-mode-change";
 
 function readFrontDeskMode() {
   if (typeof window === "undefined") {

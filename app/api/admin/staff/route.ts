@@ -1,207 +1,44 @@
-import { randomBytes } from "node:crypto";
-import { NextRequest, NextResponse } from "next/server";
+import { randomBytes, randomUUID } from "node:crypto";
+import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getCurrentSession } from "@/lib/auth-session";
+import { getPool, migrateDatabase } from "@/lib/db";
+import { HOSPITAL_ID } from "@/lib/db/schema";
+import { hashPassword } from "@/lib/security";
 import type { AppRole } from "@/lib/auth-types";
-import { createSupabaseAdminClient } from "@/lib/supabase-admin";
-import { createSupabaseServerClient } from "@/lib/supabase-server";
-import type { Tables, TablesInsert } from "@/types/supabase";
 
 export const runtime = "nodejs";
 
-const allowedRoleValues = [
-  "Admin",
-  "Receptionist",
-  "LabScientist",
-  "Verifier",
-  "Accountant"
-] as const satisfies AppRole[];
-
+const allowedRoles = ["Admin", "Receptionist", "Doctor", "Nurse", "Pharmacist", "Storekeeper", "Radiologist", "LabScientist", "Verifier", "Accountant"] as const satisfies AppRole[];
 const requestSchema = z.object({
-  display_name: z.string().trim().min(2, "Staff name is required"),
-  email: z.string().trim().email("Enter a valid staff email address"),
-  facility_id: z.string().uuid("Choose a valid facility"),
-  password: z.string().trim().min(8, "Temporary password must be at least 8 characters").max(72).optional().or(z.literal("")),
-  role: z.enum(allowedRoleValues)
+  display_name: z.string().trim().min(2),
+  email: z.string().trim().email(),
+  password: z.string().trim().min(12).max(72).optional().or(z.literal("")),
+  role: z.enum(allowedRoles)
 });
 
-type ActorProfile = Pick<Tables<"profiles">, "approval_status" | "facility_id" | "id" | "role">;
-type FacilitySummary = Pick<Tables<"facilities">, "code" | "id" | "name">;
-
-function generateTemporaryPassword() {
-  return `Tapxora-${randomBytes(6).toString("hex")}`;
-}
-
-function canCreateRole(actorRole: AppRole, targetRole: AppRole) {
-  if (actorRole === "SuperAdmin") {
-    return targetRole !== "SuperAdmin";
-  }
-
-  return !["SuperAdmin", "Admin"].includes(targetRole);
-}
-
-export async function POST(request: NextRequest) {
-  const authResponse = NextResponse.next();
-  const supabase = createSupabaseServerClient(request, authResponse);
-
-  if (!supabase) {
-    return NextResponse.json(
-      { error: "Supabase server environment variables are not configured." },
-      { status: 500 }
+export async function POST(request: Request) {
+  try {
+    const session = await getCurrentSession();
+    if (!session || session.profile.role !== "Admin") return NextResponse.json({ error: "Only the hospital Admin can create staff accounts." }, { status: 403 });
+    const parsed = requestSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid staff account." }, { status: 400 });
+    await migrateDatabase();
+    const email = parsed.data.email.toLowerCase();
+    const password = parsed.data.password || `StGianna-${randomBytes(6).toString("hex")}`;
+    const generated = !parsed.data.password;
+    const id = randomUUID();
+    await getPool().execute(
+      `INSERT INTO profiles (id, facility_id, display_name, email, password_hash, role, approval_status, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, 'Approved', 1)`,
+      [id, HOSPITAL_ID, parsed.data.display_name, email, await hashPassword(password), parsed.data.role]
     );
+    return NextResponse.json({
+      temporary_password: generated ? password : null,
+      user: { id, display_name: parsed.data.display_name, email, role: parsed.data.role }
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Account could not be created.";
+    return NextResponse.json({ error: message.includes("Duplicate") ? "A staff account already uses that email." : message }, { status: 400 });
   }
-
-  const parsed = requestSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) {
-    return NextResponse.json(
-      { error: parsed.error.issues[0]?.message ?? "Invalid staff account request." },
-      { status: 400 }
-    );
-  }
-
-  const {
-    data: { user },
-    error: authError
-  } = await supabase.auth.getUser();
-
-  if (authError || !user) {
-    return NextResponse.json({ error: "You must be signed in to create staff accounts." }, { status: 401 });
-  }
-
-  const { data: actorProfileData, error: actorError } = await supabase
-    .from("profiles")
-    .select("id, role, facility_id, approval_status")
-    .eq("id", user.id)
-    .single();
-  const actorProfile = (actorProfileData ?? null) as ActorProfile | null;
-
-  if (actorError || !actorProfile) {
-    return NextResponse.json({ error: "Your staff profile could not be loaded." }, { status: 403 });
-  }
-
-  if (!["SuperAdmin", "Admin"].includes(actorProfile.role)) {
-    return NextResponse.json({ error: "Only Admin or Super Admin users can create staff accounts." }, { status: 403 });
-  }
-
-  if (actorProfile.approval_status !== "Approved") {
-    return NextResponse.json(
-      { error: "Your admin account must be approved before you can create staff accounts." },
-      { status: 403 }
-    );
-  }
-
-  if (!canCreateRole(actorProfile.role, parsed.data.role)) {
-    return NextResponse.json(
-      { error: "Only the Super Admin can create another Admin account." },
-      { status: 403 }
-    );
-  }
-
-  if (actorProfile.role !== "SuperAdmin" && parsed.data.facility_id !== actorProfile.facility_id) {
-    return NextResponse.json(
-      { error: "Branch Admins can create staff only inside their own facility." },
-      { status: 403 }
-    );
-  }
-
-  const { data: facilityData, error: facilityError } = await supabase
-    .from("facilities")
-    .select("id, name, code")
-    .eq("id", parsed.data.facility_id)
-    .single();
-  const facility = (facilityData ?? null) as FacilitySummary | null;
-
-  if (facilityError || !facility) {
-    return NextResponse.json(
-      { error: "That facility is not visible in your current scope." },
-      { status: 403 }
-    );
-  }
-
-  const adminClient = createSupabaseAdminClient();
-  if (!adminClient) {
-    return NextResponse.json(
-        {
-          error:
-          "Set SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY on this deployment before creating staff accounts from the dashboard."
-        },
-        { status: 500 }
-      );
-  }
-
-  const normalizedEmail = parsed.data.email.trim().toLowerCase();
-  const password = parsed.data.password?.trim() || generateTemporaryPassword();
-  const passwordWasGenerated = !parsed.data.password?.trim();
-  const autoApprove = actorProfile.role === "SuperAdmin";
-  const approvalStatus: TablesInsert<"profiles">["approval_status"] = autoApprove
-    ? "Approved"
-    : "Pending";
-
-  const { data: existingProfileData } = await adminClient
-    .from("profiles")
-    .select("id")
-    .eq("email", normalizedEmail)
-    .maybeSingle();
-  const existingProfile = (existingProfileData ?? null) as Pick<Tables<"profiles">, "id"> | null;
-
-  if (existingProfile?.id) {
-    return NextResponse.json(
-      { error: "A staff account already exists for that email address." },
-      { status: 409 }
-    );
-  }
-
-  const { data: createdUser, error: createUserError } = await adminClient.auth.admin.createUser({
-    email: normalizedEmail,
-    email_confirm: true,
-    password,
-    user_metadata: {
-      full_name: parsed.data.display_name
-    }
-  });
-
-  if (createUserError || !createdUser.user) {
-    return NextResponse.json(
-      { error: createUserError?.message ?? "The staff account could not be created." },
-      { status: 400 }
-    );
-  }
-
-  const profilePayload: TablesInsert<"profiles"> = {
-    approval_note: autoApprove ? null : "Awaiting Super Admin approval",
-    approval_status: approvalStatus,
-    approved_at: autoApprove ? new Date().toISOString() : null,
-    approved_by: autoApprove ? actorProfile.id : null,
-    display_name: parsed.data.display_name.trim(),
-    email: normalizedEmail,
-    facility_id: facility.id,
-    id: createdUser.user.id,
-    role: parsed.data.role
-  };
-
-  const { error: profileError } = await adminClient
-    .from("profiles")
-    .upsert(profilePayload, { onConflict: "id" });
-
-  if (profileError) {
-    await adminClient.auth.admin.deleteUser(createdUser.user.id);
-
-    return NextResponse.json(
-      { error: profileError.message || "The staff profile could not be saved." },
-      { status: 400 }
-    );
-  }
-
-  return NextResponse.json({
-    temporary_password: passwordWasGenerated ? password : null,
-    user: {
-      display_name: profilePayload.display_name,
-      email: normalizedEmail,
-      facility_code: facility.code,
-      facility_name: facility.name,
-      id: createdUser.user.id,
-      password_was_generated: passwordWasGenerated,
-      approval_status: profilePayload.approval_status,
-      role: parsed.data.role
-    }
-  });
 }

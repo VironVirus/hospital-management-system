@@ -40,14 +40,15 @@ import {
   formatPatientAge,
   formatPatientDate
 } from "@/features/patients/patient-utils";
+import { PatientClinicalRecord } from "@/features/patients/patient-clinical-record";
 import { useToast } from "@/hooks/use-toast";
 import {
   canAccessPatientsRole,
   canManagePatientsRole
 } from "@/lib/guards";
 import { commitOnlineMutation, resolveOnlineQuery } from "@/lib/online-core";
-import { getSupabaseBrowserClient } from "@/lib/supabase";
-import type { Tables, TablesUpdate } from "@/types/supabase";
+import { getAppClient } from "@/lib/app-client";
+import type { Tables, TablesUpdate } from "@/types/database";
 
 type PatientRow = Tables<"patients">;
 type OrderHistoryRow = {
@@ -97,7 +98,7 @@ function buildPatientFormState(patient: PatientRow): PatientFormValues {
     dob: patient.dob ?? "",
     email: patient.email ?? "",
     emergency_contact: patient.emergency_contact ?? "",
-    lab_id: patient.lab_id,
+    lab_id: patient.hospital_id ?? patient.lab_id,
     lga: patient.lga ?? "",
     name: patient.name,
     national_id: patient.national_id ?? "",
@@ -110,14 +111,14 @@ function buildPatientFormState(patient: PatientRow): PatientFormValues {
 }
 
 async function fetchPatient(patientId: string) {
-  const supabase = getSupabaseBrowserClient();
+  const database = getAppClient();
   return resolveOnlineQuery<PatientRow | null>({
     online: async () => {
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
+      if (!database) {
+        throw new Error("MySQL is not configured.");
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await database
         .from("patients")
         .select("*")
         .eq("id", patientId)
@@ -133,14 +134,14 @@ async function fetchPatient(patientId: string) {
 }
 
 async function fetchPatientOrders(patientId: string) {
-  const supabase = getSupabaseBrowserClient();
+  const database = getAppClient();
   return resolveOnlineQuery<OrderHistoryRow[]>({
     online: async () => {
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
+      if (!database) {
+        throw new Error("MySQL is not configured.");
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await database
         .from("orders")
         .select(
           "id, order_number, status, priority, notes, created_at, updated_at, patient_id, facility_id, ordered_at, ordered_by, reported_at, order_tests(id, order_id, test_id, sample_code, status, specimen_label, barcode_value, qr_value, created_at, updated_at, collected_at, collected_by, in_progress_at, results_entered_at, verified_at, reported_at, tests(id, name, result_type))"
@@ -238,6 +239,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
       email: toNullable(parsed.data.email),
       emergency_contact: toNullable(parsed.data.emergency_contact),
       lab_id: parsed.data.lab_id.trim(),
+      hospital_id: toNullable(parsed.data.lab_id),
       lga: toNullable(parsed.data.lga),
       name: parsed.data.name.trim(),
       national_id: toNullable(parsed.data.national_id),
@@ -300,7 +302,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
       return;
     }
 
-    if (!window.confirm(`Delete patient "${patient.name}" from this facility register?`)) {
+    if (!window.confirm(`Delete patient "${patient.name}" from the hospital register?`)) {
       return;
     }
 
@@ -352,7 +354,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
             Access unavailable
           </CardTitle>
           <CardDescription className="text-red-800">
-            You need patient access and a facility assignment to view this record.
+            You need patient access and a configured hospital profile to view this record.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -402,7 +404,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
         <CardHeader>
           <CardTitle className="text-amber-950">Patient not found</CardTitle>
           <CardDescription className="text-amber-900">
-            This patient is unavailable or outside your facility scope.
+            This patient record is unavailable.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -421,7 +423,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
           </Button>
           <h1 className="text-3xl font-semibold text-slate-950">{patient.name}</h1>
           <p className="mt-2 text-sm text-slate-600">
-            {patient.lab_id} • {formatPatientAge(patient.dob)}
+            {patient.hospital_id ?? patient.lab_id} • {formatPatientAge(patient.dob)}
           </p>
         </div>
 
@@ -430,7 +432,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
             <Link
               href={{
                 pathname: "/orders",
-                query: { patient: patient.lab_id, patientId: patient.id }
+                query: { patient: patient.hospital_id ?? patient.lab_id, patientId: patient.id }
               }}
             >
               <ClipboardPlus className="h-4 w-4" />
@@ -643,7 +645,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
                             pathname: "/orders",
                             query: {
                               editOrderId: order.id,
-                              patient: patient.lab_id,
+                              patient: patient.hospital_id ?? patient.lab_id,
                               patientId: patient.id
                             }
                           }}
@@ -737,7 +739,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
                 <Link
                   href={{
                     pathname: "/orders",
-                    query: { patient: patient.lab_id, patientId: patient.id }
+                    query: { patient: patient.hospital_id ?? patient.lab_id, patientId: patient.id }
                   }}
                 >
                   Start a new test request
@@ -798,7 +800,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
                   <form className="space-y-4" onSubmit={(event) => void handleSave(event)}>
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-2">
-                        <Label htmlFor="patient-lab-id">Lab ID</Label>
+                        <Label htmlFor="patient-lab-id">Hospital ID</Label>
                         <Input
                           id="patient-lab-id"
                           value={formState.lab_id}
@@ -974,6 +976,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
           ) : null}
         </div>
       </section>
+      <PatientClinicalRecord patientId={patient.id} />
     </div>
   );
 }

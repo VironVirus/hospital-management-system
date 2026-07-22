@@ -12,7 +12,7 @@ function isValidDateInput(value: string) {
 }
 
 export const patientFormSchema = z.object({
-  lab_id: z.string().trim().max(40, "Lab ID must be 40 characters or fewer"),
+  lab_id: z.string().trim().max(40, "Hospital ID must be 40 characters or fewer"),
   name: z.string().trim().min(2, "Enter the patient's full name"),
   phone: z.string().trim().max(20, "Phone number is too long"),
   dob: z

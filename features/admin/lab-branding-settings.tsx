@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ImageIcon, Loader2, Save } from "lucide-react";
+import { FileText, Loader2, Save } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,15 +16,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { canAccessAdministrationRole, isSuperAdminRole } from "@/lib/guards";
-import { getSupabaseBrowserClient } from "@/lib/supabase";
+import { canAccessAdministrationRole } from "@/lib/guards";
+import { getAppClient } from "@/lib/app-client";
 
 export type LabBrandingSettings = {
   accreditation: string | null;
   address: string | null;
   facility_id: string;
   lab_name: string | null;
-  logo_url: string | null;
   report_footer: string | null;
   signatory_name: string | null;
   signatory_title: string | null;
@@ -44,20 +43,19 @@ const emptyForm: BrandingFormState = {
   accreditation: "",
   address: "",
   lab_name: "",
-  logo_url: "",
   report_footer: "",
   signatory_name: "HOD of Lab / Chief Scientist",
   signatory_title: "Head of Laboratory / Chief Scientist",
   support_line: ""
 };
 
-function getSupabaseForBranding() {
-  const supabase = getSupabaseBrowserClient();
-  if (!supabase) {
-    throw new Error("Supabase is not configured.");
+function getDatabaseForBranding() {
+  const database = getAppClient();
+  if (!database) {
+    throw new Error("MySQL is not configured.");
   }
 
-  return supabase as unknown as {
+  return database as unknown as {
     from: (table: "lab_branding_settings") => {
       select: (columns: string) => {
         eq: (
@@ -88,8 +86,8 @@ function getSupabaseForBranding() {
 export async function fetchLabBrandingSettings(
   facilityId: string
 ): Promise<LabBrandingSettings | null> {
-  const supabase = getSupabaseForBranding();
-  const { data, error } = await supabase
+  const database = getDatabaseForBranding();
+  const { data, error } = await database
     .from("lab_branding_settings")
     .select("*")
     .eq("facility_id", facilityId)
@@ -119,10 +117,8 @@ export function LabBrandingSettingsPanel({
   const [form, setForm] = useState<BrandingFormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const canAccessAdministration = canAccessAdministrationRole(role);
-  const isSuperAdmin = isSuperAdminRole(role);
   const targetFacilityId = facilityIdOverride ?? facilityId;
-  const canManageTargetFacility =
-    Boolean(targetFacilityId) && (isSuperAdmin || targetFacilityId === facilityId);
+  const canManageTargetFacility = Boolean(targetFacilityId && targetFacilityId === facilityId);
 
   const brandingQuery = useQuery({
     queryKey: ["lab-branding", targetFacilityId],
@@ -140,7 +136,6 @@ export function LabBrandingSettingsPanel({
       accreditation: brandingQuery.data.accreditation ?? "",
       address: brandingQuery.data.address ?? "",
       lab_name: brandingQuery.data.lab_name ?? "",
-      logo_url: brandingQuery.data.logo_url ?? "",
       report_footer: brandingQuery.data.report_footer ?? "",
       signatory_name:
         brandingQuery.data.signatory_name ?? "HOD of Lab / Chief Scientist",
@@ -151,7 +146,7 @@ export function LabBrandingSettingsPanel({
   }, [brandingQuery.data]);
 
   const previewName = useMemo(
-    () => form.lab_name?.trim() || facilityName?.trim() || "Facility report preview",
+    () => form.lab_name?.trim() || facilityName?.trim() || "Hospital report preview",
     [facilityName, form.lab_name]
   );
 
@@ -176,8 +171,7 @@ export function LabBrandingSettingsPanel({
         <CardHeader>
           <CardTitle>{title}</CardTitle>
           <CardDescription>
-            Facility Admins can edit branding only for their own facility. Use your own
-            branch workspace, or sign in as Super Admin to edit another facility.
+            Branding can only be edited for this hospital.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -192,7 +186,7 @@ export function LabBrandingSettingsPanel({
     if (!targetFacilityId) {
       toast({
         title: "Facility required",
-        description: "Assign this admin account to a facility before saving branding.",
+        description: "Complete the hospital setup before saving branding.",
         variant: "error"
       });
       return;
@@ -202,7 +196,7 @@ export function LabBrandingSettingsPanel({
       toast({
         title: "Facility access required",
         description:
-          "You can only update branding for the facility currently assigned to your account.",
+          "You can only update branding for this hospital.",
         variant: "error"
       });
       return;
@@ -211,13 +205,12 @@ export function LabBrandingSettingsPanel({
     setSaving(true);
 
     try {
-      const supabase = getSupabaseForBranding();
+      const database = getDatabaseForBranding();
       const payload = {
         accreditation: normalizeFormValue(form.accreditation ?? ""),
         address: normalizeFormValue(form.address ?? ""),
         facility_id: targetFacilityId,
         lab_name: normalizeFormValue(form.lab_name ?? ""),
-        logo_url: normalizeFormValue(form.logo_url ?? ""),
         report_footer: normalizeFormValue(form.report_footer ?? ""),
         signatory_name: normalizeFormValue(form.signatory_name ?? ""),
         signatory_title: normalizeFormValue(form.signatory_title ?? ""),
@@ -225,7 +218,7 @@ export function LabBrandingSettingsPanel({
         updated_by: user?.id ?? null
       };
 
-      const { error } = await supabase
+      const { error } = await database
         .from("lab_branding_settings")
         .upsert(payload, { onConflict: "facility_id" })
         .select("*")
@@ -260,7 +253,7 @@ export function LabBrandingSettingsPanel({
     <Card className="border-blue-100 shadow-sm">
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
-          <ImageIcon className="h-5 w-5 text-blue-700" />
+          <FileText className="h-5 w-5 text-blue-700" />
           {title}
         </CardTitle>
         <CardDescription>{description}</CardDescription>
@@ -286,22 +279,10 @@ export function LabBrandingSettingsPanel({
             Report preview
           </p>
           <div className="mt-3 flex flex-col gap-4 md:flex-row md:items-center">
-            <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white">
-              {form.logo_url?.trim() ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={form.logo_url}
-                  alt={`${previewName} logo`}
-                  className="h-full w-full object-contain"
-                />
-              ) : (
-                <ImageIcon className="h-8 w-8 text-slate-300" />
-              )}
-            </div>
             <div className="space-y-1 text-sm text-slate-600">
               <p className="font-semibold text-slate-950">{previewName}</p>
-              <p>{form.support_line?.trim() || "Add branch phone or email support line"}</p>
-              <p>{form.address?.trim() || "Add the branch address shown on reports"}</p>
+              <p>{form.support_line?.trim() || "Add the hospital phone or email support line"}</p>
+              <p>{form.address?.trim() || "Add the hospital address shown on reports"}</p>
               <p className="text-xs text-slate-500">
                 {form.signatory_name?.trim() || "Signatory"} |{" "}
                 {form.signatory_title?.trim() || "Role"}
@@ -317,16 +298,7 @@ export function LabBrandingSettingsPanel({
               id="lab-name"
               value={form.lab_name ?? ""}
               onChange={(event) => updateField("lab_name", event.target.value)}
-              placeholder="Tapxora Diagnostics"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="logo-url">Logo URL</Label>
-            <Input
-              id="logo-url"
-              value={form.logo_url ?? ""}
-              onChange={(event) => updateField("logo_url", event.target.value)}
-              placeholder="https://..."
+              placeholder="St Gianna Specialist Hospital"
             />
           </div>
           <div className="space-y-2">
@@ -335,7 +307,7 @@ export function LabBrandingSettingsPanel({
               id="support-line"
               value={form.support_line ?? ""}
               onChange={(event) => updateField("support_line", event.target.value)}
-              placeholder="07067038882 | hello@tapxora.com"
+              placeholder="Hospital phone number or email"
             />
           </div>
           <div className="space-y-2">
@@ -373,7 +345,7 @@ export function LabBrandingSettingsPanel({
             id="address"
             value={form.address ?? ""}
             onChange={(event) => updateField("address", event.target.value)}
-            placeholder="Full facility address"
+            placeholder="Full hospital address"
           />
         </div>
 

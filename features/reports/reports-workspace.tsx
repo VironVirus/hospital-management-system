@@ -47,19 +47,19 @@ import { fetchLabBrandingSettings } from "@/features/admin/lab-branding-settings
 import { canAccessReportsRole } from "@/lib/guards";
 import { resolveOnlineQuery } from "@/lib/online-core";
 import { markReportsReleased } from "@/lib/online-mutations";
-import { getSupabaseBrowserClient } from "@/lib/supabase";
+import { getAppClient } from "@/lib/app-client";
 
 type ReportStatusFilter = "all" | "ready" | "reported" | "flagged";
 
 async function fetchReportsQueue() {
-  const supabase = getSupabaseBrowserClient();
+  const database = getAppClient();
   return resolveOnlineQuery<ReportOrderRow[]>({
     online: async () => {
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
+      if (!database) {
+        throw new Error("MySQL is not configured.");
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await database
         .from("orders")
         .select(
           "id, facility_id, patient_id, order_number, priority, status, notes, reported_at, ordered_at, ordered_by, created_at, updated_at, facilities(id, name, code), patients(id, lab_id, name, phone, dob, sex, address), order_tests(id, order_id, test_id, sample_code, specimen_label, barcode_value, qr_value, status, collected_at, collected_by, in_progress_at, results_entered_at, verified_at, reported_at, created_at, updated_at, tests(*), order_test_results(*))"
@@ -119,7 +119,6 @@ export function ReportsWorkspace() {
     () =>
       buildReportBranding(
         reportsQuery.data?.[0]?.facilities?.name ?? null,
-        undefined,
         brandingQuery.data
       ),
     [brandingQuery.data, reportsQuery.data]
@@ -412,7 +411,7 @@ export function ReportsWorkspace() {
         <CardHeader>
           <CardTitle className="text-amber-950">Facility assignment required</CardTitle>
           <CardDescription className="text-amber-900">
-            Assign a facility before generating laboratory reports.
+            Complete the hospital setup before generating laboratory reports.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -428,7 +427,7 @@ export function ReportsWorkspace() {
             Reporting access is restricted
           </CardTitle>
           <CardDescription className="text-red-800">
-            Only Super Admin, Admin, Receptionist, and HOD of Lab / Chief Scientist
+            Only Admin, Receptionist, and HOD of Lab / Chief Scientist
             users can release patient reports.
           </CardDescription>
         </CardHeader>

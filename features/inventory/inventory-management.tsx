@@ -64,8 +64,8 @@ import {
   applyInventoryTransaction,
   recordAuditLog
 } from "@/lib/online-mutations";
-import { getSupabaseBrowserClient } from "@/lib/supabase";
-import type { Json, TablesInsert, TablesUpdate } from "@/types/supabase";
+import { getAppClient } from "@/lib/app-client";
+import type { Json, TablesInsert, TablesUpdate } from "@/types/database";
 
 type ItemFilter = "all" | "low_stock" | "near_expiry" | "expired" | "inactive";
 type FormErrors = Partial<Record<keyof InventoryItemFormValues | "form", string>>;
@@ -74,14 +74,14 @@ type TransactionErrors = Partial<
 >;
 
 async function fetchInventoryItems() {
-  const supabase = getSupabaseBrowserClient();
+  const database = getAppClient();
   return resolveOnlineQuery<InventoryItemRow[]>({
     online: async () => {
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
+      if (!database) {
+        throw new Error("MySQL is not configured.");
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await database
         .from("inventory_items")
         .select("*")
         .order("updated_at", { ascending: false })
@@ -101,14 +101,14 @@ async function fetchInventoryTransactions(itemId: string | null) {
     return [];
   }
 
-  const supabase = getSupabaseBrowserClient();
+  const database = getAppClient();
   return resolveOnlineQuery<InventoryTransactionRow[]>({
     online: async () => {
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
+      if (!database) {
+        throw new Error("MySQL is not configured.");
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await database
         .from("inventory_transactions")
         .select("*")
         .eq("item_id", itemId)
@@ -307,7 +307,7 @@ export function InventoryManagement() {
         <CardHeader>
           <CardTitle className="text-amber-950">Facility assignment required</CardTitle>
           <CardDescription className="text-amber-900">
-            Assign a facility to{" "}
+            Complete the hospital setup for{" "}
             <span className="font-medium">{profile?.display_name || "this user"}</span> before
             managing inventory.
           </CardDescription>
@@ -870,7 +870,7 @@ export function InventoryManagement() {
             </Badge>
             <CardTitle className="text-slate-950">Low stock and expiry alerts</CardTitle>
             <CardDescription>
-              Reorder signals and expiry notifications across the current facility.
+              Reorder signals and expiry notifications across the hospital store.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">

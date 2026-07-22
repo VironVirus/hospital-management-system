@@ -1,134 +1,27 @@
 "use client";
 
 import Link from "next/link";
-import { Activity, Building2, TestTube2, Users } from "lucide-react";
+import { Activity, Settings, TestTube2, Users } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { FacilityManagementPanel } from "@/features/admin/facility-management";
 import { LabBrandingSettingsPanel } from "@/features/admin/lab-branding-settings";
-import { PlatformBackupPanel } from "@/features/admin/platform-backup-panel";
 import { UserManagementPanel } from "@/features/admin/user-management";
 import { canAccessAdministrationRole } from "@/lib/guards";
 
 export default function AdminPage() {
-  const { loading, role } = useAuth();
-  const canAccessAdministration = canAccessAdministrationRole(role);
+  const { facilityName, loading, role } = useAuth();
+  if (loading) return <Card><CardContent className="p-6 text-sm text-slate-600">Loading administration...</CardContent></Card>;
+  if (!canAccessAdministrationRole(role)) return <Card><CardHeader><CardTitle>Admin access required</CardTitle><CardDescription>Only the hospital Admin can change staff and system settings.</CardDescription></CardHeader></Card>;
 
-  if (loading) {
-    return (
-      <Card className="border-blue-100">
-        <CardContent className="flex items-center gap-3 p-6 text-sm text-slate-600">
-          Loading administration workspace...
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (!canAccessAdministration) {
-    return (
-      <Card className="border-amber-200 bg-amber-50">
-        <CardHeader>
-          <CardTitle>Admin access required</CardTitle>
-          <CardDescription>
-            Only Admin and Super Admin users can access administration settings.
-          </CardDescription>
-        </CardHeader>
-      </Card>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="grid gap-4 lg:grid-cols-4">
-        <Card className="border-blue-100">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TestTube2 className="h-5 w-5 text-blue-700" />
-              Test catalogue
-            </CardTitle>
-            <CardDescription>
-              Maintain the master list of laboratory tests, pricing, and reference
-              ranges.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4 text-sm text-slate-600">
-            <p>
-              Create, edit, filter, activate, and retire tests from the admin-only
-              catalogue screen.
-            </p>
-            <Button asChild>
-              <Link href="/admin/tests">Open test catalogue</Link>
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card className="border-blue-100">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Activity className="h-5 w-5 text-blue-700" />
-              Audit logs
-            </CardTitle>
-            <CardDescription>
-              Review facility-scoped activity across registration, results, stock, and billing.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4 text-sm text-slate-600">
-            <p>
-              Search actions, inspect payloads, and trace who changed what from the dedicated
-              audit workspace.
-            </p>
-            <Button asChild variant="outline">
-              <Link href="/admin/audit">Open audit viewer</Link>
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card className="border-blue-100">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Building2 className="h-5 w-5 text-blue-700" />
-              Facilities
-            </CardTitle>
-            <CardDescription>
-              Manage your branch record, or create child facilities when using Super Admin
-              multi-branch ownership.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4 text-sm text-slate-600">
-            <p>
-              Keep branch names and codes clean, and create new child facilities from the
-              dedicated facility workspace.
-            </p>
-            <Button asChild variant="outline">
-              <Link href="/admin/facilities">Open facility management</Link>
-            </Button>
-          </CardContent>
-        </Card>
-
-        <Card className="border-blue-100">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5 text-blue-700" />
-              User management
-            </CardTitle>
-            <CardDescription>
-              Assign staff to the correct facility and keep branch access properly scoped.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm text-slate-600">
-            Review staff accounts below, then assign their facility and role after registration.
-          </CardContent>
-        </Card>
-      </div>
-
-      <FacilityManagementPanel />
-
-      <UserManagementPanel />
-
-      <PlatformBackupPanel />
-
-      <LabBrandingSettingsPanel />
+  return <div className="space-y-6">
+    <Card className="border-blue-100 bg-gradient-to-br from-blue-700 to-sky-500 text-white"><CardContent className="p-6"><div className="flex items-center gap-3"><div className="rounded-2xl bg-white/15 p-3"><Settings className="h-6 w-6" /></div><div><p className="text-sm text-blue-100">Single-facility administration</p><h2 className="text-2xl font-semibold">{facilityName || "Hospital settings"}</h2><p className="mt-1 text-sm text-blue-50">Manage one hospital, its staff, laboratory catalogue, audit trail, and report identity.</p></div></div></CardContent></Card>
+    <div className="grid gap-4 md:grid-cols-3">
+      <Card><CardHeader><CardTitle className="flex items-center gap-2"><Users className="h-5 w-5 text-blue-700" />Staff & roles</CardTitle><CardDescription>All staff belong automatically to this hospital.</CardDescription></CardHeader><CardContent className="text-sm text-slate-600">Create and manage staff accounts below. There are no branches or facility assignments.</CardContent></Card>
+      <Card><CardHeader><CardTitle className="flex items-center gap-2"><TestTube2 className="h-5 w-5 text-blue-700" />Test catalogue</CardTitle><CardDescription>Laboratory tests, pricing, units, and reference ranges.</CardDescription></CardHeader><CardContent><Button asChild><Link href="/admin/tests">Open catalogue</Link></Button></CardContent></Card>
+      <Card><CardHeader><CardTitle className="flex items-center gap-2"><Activity className="h-5 w-5 text-blue-700" />Audit trail</CardTitle><CardDescription>Trace important clinical and administrative changes.</CardDescription></CardHeader><CardContent><Button asChild variant="outline"><Link href="/admin/audit">Open audit logs</Link></Button></CardContent></Card>
     </div>
-  );
+    <UserManagementPanel />
+    <LabBrandingSettingsPanel facilityName={facilityName} />
+  </div>;
 }

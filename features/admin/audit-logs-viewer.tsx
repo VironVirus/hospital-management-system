@@ -9,8 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { canAccessAdministrationRole } from "@/lib/guards";
-import { getSupabaseBrowserClient } from "@/lib/supabase";
-import type { Tables } from "@/types/supabase";
+import { getAppClient } from "@/lib/app-client";
+import type { Tables } from "@/types/database";
 
 type AuditLogRow = Tables<"audit_logs">;
 
@@ -57,12 +57,12 @@ function buildCutoff(filter: DateFilter) {
 }
 
 async function fetchAuditLogs() {
-  const supabase = getSupabaseBrowserClient();
-  if (!supabase) {
-    throw new Error("Supabase is not configured.");
+  const database = getAppClient();
+  if (!database) {
+    throw new Error("MySQL is not configured.");
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await database
     .from("audit_logs")
     .select("*")
     .order("created_at", { ascending: false })
@@ -159,7 +159,7 @@ export function AuditLogsViewer() {
             Admin access required
           </CardTitle>
           <CardDescription className="text-red-800">
-            Only Admin and Super Admin users can review the full system audit trail.
+            Only the hospital Admin can review the full system audit trail.
           </CardDescription>
         </CardHeader>
       </Card>

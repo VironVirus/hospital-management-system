@@ -29,7 +29,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { canAccessQcRole, canManageQcRole } from "@/lib/guards";
-import { getSupabaseBrowserClient } from "@/lib/supabase";
+import { getAppClient } from "@/lib/app-client";
 
 type QcControl = {
   expected_value: string | null;
@@ -123,7 +123,7 @@ type QcTable = {
   select: <T = unknown[]>(columns: string) => QcSelectableQuery<T>;
 };
 
-type SupabaseQcClient = {
+type DatabaseQcClient = {
   from: (table: string) => QcTable;
 };
 
@@ -163,13 +163,13 @@ const logSchema = z.object({
 const inputClass =
   "h-10 rounded-lg border border-input bg-background px-3 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
-function requireSupabase() {
-  const supabase = getSupabaseBrowserClient();
-  if (!supabase) {
-    throw new Error("Supabase is not configured.");
+function requireDatabase() {
+  const database = getAppClient();
+  if (!database) {
+    throw new Error("MySQL is not configured.");
   }
 
-  return supabase as unknown as SupabaseQcClient;
+  return database as unknown as DatabaseQcClient;
 }
 
 function clean(value: string | undefined) {
@@ -198,29 +198,29 @@ function formatDate(value: string | null | undefined) {
 }
 
 async function fetchQcData(): Promise<QcData> {
-  const supabase = requireSupabase();
+  const database = requireDatabase();
   const [controls, runs, analyzers, calibrations, maintenance] = await Promise.all([
-    supabase
+    database
       .from("qc_controls")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(80),
-    supabase
+    database
       .from("qc_runs")
       .select("*, qc_controls(name, lot_number)")
       .order("performed_at", { ascending: false })
       .limit(60),
-    supabase
+    database
       .from("analyzers")
       .select("*")
       .order("name", { ascending: true })
       .limit(80),
-    supabase
+    database
       .from("calibration_logs")
       .select("*, analyzers(name)")
       .order("calibration_date", { ascending: false })
       .limit(60),
-    supabase
+    database
       .from("maintenance_logs")
       .select("*, analyzers(name)")
       .order("maintenance_date", { ascending: false })
@@ -337,8 +337,8 @@ export function QcWorkspace() {
 
     setSaving("control");
     try {
-      const supabase = requireSupabase();
-      const { error } = await supabase.from("qc_controls").insert({
+      const database = requireDatabase();
+      const { error } = await database.from("qc_controls").insert({
         expected_value: clean(parsed.data.expected_value),
         expiry_date: cleanDate(parsed.data.expiry_date),
         facility_id: facilityId,
@@ -388,8 +388,8 @@ export function QcWorkspace() {
     const numericValue = Number(parsed.data.value);
     setSaving("run");
     try {
-      const supabase = requireSupabase();
-      const { error } = await supabase.from("qc_runs").insert({
+      const database = requireDatabase();
+      const { error } = await database.from("qc_runs").insert({
         control_id: parsed.data.control_id,
         facility_id: facilityId,
         notes: clean(parsed.data.notes),
@@ -426,8 +426,8 @@ export function QcWorkspace() {
 
     setSaving("analyzer");
     try {
-      const supabase = requireSupabase();
-      const { error } = await supabase.from("analyzers").insert({
+      const database = requireDatabase();
+      const { error } = await database.from("analyzers").insert({
         facility_id: facilityId,
         location: clean(parsed.data.location),
         model: clean(parsed.data.model),
@@ -463,8 +463,8 @@ export function QcWorkspace() {
 
     setSaving("calibration");
     try {
-      const supabase = requireSupabase();
-      const { error } = await supabase.from("calibration_logs").insert({
+      const database = requireDatabase();
+      const { error } = await database.from("calibration_logs").insert({
         analyzer_id: parsed.data.analyzer_id,
         calibration_date: parsed.data.date,
         due_date: cleanDate(parsed.data.due_date),
@@ -507,8 +507,8 @@ export function QcWorkspace() {
 
     setSaving("maintenance");
     try {
-      const supabase = requireSupabase();
-      const { error } = await supabase.from("maintenance_logs").insert({
+      const database = requireDatabase();
+      const { error } = await database.from("maintenance_logs").insert({
         analyzer_id: parsed.data.analyzer_id,
         due_date: cleanDate(parsed.data.due_date),
         facility_id: facilityId,
@@ -559,7 +559,7 @@ export function QcWorkspace() {
         <CardHeader>
           <CardTitle className="text-amber-950">Facility assignment required</CardTitle>
           <CardDescription className="text-amber-900">
-            Assign this user to a facility before recording QC activity.
+            Complete the hospital setup before recording QC activity.
           </CardDescription>
         </CardHeader>
       </Card>

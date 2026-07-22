@@ -45,9 +45,9 @@ import { printHtmlDocument } from "@/lib/print";
 import { canAccessBillingRole, canManageBillingRole } from "@/lib/guards";
 import { commitOnlineMutation, resolveOnlineQuery } from "@/lib/online-core";
 import { recordAuditLog, recordInvoicePayment } from "@/lib/online-mutations";
-import { getSupabaseBrowserClient } from "@/lib/supabase";
+import { getAppClient } from "@/lib/app-client";
 import { cn } from "@/lib/utils";
-import type { Json, TablesUpdate } from "@/types/supabase";
+import type { Json, TablesUpdate } from "@/types/database";
 
 type PaymentFormState = {
   amount: number;
@@ -66,14 +66,14 @@ const initialPaymentFormState: PaymentFormState = {
 };
 
 async function fetchInvoices() {
-  const supabase = getSupabaseBrowserClient();
+  const database = getAppClient();
   return resolveOnlineQuery<BillingInvoiceRow[]>({
     online: async () => {
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
+      if (!database) {
+        throw new Error("MySQL is not configured.");
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await database
         .from("invoices")
         .select(
           "id, facility_id, order_id, invoice_number, subtotal, discount_amount, total_amount, amount_paid, payment_status, notes, issued_at, due_at, created_at, created_by, updated_at, orders(id, facility_id, patient_id, order_number, ordered_at, priority, status, reported_at, created_at, updated_at, facilities(id, name, code), patients(id, name, lab_id, phone)), invoice_items(id, invoice_id, order_test_id, test_name, quantity, unit_price, line_total, created_at), invoice_payments(id, facility_id, invoice_id, receipt_number, amount, payment_method, reference_number, notes, received_at, received_by, created_at)"
@@ -411,7 +411,7 @@ export function BillingWorkspace() {
             Billing access is restricted
           </CardTitle>
           <CardDescription className="text-red-800">
-            Only Super Admin, Admin, and Accountant users can access invoices, receipts,
+            Only Admin and Accountant users can access invoices, receipts,
             and revenue operations.
           </CardDescription>
         </CardHeader>
@@ -425,7 +425,7 @@ export function BillingWorkspace() {
         <CardHeader>
           <CardTitle className="text-amber-950">Facility assignment required</CardTitle>
           <CardDescription className="text-amber-900">
-            Assign a facility before using billing and revenue workflows.
+            Complete the hospital setup before using billing and revenue workflows.
           </CardDescription>
         </CardHeader>
       </Card>

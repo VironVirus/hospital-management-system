@@ -8,11 +8,11 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: {
-    default: "LIMS Nigeria",
-    template: "%s | LIMS Nigeria"
+    default: "St Gianna Specialist Hospital",
+    template: "%s | St Gianna Specialist Hospital"
   },
   description:
-    "Online laboratory management system for modern Nigerian labs."
+    "St Gianna Specialist Hospital management system for connected patient care in Transekulu, Enugu."
 };
 
 export const viewport: Viewport = {

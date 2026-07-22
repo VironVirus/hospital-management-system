@@ -35,7 +35,7 @@ import { useToast } from "@/hooks/use-toast";
 import { canAccessSampleReceptionRole } from "@/lib/guards";
 import { resolveOnlineQuery } from "@/lib/online-core";
 import { updateSampleStatus } from "@/lib/online-mutations";
-import { getSupabaseBrowserClient } from "@/lib/supabase";
+import { getAppClient } from "@/lib/app-client";
 import { cn } from "@/lib/utils";
 
 type SampleLookupRow = {
@@ -101,15 +101,15 @@ function formatDateTime(value: string) {
 }
 
 async function fetchSampleByCode(code: string) {
-  const supabase = getSupabaseBrowserClient();
+  const database = getAppClient();
   return resolveOnlineQuery<SampleLookupRow | null>({
     online: async () => {
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
+      if (!database) {
+        throw new Error("MySQL is not configured.");
       }
 
       const query = async (column: "sample_code" | "barcode_value") =>
-        supabase
+        database
           .from("order_tests")
           .select(
             "id, order_id, test_id, sample_code, barcode_value, qr_value, specimen_label, status, created_at, updated_at, collected_at, collected_by, in_progress_at, results_entered_at, verified_at, reported_at, tests(id, name), orders(id, facility_id, patient_id, order_number, priority, status, ordered_at, ordered_by, reported_at, created_at, updated_at, patients(id, name, lab_id, phone))"
@@ -132,14 +132,14 @@ async function fetchSampleByCode(code: string) {
 }
 
 async function fetchCustodyLogs(orderTestId: string) {
-  const supabase = getSupabaseBrowserClient();
+  const database = getAppClient();
   return resolveOnlineQuery<CustodyLogRow[]>({
     online: async () => {
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
+      if (!database) {
+        throw new Error("MySQL is not configured.");
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await database
         .from("sample_custody_logs")
         .select("id, order_test_id, action, actor_id, created_at, from_status, to_status, notes")
         .eq("order_test_id", orderTestId)
@@ -156,14 +156,14 @@ async function fetchCustodyLogs(orderTestId: string) {
 }
 
 async function fetchReceptionQueue() {
-  const supabase = getSupabaseBrowserClient();
+  const database = getAppClient();
   return resolveOnlineQuery<QueueRow[]>({
     online: async () => {
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
+      if (!database) {
+        throw new Error("MySQL is not configured.");
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await database
         .from("order_tests")
         .select(
           "id, order_id, test_id, sample_code, status, created_at, updated_at, tests(name), orders(id, order_number, patient_id, patients(name, lab_id))"
@@ -245,7 +245,7 @@ export function SampleReception() {
         <CardHeader>
           <CardTitle className="text-amber-950">Facility assignment required</CardTitle>
           <CardDescription className="text-amber-900">
-            Assign a facility to this user before scanning or updating samples.
+            Complete the hospital setup before scanning or updating samples.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -386,7 +386,7 @@ export function SampleReception() {
 
             {!sampleQuery.isLoading && lookupValue && !foundSample && !sampleQuery.isError ? (
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
-                No sample matched that code in your facility.
+                No sample matched that code in this hospital.
               </div>
             ) : null}
 

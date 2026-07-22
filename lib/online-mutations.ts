@@ -1,14 +1,14 @@
 import { generateId, commitOnlineMutation } from "@/lib/online-core";
-import { getSupabaseBrowserClient } from "@/lib/supabase";
-import type { Json, Tables } from "@/types/supabase";
+import { getAppClient } from "@/lib/app-client";
+import type { Json, Tables } from "@/types/database";
 
-function requireSupabase() {
-  const supabase = getSupabaseBrowserClient();
-  if (!supabase) {
-    throw new Error("Supabase is not configured.");
+function requireDatabase() {
+  const database = getAppClient();
+  if (!database) {
+    throw new Error("MySQL is not configured.");
   }
 
-  return supabase;
+  return database;
 }
 
 function nowIso() {
@@ -57,8 +57,8 @@ export async function recordAuditLog(args: {
   facilityId: string;
   payload: Json;
 }) {
-  const supabase = requireSupabase();
-  const { error } = await supabase.from("audit_logs").insert({
+  const database = requireDatabase();
+  const { error } = await database.from("audit_logs").insert({
     action: args.action,
     actor_id: args.actorId ?? null,
     entity_id: args.entityId,
@@ -80,8 +80,8 @@ export async function createTestOrderBundle(args: {
   tests: Array<Pick<Tables<"tests">, "id" | "name" | "price">>;
   userId?: string | null;
 }) {
-  const supabase = requireSupabase();
-  const { data: order, error: orderError } = await supabase
+  const database = requireDatabase();
+  const { data: order, error: orderError } = await database
     .from("orders")
     .insert({
       facility_id: args.patient.facility_id,
@@ -98,7 +98,7 @@ export async function createTestOrderBundle(args: {
     throw orderError;
   }
 
-  const { data: orderTests, error: testsError } = await supabase
+  const { data: orderTests, error: testsError } = await database
     .from("order_tests")
     .insert(
       args.tests.map((test) => ({
@@ -118,7 +118,7 @@ export async function createTestOrderBundle(args: {
     orderId: order.id,
     orderNumber: order.order_number,
     patientId: args.patient.id,
-    samples: (orderTests ?? []).map((row) => ({
+    samples: (orderTests ?? []).map((row: Record<string, unknown>) => ({
       barcode_value: row.barcode_value,
       order_number: order.order_number,
       order_test_id: row.id,
@@ -137,8 +137,8 @@ export async function addTestsToOrder(args: {
   tests: Array<Pick<Tables<"tests">, "id" | "name" | "price">>;
   userId?: string | null;
 }) {
-  const supabase = requireSupabase();
-  const { data: existingRows, error: existingError } = await supabase
+  const database = requireDatabase();
+  const { data: existingRows, error: existingError } = await database
     .from("order_tests")
     .select("test_id")
     .eq("order_id", args.order.id);
@@ -147,7 +147,7 @@ export async function addTestsToOrder(args: {
     throw existingError;
   }
 
-  const existingTestIds = new Set((existingRows ?? []).map((row) => row.test_id));
+  const existingTestIds = new Set((existingRows ?? []).map((row: Record<string, unknown>) => row.test_id));
   const newTests = args.tests.filter((test) => !existingTestIds.has(test.id));
 
   if (newTests.length === 0) {
@@ -158,7 +158,7 @@ export async function addTestsToOrder(args: {
     };
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await database
     .from("order_tests")
     .insert(
       newTests.map((test) => ({
@@ -177,7 +177,7 @@ export async function addTestsToOrder(args: {
   return {
     orderId: args.order.id,
     orderNumber: args.order.order_number,
-    samples: (data ?? []).map((row) => ({
+    samples: (data ?? []).map((row: Record<string, unknown>) => ({
       barcode_value: row.barcode_value,
       order_number: args.order.order_number,
       order_test_id: row.id,
@@ -221,9 +221,9 @@ export async function saveResult(args: {
     | "value_text"
   >;
 }) {
-  const supabase = requireSupabase();
+  const database = requireDatabase();
   const now = nowIso();
-  const { data: existing, error: existingError } = await supabase
+  const { data: existing, error: existingError } = await database
     .from("order_test_results")
     .select("id, created_at")
     .eq("order_test_id", args.orderTest.id)
@@ -252,8 +252,8 @@ export async function saveResult(args: {
   };
 
   const { error } = existing
-    ? await supabase.from("order_test_results").update(row).eq("id", resultId)
-    : await supabase.from("order_test_results").insert(row);
+    ? await database.from("order_test_results").update(row).eq("id", resultId)
+    : await database.from("order_test_results").insert(row);
 
   if (error) {
     throw error;
@@ -287,13 +287,13 @@ export async function verifyResult(args: {
   orderTest: Pick<Tables<"order_tests">, "id" | "order_id" | "sample_code" | "status">;
   result: Tables<"order_test_results">;
 }) {
-  const supabase = requireSupabase() as unknown as {
+  const database = requireDatabase() as unknown as {
     rpc: (
       fn: string,
       args: Record<string, unknown>
     ) => Promise<{ error: Error | null }>;
   };
-  const { error } = await supabase.rpc("verify_result", {
+  const { error } = await database.rpc("verify_result", {
     target_result_id: args.result.id,
     verification_notes: null
   });
@@ -314,13 +314,13 @@ export async function applyInventoryTransaction(args: {
   transactionType: string;
   unitCost: number;
 }) {
-  const supabase = requireSupabase() as unknown as {
+  const database = requireDatabase() as unknown as {
     rpc: (
       fn: string,
       args: Record<string, unknown>
     ) => Promise<{ error: Error | null }>;
   };
-  const { error } = await supabase.rpc("apply_inventory_transaction", {
+  const { error } = await database.rpc("apply_inventory_transaction", {
     item_unit_cost_value: Math.max(Number(args.unitCost) || 0, 0),
     notes_value: args.notes,
     quantity_value: args.quantity,
@@ -344,8 +344,8 @@ export async function recordInvoicePayment(args: {
   notes: string | null;
   referenceNumber: string | null;
 }) {
-  const supabase = requireSupabase();
-  const { error } = await supabase.rpc("register_invoice_payment", {
+  const database = requireDatabase();
+  const { error } = await database.rpc("register_invoice_payment", {
     amount_value: args.amount,
     notes_value: args.notes,
     payment_method_value: args.method,
@@ -380,8 +380,8 @@ export async function markReportsReleased(args: {
       .map((test) => test.id);
 
     if (reportableIds.length > 0) {
-      const supabase = requireSupabase();
-      const { error } = await supabase
+      const database = requireDatabase();
+      const { error } = await database
         .from("order_tests")
         .update({ reported_at: now, status: "Reported", updated_at: now })
         .in("id", reportableIds);

@@ -1,4 +1,4 @@
-import type { Tables } from "@/types/supabase";
+import type { Tables } from "@/types/database";
 
 export type InvoicePaymentStatus = Tables<"invoices">["payment_status"];
 
@@ -123,7 +123,7 @@ function escapeHtml(value: string) {
 }
 
 export function buildInvoicePrintHtml(invoice: BillingInvoiceRow) {
-  const facilityName = invoice.orders?.facilities?.name || "LIMS Nigeria Diagnostics";
+  const facilityName = invoice.orders?.facilities?.name || "St Gianna Specialist Hospital";
   const facilityCode = invoice.orders?.facilities?.code || "Clinical billing desk";
   const patientName = invoice.orders?.patients?.name || "Unknown patient";
   const patientLabId = invoice.orders?.patients?.lab_id || "-";

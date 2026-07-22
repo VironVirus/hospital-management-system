@@ -1,27 +1,28 @@
 {
-  "name": "tapxora-lims",
+  "name": "st-gianna-hms",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "next dev",
     "dev:turbo": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "next typegen && tsc --noEmit --incremental false",
-    "supabase:types": "node scripts/generate-supabase-types.mjs",
-    "deck:investor": "node scripts/generate-investor-deck.cjs"
+    "typecheck": "next typegen && tsc --noEmit --incremental false"
   },
   "dependencies": {
     "@radix-ui/react-slot": "^1.1.0",
     "@react-pdf/renderer": "^4.5.1",
-    "@supabase/ssr": "^0.6.1",
-    "@supabase/supabase-js": "^2.50.0",
     "@tanstack/react-query": "^5.81.5",
     "@types/jsbarcode": "^3.11.4",
     "clsx": "^2.1.1",
     "jsbarcode": "^3.12.3",
     "lucide-react": "^0.525.0",
+    "mysql2": "^3.23.1",
     "next": "^15.3.4",
     "qrcode": "^1.5.4",
     "react": "^19.0.0",
@@ -31,6 +32,7 @@
     "zod": "^3.25.67"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.6",
     "@types/node": "^22.16.5",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19.1.8",
@@ -38,10 +40,7 @@
     "autoprefixer": "^10.4.21",
     "eslint": "^9.31.0",
     "eslint-config-next": "^15.3.4",
-    "pdfkit": "^0.19.1",
     "postcss": "^8.5.10",
-    "pptxgenjs": "^4.0.1",
-    "supabase": "^2.105.0",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.9.2"
   },

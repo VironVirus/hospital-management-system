@@ -9,7 +9,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
       <section className="hidden overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.2),_transparent_35%),linear-gradient(180deg,_#0f172a_0%,_#1e3a8a_100%)] p-10 text-white lg:flex lg:flex-col lg:justify-between">
         <div className="space-y-4">
           <p className="text-sm font-medium uppercase tracking-[0.3em] text-blue-100">
-            LIMS Nigeria
+            St Gianna Specialist Hospital
           </p>
           <h1 className="max-w-xl text-4xl font-semibold tracking-tight">
             Built for reliable lab work in clinics, hospitals, and diagnostic

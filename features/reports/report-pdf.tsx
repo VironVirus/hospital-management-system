@@ -2,7 +2,6 @@
 
 import {
   Document,
-  Image as PdfImage,
   Page,
   StyleSheet,
   Text,
@@ -49,11 +48,6 @@ const styles = StyleSheet.create({
     height: 42,
     justifyContent: "center",
     textAlign: "center",
-    width: 42
-  },
-  logoImage: {
-    borderRadius: 12,
-    height: 42,
     width: 42
   },
   labName: {
@@ -216,13 +210,9 @@ function ReportPage({
   return (
     <Page size="A4" style={styles.page} wrap>
       <View style={styles.header}>
-        {branding.logoUrl ? (
-          <PdfImage src={branding.logoUrl} style={styles.logoImage} />
-        ) : (
-          <View style={styles.logoFallback}>
-            <Text>LN</Text>
-          </View>
-        )}
+        <View style={styles.logoFallback}>
+          <Text>SG</Text>
+        </View>
 
         <View>
           <Text style={styles.labName}>{branding.labName}</Text>
@@ -266,7 +256,7 @@ function ReportPage({
         <View style={styles.panel}>
           <Text style={styles.eyebrow}>Clinical context</Text>
           <Text style={styles.panelLine}>
-            Facility: {facility?.name || branding.labName}
+            Hospital: {facility?.name || branding.labName}
           </Text>
           <Text style={styles.panelLine}>Priority: {priorityLabel}</Text>
           <Text style={styles.panelLine}>

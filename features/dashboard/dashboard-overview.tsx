@@ -55,22 +55,14 @@ import {
   type DashboardPaymentRow,
   type DashboardWorklistRow
 } from "@/features/dashboard/dashboard-utils";
-import { getSupabaseBrowserClient } from "@/lib/supabase";
+import { getAppClient } from "@/lib/app-client";
 
 type DashboardData = {
-  facilities: DashboardFacilityRow[];
   inventoryItems: InventoryItemRow[];
   invoices: DashboardInvoiceRow[];
   patients: DashboardPatientRow[];
   payments: DashboardPaymentRow[];
   worklist: DashboardWorklistRow[];
-};
-
-type DashboardFacilityRow = {
-  code: string;
-  id: string;
-  name: string;
-  parent_facility_id: string | null;
 };
 
 type SummaryCardProps = {
@@ -107,72 +99,61 @@ function isToday(value: string | null | undefined) {
   );
 }
 
-async function fetchDashboardData(args: {
-  facilityId: string;
-  isSuperAdmin: boolean;
-}): Promise<DashboardData> {
-  const supabase = getSupabaseBrowserClient();
+async function fetchDashboardData(facilityId: string): Promise<DashboardData> {
+  const database = getAppClient();
   const windowStart = new Date();
   windowStart.setDate(windowStart.getDate() - 29);
   windowStart.setHours(0, 0, 0, 0);
   const startIso = windowStart.toISOString();
 
-  if (!supabase) {
-    throw new Error("Supabase is not configured.");
+  if (!database) {
+    throw new Error("MySQL is not configured.");
   }
-
-  const facilitiesQuery = args.isSuperAdmin
-    ? supabase
-        .from("facilities")
-        .select("id, name, code, parent_facility_id")
-        .order("name", { ascending: true })
-    : supabase
-        .from("facilities")
-        .select("id, name, code, parent_facility_id")
-        .eq("id", args.facilityId)
-        .order("name", { ascending: true });
 
   const [
     worklistResponse,
     invoicesResponse,
     paymentsResponse,
     inventoryResponse,
-    patientsResponse,
-    facilitiesResponse
+    patientsResponse
   ] = await Promise.all([
-      supabase
+      database
         .from("order_tests")
         .select(
           "id, order_id, test_id, sample_code, specimen_label, status, created_at, updated_at, collected_at, collected_by, in_progress_at, results_entered_at, verified_at, reported_at, tests(id, name), orders(id, facility_id, patient_id, order_number, ordered_at, priority, facilities(id, name, code), patients(id, name, lab_id))"
         )
+        .eq("orders.facility_id", facilityId)
         .gte("created_at", startIso)
         .order("created_at", { ascending: false })
         .limit(320),
-      supabase
+      database
         .from("invoices")
         .select("id, facility_id, order_id, invoice_number, subtotal, discount_amount, total_amount, amount_paid, payment_status, notes, issued_at, due_at, created_at, created_by, updated_at")
+        .eq("facility_id", facilityId)
         .gte("issued_at", startIso)
         .order("issued_at", { ascending: false })
         .limit(240),
-      supabase
+      database
         .from("invoice_payments")
         .select("id, facility_id, invoice_id, amount, payment_method, receipt_number, received_at, received_by, reference_number, notes, created_at")
+        .eq("facility_id", facilityId)
         .gte("received_at", startIso)
         .order("received_at", { ascending: false })
         .limit(320),
-      supabase
+      database
         .from("inventory_items")
         .select("*")
+        .eq("facility_id", facilityId)
         .eq("is_active", true)
         .order("updated_at", { ascending: false })
         .limit(80),
-      supabase
+      database
         .from("patients")
         .select("id, facility_id, created_at")
+        .eq("facility_id", facilityId)
         .gte("created_at", startIso)
         .order("created_at", { ascending: false })
         .limit(240),
-      facilitiesQuery
     ]);
 
   if (worklistResponse.error) {
@@ -195,12 +176,7 @@ async function fetchDashboardData(args: {
     throw new Error(patientsResponse.error.message);
   }
 
-  if (facilitiesResponse.error) {
-    throw new Error(facilitiesResponse.error.message);
-  }
-
   return {
-    facilities: (facilitiesResponse.data ?? []) as DashboardFacilityRow[],
     inventoryItems: (inventoryResponse.data ?? []) as InventoryItemRow[],
     invoices: (invoicesResponse.data ?? []) as DashboardInvoiceRow[],
     patients: (patientsResponse.data ?? []) as DashboardPatientRow[],
@@ -401,142 +377,15 @@ function ActivityNotificationsPanel({
   );
 }
 
-function BranchDashboardPanel({ data }: { data: DashboardData | undefined }) {
-  const rows = useMemo(() => {
-    if (!data) {
-      return [];
-    }
-
-    const branchMap = new Map<
-      string,
-      {
-        activeTests: number;
-        code: string;
-        id: string;
-        name: string;
-        patients: number;
-        revenue: number;
-        unpaid: number;
-        verified: number;
-      }
-    >();
-
-    const ensureBranch = (
-      facilityId: string | null | undefined,
-      fallbackName = "Unassigned facility"
-    ) => {
-      const facility = data.facilities.find((entry) => entry.id === facilityId);
-      const key = facility?.id ?? facilityId ?? "unknown";
-      if (!branchMap.has(key)) {
-        branchMap.set(key, {
-          activeTests: 0,
-          code: facility?.code ?? "N/A",
-          id: key,
-          name: facility?.name ?? fallbackName,
-          patients: 0,
-          revenue: 0,
-          unpaid: 0,
-          verified: 0
-        });
-      }
-
-      return branchMap.get(key)!;
-    };
-
-    data.facilities.forEach((facility) => ensureBranch(facility.id, facility.name));
-
-    data.worklist.forEach((item) => {
-      const branch = ensureBranch(item.orders?.facility_id, item.orders?.facilities?.name);
-      if (item.status !== "Reported") {
-        branch.activeTests += 1;
-      }
-      if (item.status === "Verified" || item.status === "Reported") {
-        branch.verified += 1;
-      }
-    });
-
-    data.patients.forEach((patient) => {
-      ensureBranch(patient.facility_id).patients += 1;
-    });
-
-    data.payments.forEach((payment) => {
-      ensureBranch(payment.facility_id).revenue += Number(payment.amount);
-    });
-
-    data.invoices.forEach((invoice) => {
-      if (invoice.payment_status !== "Paid") {
-        ensureBranch(invoice.facility_id).unpaid += Math.max(
-          Number(invoice.total_amount) - Number(invoice.amount_paid),
-          0
-        );
-      }
-    });
-
-    return Array.from(branchMap.values()).sort((left, right) =>
-      right.revenue === left.revenue
-        ? left.name.localeCompare(right.name)
-        : right.revenue - left.revenue
-    );
-  }, [data]);
-
-  if (rows.length <= 1) {
-    return null;
-  }
-
-  return (
-    <Card className="border-blue-100 shadow-sm">
-      <CardHeader>
-        <CardTitle>Branch / multi-facility dashboard</CardTitle>
-        <CardDescription>
-          Compares branch activity for Super Admin oversight while daily operations stay
-          isolated inside each facility.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-3 xl:grid-cols-3">
-        {rows.map((row) => (
-          <div key={row.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="truncate font-semibold text-slate-950">{row.name}</p>
-                <p className="text-xs text-slate-500">{row.code}</p>
-              </div>
-              <Badge variant="outline">{row.activeTests} active</Badge>
-            </div>
-            <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <p className="text-slate-500">Patients</p>
-                <p className="font-semibold text-slate-950">{row.patients}</p>
-              </div>
-              <div>
-                <p className="text-slate-500">Verified</p>
-                <p className="font-semibold text-slate-950">{row.verified}</p>
-              </div>
-              <div>
-                <p className="text-slate-500">Revenue</p>
-                <p className="font-semibold text-emerald-700">{formatCurrency(row.revenue)}</p>
-              </div>
-              <div>
-                <p className="text-slate-500">Unpaid</p>
-                <p className="font-semibold text-amber-700">{formatCurrency(row.unpaid)}</p>
-              </div>
-            </div>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
 export function DashboardOverview() {
-  const { facilityId, loading, role } = useAuth();
-  const isSuperAdmin = role === "SuperAdmin";
+  const { facilityId, loading } = useAuth();
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [exportingWorkbook, setExportingWorkbook] = useState(false);
 
   const dashboardQuery = useQuery({
-    queryKey: ["dashboard-overview", facilityId, isSuperAdmin],
-    queryFn: () => fetchDashboardData({ facilityId: facilityId as string, isSuperAdmin }),
+    queryKey: ["dashboard-overview", facilityId],
+    queryFn: () => fetchDashboardData(facilityId as string),
     enabled: Boolean(facilityId),
     staleTime: 60_000,
     gcTime: 5 * 60_000,
@@ -696,7 +545,7 @@ export function DashboardOverview() {
         <CardHeader>
           <CardTitle className="text-amber-950">Facility assignment required</CardTitle>
           <CardDescription className="text-amber-900">
-            Assign a facility before using operational dashboards and analytics.
+            Run the hospital database setup before using dashboards and analytics.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -779,8 +628,6 @@ export function DashboardOverview() {
         invoices={dashboardQuery.data?.invoices ?? []}
         worklist={dashboardQuery.data?.worklist ?? []}
       />
-
-      {isSuperAdmin ? <BranchDashboardPanel data={dashboardQuery.data} /> : null}
 
       <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <ChartShell

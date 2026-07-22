@@ -1,5 +1,5 @@
 import { formatCurrency } from "@/features/billing/billing-utils";
-import type { Tables } from "@/types/supabase";
+import type { Tables } from "@/types/database";
 
 export type AccountInvoiceRow = Tables<"invoices"> & {
   invoice_items:

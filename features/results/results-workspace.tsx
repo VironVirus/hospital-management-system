@@ -47,8 +47,8 @@ import {
   updateSampleStatus,
   verifyResult
 } from "@/lib/online-mutations";
-import { getSupabaseBrowserClient } from "@/lib/supabase";
-import type { Json, Tables } from "@/types/supabase";
+import { getAppClient } from "@/lib/app-client";
+import type { Json, Tables } from "@/types/database";
 
 type ResultStatus = Tables<"order_tests">["status"];
 
@@ -97,14 +97,14 @@ function formatStatus(status: ResultStatus) {
 }
 
 async function fetchResultsQueue() {
-  const supabase = getSupabaseBrowserClient();
+  const database = getAppClient();
   return resolveOnlineQuery<ResultQueueRow[]>({
     online: async () => {
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
+      if (!database) {
+        throw new Error("MySQL is not configured.");
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await database
         .from("order_tests")
         .select(
           "id, order_id, test_id, sample_code, specimen_label, status, created_at, updated_at, collected_at, collected_by, in_progress_at, results_entered_at, verified_at, reported_at, tests(*), orders(id, facility_id, patient_id, order_number, priority, ordered_at, ordered_by, status, created_at, updated_at, patients(id, name, lab_id, phone)), order_test_results(*)"
@@ -127,14 +127,14 @@ async function fetchAuditLogs(resultId: string | null) {
     return [];
   }
 
-  const supabase = getSupabaseBrowserClient();
+  const database = getAppClient();
   return resolveOnlineQuery<AuditLogRow[]>({
     online: async () => {
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
+      if (!database) {
+        throw new Error("MySQL is not configured.");
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await database
         .from("audit_logs")
         .select("*")
         .eq("entity_table", "order_test_results")
@@ -309,7 +309,7 @@ export function ResultsWorkspace() {
         <CardHeader>
           <CardTitle className="text-amber-950">Facility assignment required</CardTitle>
           <CardDescription className="text-amber-900">
-            Assign a facility before using results entry and verification.
+            Complete the hospital setup before using results entry and verification.
           </CardDescription>
         </CardHeader>
       </Card>

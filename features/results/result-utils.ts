@@ -1,4 +1,4 @@
-import type { Tables, TablesInsert } from "@/types/supabase";
+import type { Tables, TablesInsert } from "@/types/database";
 import {
   isStoredReferenceRange,
   type StoredReferenceRange

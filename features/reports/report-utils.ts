@@ -4,7 +4,7 @@ import {
   getResultFlagCode,
   type ResultFlagCode
 } from "@/features/results/result-utils";
-import type { Tables } from "@/types/supabase";
+import type { Tables } from "@/types/database";
 
 export type ReportOrderTest = Tables<"order_tests"> & {
   order_test_results: Tables<"order_test_results"> | null;
@@ -25,7 +25,6 @@ export type ReportBranding = {
   address: string;
   footerNote: string;
   labName: string;
-  logoUrl?: string;
   signatoryName: string;
   signatoryTitle: string;
   supportLine: string;
@@ -35,7 +34,6 @@ export type ReportBrandingSettings = {
   accreditation?: string | null;
   address?: string | null;
   lab_name?: string | null;
-  logo_url?: string | null;
   report_footer?: string | null;
   signatory_name?: string | null;
   signatory_title?: string | null;
@@ -114,20 +112,18 @@ export function formatStatusLabel(status: string) {
 
 export function buildReportBranding(
   facilityName: string | null | undefined,
-  logoUrl?: string,
   settings?: ReportBrandingSettings | null
 ): ReportBranding {
   return {
-    labName: settings?.lab_name || facilityName || "LIMS Nigeria Diagnostics",
+    labName: settings?.lab_name || facilityName || "St Gianna Specialist Hospital",
     accreditation: settings?.accreditation || "ISO-aligned diagnostic workflow",
-    address: settings?.address || "Clinical reporting suite, Lagos, Nigeria",
-    supportLine: settings?.support_line || "support@lims.ng | +234 800 000 0000",
+    address: settings?.address || "No 6, 18 Road, Upper North, Transekulu, Enugu, Enugu State",
+    supportLine: settings?.support_line || "St Gianna Specialist Hospital",
     footerNote:
       settings?.report_footer ||
       "Results should be interpreted alongside clinical findings and patient history.",
     signatoryName: settings?.signatory_name || "HOD of Lab / Chief Scientist",
-    signatoryTitle: settings?.signatory_title || "Head of Laboratory / Chief Scientist",
-    logoUrl: settings?.logo_url || logoUrl
+    signatoryTitle: settings?.signatory_title || "Head of Laboratory / Chief Scientist"
   };
 }
 
@@ -476,7 +472,7 @@ export function buildPrintHtml(
             </div>
             <div class="panel">
               <p class="eyebrow">Clinical context</p>
-              <p><strong>Facility:</strong> ${escapeHtml(facility?.name || branding.labName)}</p>
+              <p><strong>Hospital:</strong> ${escapeHtml(facility?.name || branding.labName)}</p>
               <p><strong>Priority:</strong> ${escapeHtml(priorityLabel)}</p>
               <p><strong>Notes:</strong> ${escapeHtml(notesLabel)}</p>
               <p><strong>Total:</strong> ${escapeHtml(formatCurrency(bundle.totalAmount))}</p>

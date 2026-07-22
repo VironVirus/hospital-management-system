@@ -52,9 +52,9 @@ import {
   canRegisterPatientsRole
 } from "@/lib/guards";
 import { commitOnlineMutation, generateId, resolveOnlineQuery } from "@/lib/online-core";
-import { getSupabaseBrowserClient } from "@/lib/supabase";
+import { getAppClient } from "@/lib/app-client";
 import { cn } from "@/lib/utils";
-import type { Database, TablesInsert } from "@/types/supabase";
+import type { Database, TablesInsert } from "@/types/database";
 
 type SearchPatientRow =
   Database["public"]["Functions"]["search_patients"]["Returns"][number];
@@ -70,14 +70,14 @@ function toNullable(value: string) {
 }
 
 async function fetchPatients(searchTerm: string, page: number) {
-  const supabase = getSupabaseBrowserClient();
+  const database = getAppClient();
   return resolveOnlineQuery({
     online: async () => {
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
+      if (!database) {
+        throw new Error("MySQL is not configured.");
       }
 
-      const { data, error } = await supabase.rpc("search_patients", {
+      const { data, error } = await database.rpc("search_patients", {
         search_term: searchTerm.trim() || null,
         page_number: page,
         page_size: PAGE_SIZE
@@ -203,7 +203,7 @@ export function PatientManagement() {
 
     return (patientsQuery.data?.rows ?? [])
       .filter((patient) =>
-        [patient.name, patient.lab_id, patient.phone]
+        [patient.name, patient.hospital_id, patient.lab_id, patient.phone]
           .filter(Boolean)
           .join(" ")
           .toLowerCase()
@@ -243,10 +243,9 @@ export function PatientManagement() {
     return (
       <Card className="border-amber-200 bg-amber-50/80">
         <CardHeader>
-          <CardTitle className="text-amber-950">Facility assignment required</CardTitle>
+          <CardTitle className="text-amber-950">Hospital setup required</CardTitle>
           <CardDescription className="text-amber-900">
-            Assign a facility to <span className="font-medium">{profile?.display_name || "this user"}</span>
-            {" "}in the <code>profiles</code> table before using patient records.
+            Run the single-hospital database schema before using patient records for <span className="font-medium">{profile?.display_name || "this user"}</span>.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -282,6 +281,7 @@ export function PatientManagement() {
     const now = new Date().toISOString();
     const payload: TablesInsert<"patients"> = {
       lab_id: parsed.data.lab_id.trim(),
+      hospital_id: toNullable(parsed.data.lab_id),
       name: parsed.data.name.trim(),
       phone: toNullable(parsed.data.phone),
       dob: parsed.data.dob || null,
@@ -314,7 +314,7 @@ export function PatientManagement() {
       setSubmitSuccess("Patient registered successfully.");
       toast({
         title: "Patient registered",
-        description: `${parsed.data.name.trim()} has been added to the facility register.`,
+        description: `${parsed.data.name.trim()} has been added to the hospital register.`,
         variant: "success"
       });
       startTransition(() => setPage(1));
@@ -383,12 +383,12 @@ export function PatientManagement() {
                 </CardTitle>
                 {!frontDeskMode ? (
                   <CardDescription>
-                    Search by patient name, phone number, or lab ID.
+                    Search by patient name, phone number, or Hospital ID.
                   </CardDescription>
                 ) : null}
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">Facility scoped</Badge>
+                <Badge variant="outline">Hospital record</Badge>
                 <Button
                   type="button"
                   variant={frontDeskMode ? "default" : "outline"}
@@ -413,7 +413,7 @@ export function PatientManagement() {
                   }}
                   onChange={(event) => setSearchTerm(event.target.value)}
                   onFocus={() => setSearchFocused(true)}
-                  placeholder="Start typing a patient name, phone, or lab ID"
+                  placeholder="Start typing a patient name, phone, or Hospital ID"
                 />
                 {suggestedPatients.length > 0 ? (
                   <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-20 rounded-2xl border border-blue-100 bg-white p-2 shadow-2xl">
@@ -432,7 +432,7 @@ export function PatientManagement() {
                               {patient.name}
                             </p>
                             <p className="mt-1 text-xs text-slate-500">
-                              {patient.lab_id} • {formatPatientAge(patient.dob)}
+                              {patient.hospital_id || patient.lab_id} • {formatPatientAge(patient.dob)}
                             </p>
                           </div>
                           <ArrowRight className="h-4 w-4 text-blue-700" />
@@ -528,7 +528,7 @@ export function PatientManagement() {
                         {patient.name}
                       </p>
                       <Badge variant="secondary" className="w-fit shrink-0">
-                        {patient.lab_id}
+                        {patient.hospital_id || patient.lab_id}
                       </Badge>
                     </div>
                   </div>
@@ -543,6 +543,14 @@ export function PatientManagement() {
                     <span className="rounded-lg bg-slate-50 px-2 py-1">
                       Tests: <strong className="text-slate-900">{patient.order_count}</strong>
                     </span>
+                    {patient.current_ward ? (
+                      <span className="col-span-3 rounded-lg bg-indigo-50 px-2 py-1 text-indigo-800">
+                        Ward: <strong>{patient.current_ward}</strong>
+                        {patient.admission_date
+                          ? ` • Admitted ${new Intl.DateTimeFormat("en-NG", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(patient.admission_date))}`
+                          : ""}
+                      </span>
+                    ) : null}
                   </div>
 
                   <div className="flex items-center gap-2 lg:justify-end">
@@ -607,7 +615,7 @@ export function PatientManagement() {
                   Register patient
                 </CardTitle>
                 <CardDescription>
-                  Capture a new patient into the current facility register.
+                  Capture a new patient into the hospital register.
                 </CardDescription>
               </div>
               <Badge variant="outline">
@@ -625,14 +633,14 @@ export function PatientManagement() {
               <form className="space-y-4" onSubmit={handleSubmit}>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="lab_id">Lab ID</Label>
+                    <Label htmlFor="lab_id">Hospital ID</Label>
                     <Input
                       id="lab_id"
                       value={formState.lab_id}
                       onChange={(event) =>
                         handleFieldChange("lab_id", event.target.value)
                       }
-                      placeholder="Optional auto-generated ID"
+                      placeholder="Optional — generated automatically"
                     />
                     {errors.lab_id ? (
                       <p className="text-xs text-red-700">{errors.lab_id}</p>

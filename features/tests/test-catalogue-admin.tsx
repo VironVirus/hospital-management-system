@@ -17,10 +17,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { canAccessAdministrationRole, isSuperAdminRole } from "@/lib/guards";
+import { canAccessAdministrationRole } from "@/lib/guards";
 import { commitOnlineMutation, generateId, resolveOnlineQuery } from "@/lib/online-core";
-import { getSupabaseBrowserClient } from "@/lib/supabase";
-import type { Tables, TablesInsert, TablesUpdate } from "@/types/supabase";
+import { getAppClient } from "@/lib/app-client";
+import type { Tables, TablesInsert, TablesUpdate } from "@/types/database";
 import {
   resultTypes,
   testFormSchema,
@@ -48,7 +48,6 @@ type CatalogueTestRow = TestRow & {
 type FilterStatus = "all" | "active" | "inactive";
 type FilterResultType = "all" | TestRow["result_type"];
 type FilterCategory = "all" | "uncategorized" | TestCategory;
-type FilterScope = "all" | "current";
 type FormErrors = Partial<Record<string, string>>;
 
 const initialFormState: TestFormValues = {
@@ -215,26 +214,25 @@ async function fetchTests({
   category,
   status,
   resultType,
-  scope,
-  viewerFacilityId
+  facilityId
 }: {
   query: string;
   category: FilterCategory;
   status: FilterStatus;
   resultType: FilterResultType;
-  scope: FilterScope;
-  viewerFacilityId: string | null;
+  facilityId: string;
 }) {
-  const supabase = getSupabaseBrowserClient();
+  const database = getAppClient();
   return resolveOnlineQuery<CatalogueTestRow[]>({
     online: async () => {
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
+      if (!database) {
+        throw new Error("MySQL is not configured.");
       }
 
-      let request = supabase
+      let request = database
         .from("tests")
         .select("*, facilities(id, name, code)")
+        .eq("facility_id", facilityId)
         .order("name", { ascending: true });
 
       if (query.trim()) {
@@ -262,10 +260,6 @@ async function fetchTests({
       const rows = (data ?? []) as CatalogueTestRow[];
       return rows
         .filter((row) => {
-          if (scope === "current" && viewerFacilityId && row.facility_id !== viewerFacilityId) {
-            return false;
-          }
-
           if (category === "all") {
             return true;
           }
@@ -290,7 +284,6 @@ export function TestCatalogueAdmin() {
   const [status, setStatus] = useState<FilterStatus>("all");
   const [resultType, setResultType] = useState<FilterResultType>("all");
   const [categoryFilter, setCategoryFilter] = useState<FilterCategory>("all");
-  const [scopeFilter, setScopeFilter] = useState<FilterScope>("all");
   const [formState, setFormState] = useState<TestFormValues>(initialFormState);
   const [targetFacilityId, setTargetFacilityId] = useState<string>("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -301,17 +294,16 @@ export function TestCatalogueAdmin() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const canAccessAdministration = canAccessAdministrationRole(role);
-  const isSuperAdmin = isSuperAdminRole(role);
 
   const facilitiesQuery = useQuery({
     queryKey: ["admin", "facilities", "catalogue-visible"],
     queryFn: async () => {
-      const supabase = getSupabaseBrowserClient();
-      if (!supabase) {
-        throw new Error("Supabase is not configured.");
+      const database = getAppClient();
+      if (!database) {
+        throw new Error("MySQL is not configured.");
       }
 
-      const { data, error } = await supabase
+      const { data, error } = await database
         .from("facilities")
         .select("id, name, code")
         .order("name", { ascending: true });
@@ -326,17 +318,16 @@ export function TestCatalogueAdmin() {
   });
 
   const testsQuery = useQuery({
-    queryKey: ["tests", facilityId, query, categoryFilter, scopeFilter, status, resultType],
+    queryKey: ["tests", facilityId, query, categoryFilter, status, resultType],
     queryFn: () =>
       fetchTests({
         category: categoryFilter,
         query,
         resultType,
-        scope: scopeFilter,
         status,
-        viewerFacilityId: facilityId ?? null
+        facilityId: facilityId as string
       }),
-    enabled: canAccessAdministration,
+    enabled: canAccessAdministration && Boolean(facilityId),
     staleTime: 60_000,
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false
@@ -399,7 +390,7 @@ export function TestCatalogueAdmin() {
             Admin access required
           </CardTitle>
           <CardDescription className="text-red-800">
-            Only Admin and Super Admin users can manage the test catalogue.
+            Only the hospital Admin can manage the test catalogue.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -542,7 +533,7 @@ export function TestCatalogueAdmin() {
     const resolvedFacilityId = targetFacilityId || facilityId || null;
 
     if (!resolvedFacilityId) {
-      setSubmitError("Choose the facility that should own this test before saving.");
+      setSubmitError("The hospital record must be configured before saving tests.");
       return;
     }
 
@@ -623,14 +614,14 @@ export function TestCatalogueAdmin() {
 
   const handleDelete = async (id: string) => {
     const targetTest = testsQuery.data?.find((test) => test.id === id) ?? null;
-    const canManageTarget =
-      Boolean(isSuperAdmin) ||
-      Boolean(targetTest?.facility_id && targetTest.facility_id === facilityId);
+    const canManageTarget = Boolean(
+      targetTest?.facility_id && targetTest.facility_id === facilityId
+    );
 
     if (!canManageTarget) {
       toast({
-        title: "Facility mismatch",
-        description: "This test belongs to another facility and cannot be changed from here.",
+        title: "Hospital mismatch",
+        description: "This catalogue entry is not assigned to the current hospital.",
         variant: "error"
       });
       return;
@@ -736,7 +727,7 @@ export function TestCatalogueAdmin() {
                   the screen.
                 </CardDescription>
               </div>
-              <Badge variant="outline">Admin / Super Admin</Badge>
+              <Badge variant="outline">Hospital Admin</Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -766,15 +757,6 @@ export function TestCatalogueAdmin() {
                 ))}
                 <option value="uncategorized">Uncategorized</option>
               </select>
-
-                <select
-                  className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
-                  value={scopeFilter}
-                  onChange={(event) => setScopeFilter(event.target.value as FilterScope)}
-                >
-                  <option value="all">All visible facilities</option>
-                  <option value="current">My facility only</option>
-                </select>
 
               <select
                 className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
@@ -861,7 +843,7 @@ export function TestCatalogueAdmin() {
                           <div className="space-y-1">
                             <Badge variant="outline">Facility-owned</Badge>
                             <p className="text-xs text-slate-500">
-                              {test.facilities?.name || "Assigned facility"}{" "}
+                              {test.facilities?.name || "Hospital"}{" "}
                               {test.facilities?.code ? `(${test.facilities.code})` : ""}
                             </p>
                           </div>
@@ -886,7 +868,7 @@ export function TestCatalogueAdmin() {
                               type="button"
                               variant="outline"
                               size="sm"
-                              disabled={!isSuperAdmin && test.facility_id !== facilityId}
+                              disabled={test.facility_id !== facilityId}
                               onClick={() => loadForEdit(test)}
                             >
                               <Pencil className="h-4 w-4" />
@@ -898,7 +880,7 @@ export function TestCatalogueAdmin() {
                               size="sm"
                               disabled={
                                 deletingId === test.id ||
-                                (!isSuperAdmin && test.facility_id !== facilityId)
+                                test.facility_id !== facilityId
                               }
                               onClick={() => handleDelete(test.id)}
                             >
@@ -927,45 +909,20 @@ export function TestCatalogueAdmin() {
               {editingId ? "Edit test" : "Add test"}
             </CardTitle>
             <CardDescription>
-              Define pricing, result type, owning facility, unit, and reference range rules.
+              Define pricing, result type, unit, and reference range rules.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form className="space-y-4" onSubmit={handleSubmit}>
               <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                <p className="text-sm font-semibold text-slate-950">Owning facility</p>
+                <p className="text-sm font-semibold text-slate-950">Hospital catalogue</p>
                 <p className="mt-1 text-xs leading-5 text-slate-600">
-                  Every test belongs to exactly one facility. Catalogues do not leak across
-                  facilities or child branches.
+                  Every test belongs automatically to this hospital.
                 </p>
 
-                {isSuperAdmin ? (
-                  <div className="mt-3 space-y-2">
-                    <Label htmlFor="test-facility">Facility</Label>
-                    <select
-                      id="test-facility"
-                      className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"
-                      value={targetFacilityId}
-                      onChange={(event) => setTargetFacilityId(event.target.value)}
-                    >
-                      <option value="">Select facility</option>
-                      {visibleFacilities.map((facility) => (
-                        <option key={facility.id} value={facility.id}>
-                          {facility.name} ({facility.code})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ) : (
-                  <div className="mt-3 rounded-xl border border-blue-100 bg-white px-3 py-3 text-sm text-slate-700">
-                    New catalogue items created here will belong to{" "}
-                    <strong>
-                      {currentFacility?.name || "your assigned facility"}
-                      {currentFacility?.code ? ` (${currentFacility.code})` : ""}
-                    </strong>
-                    .
-                  </div>
-                )}
+                <div className="mt-3 rounded-xl border border-blue-100 bg-white px-3 py-3 text-sm text-slate-700">
+                  New catalogue items belong to <strong>{currentFacility?.name || "this hospital"}</strong>.
+                </div>
               </div>
 
               <div className="space-y-2">
