@@ -11,8 +11,7 @@ export const metadata: Metadata = {
     default: "St Gianna Specialist Hospital",
     template: "%s | St Gianna Specialist Hospital"
   },
-  description:
-    "St Gianna Specialist Hospital management system for connected patient care in Transekulu, Enugu."
+  description: "St Gianna Specialist Hospital, Transekulu, Enugu."
 };
 
 export const viewport: Viewport = {

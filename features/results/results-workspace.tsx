@@ -101,7 +101,7 @@ async function fetchResultsQueue() {
   return resolveOnlineQuery<ResultQueueRow[]>({
     online: async () => {
       if (!database) {
-        throw new Error("MySQL is not configured.");
+        throw new Error("Service unavailable.");
       }
 
       const { data, error } = await database
@@ -131,7 +131,7 @@ async function fetchAuditLogs(resultId: string | null) {
   return resolveOnlineQuery<AuditLogRow[]>({
     online: async () => {
       if (!database) {
-        throw new Error("MySQL is not configured.");
+        throw new Error("Service unavailable.");
       }
 
       const { data, error } = await database
@@ -307,10 +307,7 @@ export function ResultsWorkspace() {
     return (
       <Card className="border-amber-200 bg-amber-50/80">
         <CardHeader>
-          <CardTitle className="text-amber-950">Facility assignment required</CardTitle>
-          <CardDescription className="text-amber-900">
-            Complete the hospital setup before using results entry and verification.
-          </CardDescription>
+          <CardTitle className="text-amber-950">Access unavailable</CardTitle>
         </CardHeader>
       </Card>
     );

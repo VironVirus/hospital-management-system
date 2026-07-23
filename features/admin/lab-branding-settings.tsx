@@ -52,7 +52,7 @@ const emptyForm: BrandingFormState = {
 function getDatabaseForBranding() {
   const database = getAppClient();
   if (!database) {
-    throw new Error("MySQL is not configured.");
+    throw new Error("Service unavailable.");
   }
 
   return database as unknown as {
@@ -185,8 +185,8 @@ export function LabBrandingSettingsPanel({
   const handleSave = async () => {
     if (!targetFacilityId) {
       toast({
-        title: "Facility required",
-        description: "Complete the hospital setup before saving branding.",
+        title: "Access unavailable",
+        description: "Unable to save.",
         variant: "error"
       });
       return;
@@ -316,7 +316,7 @@ export function LabBrandingSettingsPanel({
               id="accreditation"
               value={form.accreditation ?? ""}
               onChange={(event) => updateField("accreditation", event.target.value)}
-              placeholder="ISO-aligned diagnostic workflow"
+              placeholder="Accreditation"
             />
           </div>
           <div className="space-y-2">

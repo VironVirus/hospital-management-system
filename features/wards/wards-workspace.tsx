@@ -23,7 +23,7 @@ function formatDate(value: string) {
 
 async function fetchWardsWorkspace() {
   const database = getAppClient();
-  if (!database) throw new Error("MySQL is not configured.");
+  if (!database) throw new Error("Service unavailable.");
   const hospital = getHospitalClient();
   const [patientsResponse, encountersResponse, wardsResponse, admissionsResponse] = await Promise.all([
     database.from("patients").select("id, name, hospital_id, lab_id, phone").order("name", { ascending: true }).limit(500),
@@ -126,10 +126,10 @@ export function WardsWorkspace() {
   };
 
   if (loading || workspaceQuery.isLoading) return <Card><CardContent className="flex items-center gap-3 p-8 text-sm text-slate-600"><Loader2 className="h-4 w-4 animate-spin" />Loading wards and admissions...</CardContent></Card>;
-  if (!canAccess || !facilityId) return <Card><CardHeader><CardTitle>Ward access unavailable</CardTitle><CardDescription>Your account needs clinical access and a completed hospital setup.</CardDescription></CardHeader></Card>;
+  if (!canAccess || !facilityId) return <Card><CardHeader><CardTitle>Ward access unavailable</CardTitle></CardHeader></Card>;
 
   return <div className="space-y-6">
-    <Card className="overflow-hidden border-indigo-100 bg-gradient-to-br from-indigo-800 via-indigo-700 to-blue-500 text-white"><CardContent className="grid gap-4 p-6 lg:grid-cols-[1.4fr_repeat(3,0.45fr)]"><div><Badge className="bg-white/15 text-white">Inpatient services</Badge><h2 className="mt-3 text-2xl font-semibold">Wards, beds & admissions</h2><p className="mt-2 text-sm text-indigo-50">See where every admitted patient is, when they arrived, and which bed they occupy.</p></div>{[["Wards", data?.wards.length ?? 0], ["Beds", totalBeds], ["Admitted", activeAdmissions.length]].map(([label, value]) => <div key={label} className="rounded-2xl bg-white/10 p-4"><p className="text-xs uppercase tracking-wider text-indigo-100">{label}</p><p className="mt-2 text-3xl font-semibold">{value}</p></div>)}</CardContent></Card>
+    <Card className="overflow-hidden border-indigo-100 bg-gradient-to-br from-indigo-800 via-indigo-700 to-blue-500 text-white"><CardContent className="grid gap-4 p-6 lg:grid-cols-[1.4fr_repeat(3,0.45fr)]"><div><h2 className="text-2xl font-semibold">Wards and admissions</h2></div>{[["Wards", data?.wards.length ?? 0], ["Beds", totalBeds], ["Admitted", activeAdmissions.length]].map(([label, value]) => <div key={label} className="rounded-2xl bg-white/10 p-4"><p className="text-xs uppercase tracking-wider text-indigo-100">{label}</p><p className="mt-2 text-3xl font-semibold">{value}</p></div>)}</CardContent></Card>
 
     {canManage ? <div className="grid gap-6 xl:grid-cols-2">
       <Card><CardHeader><CardTitle className="flex items-center gap-2"><Building2 className="h-5 w-5 text-indigo-700" />Create ward</CardTitle><CardDescription>Capacity automatically creates numbered beds.</CardDescription></CardHeader><CardContent><form className="grid gap-3 sm:grid-cols-2" onSubmit={createWard}><div><Label>Ward name</Label><Input className="mt-1" value={wardForm.name} onChange={(event) => setWardForm((current) => ({ ...current, name: event.target.value }))} required /></div><div><Label>Code</Label><Input className="mt-1" value={wardForm.code} onChange={(event) => setWardForm((current) => ({ ...current, code: event.target.value }))} placeholder="MW-A" required /></div><div><Label>Ward type</Label><Input className="mt-1" value={wardForm.ward_type} onChange={(event) => setWardForm((current) => ({ ...current, ward_type: event.target.value }))} /></div><div><Label>Capacity / beds</Label><Input className="mt-1" type="number" min="0" value={wardForm.capacity} onChange={(event) => setWardForm((current) => ({ ...current, capacity: event.target.value }))} /></div><div className="sm:col-span-2"><Label>Location</Label><Input className="mt-1" value={wardForm.location} onChange={(event) => setWardForm((current) => ({ ...current, location: event.target.value }))} /></div><Button className="sm:col-span-2" disabled={saving}><Plus className="h-4 w-4" />Create ward & beds</Button></form></CardContent></Card>

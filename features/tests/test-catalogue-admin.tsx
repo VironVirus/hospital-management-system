@@ -226,7 +226,7 @@ async function fetchTests({
   return resolveOnlineQuery<CatalogueTestRow[]>({
     online: async () => {
       if (!database) {
-        throw new Error("MySQL is not configured.");
+        throw new Error("Service unavailable.");
       }
 
       let request = database
@@ -300,7 +300,7 @@ export function TestCatalogueAdmin() {
     queryFn: async () => {
       const database = getAppClient();
       if (!database) {
-        throw new Error("MySQL is not configured.");
+        throw new Error("Service unavailable.");
       }
 
       const { data, error } = await database
@@ -533,7 +533,7 @@ export function TestCatalogueAdmin() {
     const resolvedFacilityId = targetFacilityId || facilityId || null;
 
     if (!resolvedFacilityId) {
-      setSubmitError("The hospital record must be configured before saving tests.");
+      setSubmitError("Unable to save test.");
       return;
     }
 

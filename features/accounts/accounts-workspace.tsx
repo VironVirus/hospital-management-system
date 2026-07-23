@@ -90,7 +90,7 @@ async function fetchAccountsData(facilityId: string): Promise<AccountsData> {
   const startIso = windowStart.toISOString();
 
   if (!database) {
-    throw new Error("MySQL is not configured.");
+    throw new Error("Service unavailable.");
   }
 
   const [invoicesResponse, expensesResponse, transactionsResponse, inventoryResponse] =
@@ -173,7 +173,7 @@ function SummaryTile({
 
 export function AccountsWorkspace() {
   const queryClient = useQueryClient();
-  const { facilityId, loading, profile, role, user } = useAuth();
+  const { facilityId, loading, role, user } = useAuth();
   const { toast } = useToast();
   const [monthKey, setMonthKey] = useState(getCurrentMonthKey());
   const [search, setSearch] = useState("");
@@ -369,7 +369,7 @@ export function AccountsWorkspace() {
     }
 
     if (!activeFacilityId) {
-      setExpenseError("Complete the hospital setup before posting expenses.");
+      setExpenseError("Access unavailable.");
       return;
     }
 
@@ -526,11 +526,7 @@ export function AccountsWorkspace() {
     return (
       <Card className="border-amber-200 bg-amber-50/80">
         <CardHeader>
-          <CardTitle className="text-amber-950">Facility assignment required</CardTitle>
-          <CardDescription className="text-amber-900">
-            Complete the hospital setup for <span className="font-medium">{profile?.display_name || "this user"}</span> before
-            using the accounts workspace.
-          </CardDescription>
+          <CardTitle className="text-amber-950">Access unavailable</CardTitle>
         </CardHeader>
       </Card>
     );
@@ -540,12 +536,7 @@ export function AccountsWorkspace() {
     <div className="space-y-6">
       <section className="flex flex-col gap-4 rounded-3xl border border-blue-100 bg-[linear-gradient(135deg,_rgba(239,246,255,0.95),_rgba(255,255,255,1))] p-6 shadow-sm lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <Badge className="border-transparent bg-blue-100 text-blue-700">Accounts</Badge>
-          <h1 className="mt-3 text-3xl font-semibold text-slate-950">Income and expenditure control</h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-600">
-            Review billed tests, money received, category income, manual expenses, and monthly
-            inventory cost in one place.
-          </p>
+          <h1 className="text-3xl font-semibold text-slate-950">Accounts</h1>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
           <div className="space-y-2">

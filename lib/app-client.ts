@@ -58,10 +58,10 @@ class QueryBuilder implements PromiseLike<QueryResponse> {
         })
       });
       const payload = await response.json().catch(() => null) as QueryResponse | null;
-      if (!response.ok) return { data: null, error: { message: payload?.error?.message || "Database request failed." } };
+      if (!response.ok) return { data: null, error: { message: payload?.error?.message || "Request failed." } };
       return payload ?? { data: null, error: null };
     } catch (error) {
-      return { data: null, error: { message: error instanceof Error ? error.message : "Database request failed." } };
+      return { data: null, error: { message: error instanceof Error ? error.message : "Request failed." } };
     }
   }
 

@@ -78,7 +78,7 @@ async function fetchInventoryItems() {
   return resolveOnlineQuery<InventoryItemRow[]>({
     online: async () => {
       if (!database) {
-        throw new Error("MySQL is not configured.");
+        throw new Error("Service unavailable.");
       }
 
       const { data, error } = await database
@@ -105,7 +105,7 @@ async function fetchInventoryTransactions(itemId: string | null) {
   return resolveOnlineQuery<InventoryTransactionRow[]>({
     online: async () => {
       if (!database) {
-        throw new Error("MySQL is not configured.");
+        throw new Error("Service unavailable.");
       }
 
       const { data, error } = await database
@@ -131,7 +131,7 @@ function toNullable(value: string) {
 
 export function InventoryManagement() {
   const queryClient = useQueryClient();
-  const { facilityId, loading, profile, role, user } = useAuth();
+  const { facilityId, loading, role, user } = useAuth();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
@@ -305,12 +305,7 @@ export function InventoryManagement() {
     return (
       <Card className="border-amber-200 bg-amber-50/80">
         <CardHeader>
-          <CardTitle className="text-amber-950">Facility assignment required</CardTitle>
-          <CardDescription className="text-amber-900">
-            Complete the hospital setup for{" "}
-            <span className="font-medium">{profile?.display_name || "this user"}</span> before
-            managing inventory.
-          </CardDescription>
+          <CardTitle className="text-amber-950">Access unavailable</CardTitle>
         </CardHeader>
       </Card>
     );

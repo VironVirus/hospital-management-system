@@ -166,7 +166,7 @@ const inputClass =
 function requireDatabase() {
   const database = getAppClient();
   if (!database) {
-    throw new Error("MySQL is not configured.");
+    throw new Error("Service unavailable.");
   }
 
   return database as unknown as DatabaseQcClient;
@@ -557,10 +557,7 @@ export function QcWorkspace() {
     return (
       <Card className="border-amber-200 bg-amber-50">
         <CardHeader>
-          <CardTitle className="text-amber-950">Facility assignment required</CardTitle>
-          <CardDescription className="text-amber-900">
-            Complete the hospital setup before recording QC activity.
-          </CardDescription>
+          <CardTitle className="text-amber-950">Access unavailable</CardTitle>
         </CardHeader>
       </Card>
     );

@@ -72,7 +72,7 @@ function optionalNumber(value: string) {
 
 async function fetchClinicalWorkspace() {
   const database = getAppClient();
-  if (!database) throw new Error("MySQL is not configured.");
+  if (!database) throw new Error("Service unavailable.");
   const hospital = getHospitalClient();
 
   const [patientsResponse, encountersResponse] = await Promise.all([
@@ -272,7 +272,7 @@ export function ClinicalWorkspace() {
   }
 
   if (!canAccess || !facilityId) {
-    return <Card><CardHeader><CardTitle>Clinical access unavailable</CardTitle><CardDescription>Your role needs clinical access and a completed hospital setup.</CardDescription></CardHeader></Card>;
+    return <Card><CardHeader><CardTitle>Clinical access unavailable</CardTitle></CardHeader></Card>;
   }
 
   const chart = chartQuery.data;
@@ -281,7 +281,7 @@ export function ClinicalWorkspace() {
     <div className="space-y-6">
       <Card className="overflow-hidden border-teal-100 bg-gradient-to-br from-teal-700 via-teal-600 to-cyan-500 text-white">
         <CardContent className="grid gap-5 p-6 lg:grid-cols-[1.35fr_repeat(3,0.45fr)] lg:items-center">
-          <div><Badge className="bg-white/15 text-white">Clinical command centre</Badge><h2 className="mt-3 text-2xl font-semibold">Patient care, from presentation to report</h2><p className="mt-2 max-w-xl text-sm text-teal-50">Encounters are grouped under one permanent Hospital ID and preserved as a longitudinal clinical record.</p></div>
+          <div><h2 className="text-2xl font-semibold">Clinical</h2></div>
           <div className="rounded-2xl bg-white/10 p-4"><p className="text-xs uppercase tracking-wider text-teal-50">Open encounters</p><p className="mt-2 text-3xl font-semibold">{encounters.filter((item) => item.status === "Open").length}</p></div>
           <div className="rounded-2xl bg-white/10 p-4"><p className="text-xs uppercase tracking-wider text-teal-50">Today</p><p className="mt-2 text-3xl font-semibold">{encounters.filter((item) => new Date(item.started_at).toDateString() === new Date().toDateString()).length}</p></div>
           <div className="rounded-2xl bg-white/10 p-4"><p className="text-xs uppercase tracking-wider text-teal-50">Patients</p><p className="mt-2 text-3xl font-semibold">{workspaceQuery.data?.patients.length ?? 0}</p></div>

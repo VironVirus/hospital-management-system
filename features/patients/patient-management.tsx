@@ -74,7 +74,7 @@ async function fetchPatients(searchTerm: string, page: number) {
   return resolveOnlineQuery({
     online: async () => {
       if (!database) {
-        throw new Error("MySQL is not configured.");
+        throw new Error("Service unavailable.");
       }
 
       const { data, error } = await database.rpc("search_patients", {
@@ -102,7 +102,7 @@ async function fetchPatients(searchTerm: string, page: number) {
 
 export function PatientManagement() {
   const queryClient = useQueryClient();
-  const { role, loading, facilityId, profile } = useAuth();
+  const { role, loading, facilityId } = useAuth();
   const { toast } = useToast();
   const { frontDeskMode, toggleFrontDeskMode } = useFrontDeskMode();
   const [searchTerm, setSearchTerm] = useState("");
@@ -243,10 +243,7 @@ export function PatientManagement() {
     return (
       <Card className="border-amber-200 bg-amber-50/80">
         <CardHeader>
-          <CardTitle className="text-amber-950">Hospital setup required</CardTitle>
-          <CardDescription className="text-amber-900">
-            Run the single-hospital database schema before using patient records for <span className="font-medium">{profile?.display_name || "this user"}</span>.
-          </CardDescription>
+          <CardTitle className="text-amber-950">Access unavailable</CardTitle>
         </CardHeader>
       </Card>
     );

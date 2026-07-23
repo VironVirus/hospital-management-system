@@ -70,7 +70,7 @@ async function fetchInvoices() {
   return resolveOnlineQuery<BillingInvoiceRow[]>({
     online: async () => {
       if (!database) {
-        throw new Error("MySQL is not configured.");
+        throw new Error("Service unavailable.");
       }
 
       const { data, error } = await database
@@ -423,10 +423,7 @@ export function BillingWorkspace() {
     return (
       <Card className="border-amber-200 bg-amber-50/80">
         <CardHeader>
-          <CardTitle className="text-amber-950">Facility assignment required</CardTitle>
-          <CardDescription className="text-amber-900">
-            Complete the hospital setup before using billing and revenue workflows.
-          </CardDescription>
+          <CardTitle className="text-amber-950">Access unavailable</CardTitle>
         </CardHeader>
       </Card>
     );

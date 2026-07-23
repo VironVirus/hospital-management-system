@@ -116,7 +116,7 @@ export function buildReportBranding(
 ): ReportBranding {
   return {
     labName: settings?.lab_name || facilityName || "St Gianna Specialist Hospital",
-    accreditation: settings?.accreditation || "ISO-aligned diagnostic workflow",
+    accreditation: settings?.accreditation || "",
     address: settings?.address || "No 6, 18 Road, Upper North, Transekulu, Enugu, Enugu State",
     supportLine: settings?.support_line || "St Gianna Specialist Hospital",
     footerNote:

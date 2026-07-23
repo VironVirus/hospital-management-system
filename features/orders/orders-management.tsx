@@ -254,7 +254,7 @@ async function waitForInvoiceRetry(ms: number) {
 async function fetchInvoiceForOrder(orderId: string) {
   const database = getAppClient();
   if (!database) {
-    throw new Error("MySQL is not configured.");
+    throw new Error("Service unavailable.");
   }
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -293,7 +293,7 @@ async function fetchPatients(searchTerm: string) {
   return resolveOnlineQuery<PatientSearchRow[]>({
     online: async () => {
       if (!database) {
-        throw new Error("MySQL is not configured.");
+        throw new Error("Service unavailable.");
       }
 
       const { data, error } = await database.rpc("search_patients", {
@@ -317,7 +317,7 @@ async function fetchActiveTests() {
   return resolveOnlineQuery<TestRow[]>({
     online: async () => {
       if (!database) {
-        throw new Error("MySQL is not configured.");
+        throw new Error("Service unavailable.");
       }
 
       const { data, error } = await database
@@ -342,7 +342,7 @@ async function fetchRecentOrders() {
   return resolveOnlineQuery<RecentOrderRow[]>({
     online: async () => {
       if (!database) {
-        throw new Error("MySQL is not configured.");
+        throw new Error("Service unavailable.");
       }
 
       const { data, error } = await database
@@ -386,7 +386,7 @@ async function fetchFacilityBundles(facilityId: string) {
   return resolveOnlineQuery<TestBundleRow[]>({
     online: async () => {
       if (!database) {
-        throw new Error("MySQL is not configured.");
+        throw new Error("Service unavailable.");
       }
 
       const response = await database
@@ -431,7 +431,7 @@ async function fetchOrderForEdit(orderId: string) {
   return resolveOnlineQuery<RecentOrderRow | null>({
     online: async () => {
       if (!database) {
-        throw new Error("MySQL is not configured.");
+        throw new Error("Service unavailable.");
       }
 
       const { data, error } = await database
@@ -887,10 +887,7 @@ export function OrdersManagement() {
     return (
       <Card className="border-amber-200 bg-amber-50/80">
         <CardHeader>
-          <CardTitle className="text-amber-950">Facility assignment required</CardTitle>
-          <CardDescription className="text-amber-900">
-            Complete the hospital setup before creating or viewing tests.
-          </CardDescription>
+          <CardTitle className="text-amber-950">Access unavailable</CardTitle>
         </CardHeader>
       </Card>
     );
@@ -1357,11 +1354,6 @@ export function OrdersManagement() {
                   <ClipboardPlus className="h-5 w-5 text-blue-700" />
                   {editingOrder ? `Edit test order ${editingOrder.order_number}` : "Create lab test"}
                 </CardTitle>
-                <CardDescription className="mt-2">
-                  {editingOrder
-                    ? "Add extra tests to the same order number, keep the sample trail intact, and refresh the bill automatically."
-                    : "Move from patient search to bundled tests, labels, and billing without the screen feeling crowded."}
-                </CardDescription>
                 {!frontDeskMode ? (
                   <div className="mt-4 flex flex-wrap gap-2 text-xs">
                     <Badge variant="outline">/ patient</Badge>
@@ -1567,12 +1559,7 @@ export function OrdersManagement() {
 
                 <div className="space-y-5 rounded-3xl border border-slate-200 bg-slate-50/70 p-5 shadow-sm">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                    <div>
-                      <Label className="text-base">Test selection</Label>
-                      <p className="mt-1 text-sm text-slate-500">
-                        Search within a category, tap quick bundles, and keep the bench list tidy.
-                      </p>
-                    </div>
+                    <Label className="text-base">Test selection</Label>
                     <div className="flex flex-wrap gap-2">
                       {quickBundles.map((bundle) => (
                         <Button
@@ -1894,9 +1881,6 @@ export function OrdersManagement() {
                   <Card className="border-slate-200 bg-[linear-gradient(180deg,_rgba(248,250,252,1),_rgba(255,255,255,1))] shadow-sm">
                     <CardHeader className="pb-3">
                       <CardTitle className="text-base">Order summary</CardTitle>
-                      <CardDescription>
-                        Keep the patient, tests, and billing impact visible while you register.
-                      </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       <div className="rounded-2xl border border-slate-200 bg-white p-4">

@@ -161,6 +161,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ data: null, error: { message: "Unknown server operation." } }, { status: 400 });
   } catch (error) {
-    return NextResponse.json({ data: null, error: { message: error instanceof Error ? error.message : "Operation failed." } }, { status: 500 });
+    const databaseError = error as { code?: string };
+    console.error("[data-rpc]", error);
+    return NextResponse.json({
+      data: null,
+      error: { message: databaseError.code ? "The request could not be completed." : error instanceof Error ? error.message : "The request could not be completed." }
+    }, { status: 500 });
   }
 }

@@ -38,7 +38,8 @@ export async function POST(request: Request) {
       user: { id, display_name: parsed.data.display_name, email, role: parsed.data.role }
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Account could not be created.";
-    return NextResponse.json({ error: message.includes("Duplicate") ? "A staff account already uses that email." : message }, { status: 400 });
+    const databaseError = error as { code?: string };
+    console.error("[staff-create]", error);
+    return NextResponse.json({ error: databaseError.code === "ER_DUP_ENTRY" ? "A staff account already uses that email." : "Account could not be created." }, { status: 400 });
   }
 }

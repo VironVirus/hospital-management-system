@@ -115,7 +115,7 @@ async function fetchPatient(patientId: string) {
   return resolveOnlineQuery<PatientRow | null>({
     online: async () => {
       if (!database) {
-        throw new Error("MySQL is not configured.");
+        throw new Error("Service unavailable.");
       }
 
       const { data, error } = await database
@@ -138,7 +138,7 @@ async function fetchPatientOrders(patientId: string) {
   return resolveOnlineQuery<OrderHistoryRow[]>({
     online: async () => {
       if (!database) {
-        throw new Error("MySQL is not configured.");
+        throw new Error("Service unavailable.");
       }
 
       const { data, error } = await database
@@ -353,9 +353,6 @@ export function PatientHistory({ patientId }: { patientId: string }) {
             <ShieldAlert className="h-5 w-5" />
             Access unavailable
           </CardTitle>
-          <CardDescription className="text-red-800">
-            You need patient access and a configured hospital profile to view this record.
-          </CardDescription>
         </CardHeader>
       </Card>
     );

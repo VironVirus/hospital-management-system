@@ -107,7 +107,7 @@ async function fetchDashboardData(facilityId: string): Promise<DashboardData> {
   const startIso = windowStart.toISOString();
 
   if (!database) {
-    throw new Error("MySQL is not configured.");
+    throw new Error("Service unavailable.");
   }
 
   const [
@@ -543,10 +543,7 @@ export function DashboardOverview() {
     return (
       <Card className="border-amber-200 bg-amber-50/80">
         <CardHeader>
-          <CardTitle className="text-amber-950">Facility assignment required</CardTitle>
-          <CardDescription className="text-amber-900">
-            Run the hospital database setup before using dashboards and analytics.
-          </CardDescription>
+          <CardTitle className="text-amber-950">Access unavailable</CardTitle>
         </CardHeader>
       </Card>
     );
@@ -572,16 +569,7 @@ export function DashboardOverview() {
       <section className="rounded-3xl border border-blue-100 bg-gradient-to-r from-slate-950 via-blue-950 to-blue-900 p-6 text-white shadow-lg">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl">
-            <Badge className="bg-white/10 text-white hover:bg-white/10">
-              Operations dashboard
-            </Badge>
-            <h1 className="mt-4 text-3xl font-semibold tracking-tight">
-              Keep the lab moving from intake to cash collection
-            </h1>
-            <p className="mt-3 text-sm leading-6 text-blue-100">
-              Monitor today&apos;s worklist, turnaround time, testing demand, inventory pressure,
-              and revenue from one operational view.
-            </p>
+            <h1 className="text-3xl font-semibold tracking-tight">Laboratory</h1>
           </div>
 
           <div className="flex flex-wrap gap-3">

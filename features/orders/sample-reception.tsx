@@ -105,7 +105,7 @@ async function fetchSampleByCode(code: string) {
   return resolveOnlineQuery<SampleLookupRow | null>({
     online: async () => {
       if (!database) {
-        throw new Error("MySQL is not configured.");
+        throw new Error("Service unavailable.");
       }
 
       const query = async (column: "sample_code" | "barcode_value") =>
@@ -136,7 +136,7 @@ async function fetchCustodyLogs(orderTestId: string) {
   return resolveOnlineQuery<CustodyLogRow[]>({
     online: async () => {
       if (!database) {
-        throw new Error("MySQL is not configured.");
+        throw new Error("Service unavailable.");
       }
 
       const { data, error } = await database
@@ -160,7 +160,7 @@ async function fetchReceptionQueue() {
   return resolveOnlineQuery<QueueRow[]>({
     online: async () => {
       if (!database) {
-        throw new Error("MySQL is not configured.");
+        throw new Error("Service unavailable.");
       }
 
       const { data, error } = await database
@@ -243,10 +243,7 @@ export function SampleReception() {
     return (
       <Card className="border-amber-200 bg-amber-50/80">
         <CardHeader>
-          <CardTitle className="text-amber-950">Facility assignment required</CardTitle>
-          <CardDescription className="text-amber-900">
-            Complete the hospital setup before scanning or updating samples.
-          </CardDescription>
+          <CardTitle className="text-amber-950">Access unavailable</CardTitle>
         </CardHeader>
       </Card>
     );

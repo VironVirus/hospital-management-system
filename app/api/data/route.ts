@@ -447,6 +447,15 @@ export async function POST(request: Request) {
     const [result] = await pool.execute<ResultSetHeader>(`DELETE FROM ${identifier(table)}${where}`, filters.params as never[]);
     return NextResponse.json({ data: { deleted: result.affectedRows }, error: null });
   } catch (error) {
-    return NextResponse.json({ error: { message: error instanceof Error ? error.message : "Database operation failed." }, data: null }, { status: 500 });
+    const databaseError = error as { code?: string };
+    console.error("[data-api]", error);
+    const message = databaseError.code === "ER_DUP_ENTRY"
+      ? "A matching record already exists."
+      : databaseError.code
+        ? "The request could not be completed."
+        : error instanceof Error
+          ? error.message
+          : "The request could not be completed.";
+    return NextResponse.json({ error: { message }, data: null }, { status: 500 });
   }
 }

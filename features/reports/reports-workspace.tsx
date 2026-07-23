@@ -10,10 +10,8 @@ import {
   Download,
   FileStack,
   Loader2,
-  MessageSquareShare,
   Printer,
   Search,
-  Send,
   ShieldAlert
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
@@ -56,7 +54,7 @@ async function fetchReportsQueue() {
   return resolveOnlineQuery<ReportOrderRow[]>({
     online: async () => {
       if (!database) {
-        throw new Error("MySQL is not configured.");
+        throw new Error("Service unavailable.");
       }
 
       const { data, error } = await database
@@ -95,7 +93,7 @@ export function ReportsWorkspace() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [busyAction, setBusyAction] = useState<
-    "download" | "bulk-download" | "print" | "bulk-print" | "placeholder" | null
+    "download" | "bulk-download" | "print" | "bulk-print" | null
   >(null);
   const [feedback, setFeedback] = useState<{
     error: string | null;
@@ -229,7 +227,7 @@ export function ReportsWorkspace() {
 
   const runReportAudit = async (
     orders: ReportOrderRow[],
-    action: "report_downloaded" | "report_printed" | "report_delivery_placeholder"
+    action: "report_downloaded" | "report_printed"
   ) => {
     if (!facilityId) {
       return;
@@ -350,50 +348,6 @@ export function ReportsWorkspace() {
     }
   };
 
-  const handleDeliveryPlaceholder = async (channel: "sms" | "whatsapp") => {
-    if (!selectedOrder) {
-      setFeedback({
-        error: "Select a report before using the delivery placeholder.",
-        success: null
-      });
-      return;
-    }
-
-    try {
-      setBusyAction("placeholder");
-      setFeedback({ error: null, success: null });
-      await runReportAudit([selectedOrder], "report_delivery_placeholder");
-      setFeedback({
-        error: null,
-        success:
-          channel === "sms"
-            ? "SMS placeholder logged. AfricasTalking wiring can be added next."
-            : "WhatsApp placeholder logged. AfricasTalking wiring can be added next."
-      });
-      toast({
-        title: channel === "sms" ? "SMS placeholder logged" : "WhatsApp placeholder logged",
-        description: "Delivery integration can now be connected to AfricasTalking.",
-        variant: "success"
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Unable to store delivery placeholder audit entry.";
-      setFeedback({
-        error: message,
-        success: null
-      });
-      toast({
-        title: "Delivery placeholder failed",
-        description: message,
-        variant: "error"
-      });
-    } finally {
-      setBusyAction(null);
-    }
-  };
-
   if (loading) {
     return (
       <Card className="border-blue-100">
@@ -409,10 +363,7 @@ export function ReportsWorkspace() {
     return (
       <Card className="border-amber-200 bg-amber-50/80">
         <CardHeader>
-          <CardTitle className="text-amber-950">Facility assignment required</CardTitle>
-          <CardDescription className="text-amber-900">
-            Complete the hospital setup before generating laboratory reports.
-          </CardDescription>
+          <CardTitle className="text-amber-950">Access unavailable</CardTitle>
         </CardHeader>
       </Card>
     );
@@ -461,11 +412,7 @@ export function ReportsWorkspace() {
       <Card className="border-blue-100 shadow-soft">
         <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <CardTitle className="text-slate-950">Medical-grade reporting workspace</CardTitle>
-            <CardDescription>
-              Generate professional PDFs, print verified reports, and prepare delivery
-              workflows.
-            </CardDescription>
+            <CardTitle className="text-slate-950">Laboratory reports</CardTitle>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative min-w-[240px]">
@@ -871,45 +818,6 @@ export function ReportsWorkspace() {
                     </CardContent>
                   </Card>
 
-                  <Card className="border-slate-200">
-                    <CardHeader>
-                      <CardTitle className="text-base text-slate-950">
-                        Delivery placeholders
-                      </CardTitle>
-                      <CardDescription>
-                        AfricasTalking integration can plug into these actions once credentials
-                        and templates are ready.
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent className="flex flex-wrap gap-3">
-                      <Button
-                        disabled={busyAction !== null}
-                        onClick={() => void handleDeliveryPlaceholder("sms")}
-                        type="button"
-                        variant="outline"
-                      >
-                        {busyAction === "placeholder" ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <Send className="h-4 w-4" />
-                        )}
-                        SMS placeholder
-                      </Button>
-                      <Button
-                        disabled={busyAction !== null}
-                        onClick={() => void handleDeliveryPlaceholder("whatsapp")}
-                        type="button"
-                        variant="outline"
-                      >
-                        {busyAction === "placeholder" ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                        ) : (
-                          <MessageSquareShare className="h-4 w-4" />
-                        )}
-                        WhatsApp placeholder
-                      </Button>
-                    </CardContent>
-                  </Card>
                 </>
               ) : (
                 <Card className="border-slate-200">

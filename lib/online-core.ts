@@ -26,7 +26,7 @@ export async function commitOnlineMutation({
 }) {
   const database = getAppClient();
   if (!database) {
-    throw new Error("MySQL is not configured.");
+    throw new Error("Service unavailable.");
   }
 
   const client = database as unknown as {

@@ -59,7 +59,7 @@ function buildCutoff(filter: DateFilter) {
 async function fetchAuditLogs() {
   const database = getAppClient();
   if (!database) {
-    throw new Error("MySQL is not configured.");
+    throw new Error("Service unavailable.");
   }
 
   const { data, error } = await database

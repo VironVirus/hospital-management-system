@@ -304,14 +304,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               >
                 <Menu className="h-4 w-4" />
               </Button>
-              <div>
-                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                  Hospital operations
-                </p>
-                <h1 className="text-lg font-semibold text-slate-950 dark:text-slate-50">
-                  Connected patient care
-                </h1>
-              </div>
+              <h1 className="text-lg font-semibold text-slate-950 dark:text-slate-50">St Gianna Specialist Hospital</h1>
             </div>
 
             <div className="flex items-center gap-2">

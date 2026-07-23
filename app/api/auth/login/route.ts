@@ -26,6 +26,7 @@ export async function POST(request: Request) {
     await createSession(account.id);
     return NextResponse.json({ session: await getCurrentSession() });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Login failed." }, { status: 500 });
+    console.error("[auth-login]", error);
+    return NextResponse.json({ error: "Sign-in unavailable." }, { status: 500 });
   }
 }

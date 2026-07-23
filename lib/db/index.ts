@@ -9,22 +9,17 @@ declare global {
 }
 
 function databaseOptions() {
-  const uri = process.env.DATABASE_URL;
-  if (uri) return uri;
-  const configuredHost = process.env.DB_HOST || process.env.DATABASE_HOST;
-  const database = process.env.DB_NAME || process.env.DATABASE_NAME;
-  const user = process.env.DB_USER || process.env.DATABASE_USERNAME;
-  const password = process.env.DB_PASSWORD || process.env.DATABASE_PASSWORD;
-  if (!configuredHost || !database || !user) return null;
-  // Hostinger grants local MySQL users over IPv4. Node can resolve "localhost"
-  // to IPv6 (::1), which MySQL treats as a different host identity.
-  const host = configuredHost === "localhost" ? "127.0.0.1" : configuredHost;
+  const host = process.env.DB_HOST;
+  const database = process.env.DB_NAME;
+  const user = process.env.DB_USER;
+  const password = process.env.DB_PASSWORD;
+  if (!host || !database || !user) return null;
   return {
     host,
     database,
     user,
     password: password || "",
-    port: Number(process.env.DB_PORT || process.env.DATABASE_PORT || 3306),
+    port: Number(process.env.DB_PORT || 3306),
     charset: "utf8mb4",
     timezone: "Z",
     waitForConnections: true,
@@ -66,7 +61,7 @@ export async function migrateDatabase() {
         `INSERT INTO lab_branding_settings (facility_id, lab_name, address, report_footer)
          VALUES (?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE lab_name = VALUES(lab_name), address = VALUES(address)`,
-        [HOSPITAL_ID, "St Gianna Specialist Hospital", "No 6, 18 Road, Upper North, Transekulu, Enugu, Enugu State", "Coordinated care under one permanent Hospital ID."]
+        [HOSPITAL_ID, "St Gianna Specialist Hospital", "No 6, 18 Road, Upper North, Transekulu, Enugu, Enugu State", null]
       );
       const adminEmail = process.env.HMS_ADMIN_EMAIL?.trim().toLowerCase();
       const adminPassword = process.env.HMS_ADMIN_PASSWORD;
