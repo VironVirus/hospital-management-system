@@ -280,8 +280,8 @@ export function ClinicalWorkspace() {
   return (
     <div className="space-y-6">
       <Card className="overflow-hidden border-teal-100 bg-gradient-to-br from-teal-700 via-teal-600 to-cyan-500 text-white">
-        <CardContent className="grid gap-5 p-6 lg:grid-cols-[1.35fr_repeat(3,0.45fr)] lg:items-center">
-          <div><h2 className="text-2xl font-semibold">Clinical</h2></div>
+        <CardContent className="grid grid-cols-2 gap-3 p-4 sm:p-6 lg:grid-cols-[1.35fr_repeat(3,0.45fr)] lg:items-center">
+          <div className="col-span-2 lg:col-span-1"><h2 className="text-2xl font-semibold">Clinical</h2></div>
           <div className="rounded-2xl bg-white/10 p-4"><p className="text-xs uppercase tracking-wider text-teal-50">Open encounters</p><p className="mt-2 text-3xl font-semibold">{encounters.filter((item) => item.status === "Open").length}</p></div>
           <div className="rounded-2xl bg-white/10 p-4"><p className="text-xs uppercase tracking-wider text-teal-50">Today</p><p className="mt-2 text-3xl font-semibold">{encounters.filter((item) => new Date(item.started_at).toDateString() === new Date().toDateString()).length}</p></div>
           <div className="rounded-2xl bg-white/10 p-4"><p className="text-xs uppercase tracking-wider text-teal-50">Patients</p><p className="mt-2 text-3xl font-semibold">{workspaceQuery.data?.patients.length ?? 0}</p></div>

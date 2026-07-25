@@ -668,8 +668,8 @@ export function BillingWorkspace() {
                       </div>
                     </div>
 
-                    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                      <div className="grid grid-cols-[1.7fr_0.6fr_1fr_1fr] gap-3 bg-blue-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600">
+                    <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+                      <div className="grid min-w-[620px] grid-cols-[1.7fr_0.6fr_1fr_1fr] gap-3 bg-blue-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600">
                         <span>Test</span>
                         <span>Qty</span>
                         <span>Rate</span>
@@ -678,7 +678,7 @@ export function BillingWorkspace() {
                       {(selectedInvoice.invoice_items ?? []).map((item) => (
                         <div
                           key={item.id}
-                          className="grid grid-cols-[1.7fr_0.6fr_1fr_1fr] gap-3 border-t border-slate-100 px-4 py-4 text-sm text-slate-700"
+                          className="grid min-w-[620px] grid-cols-[1.7fr_0.6fr_1fr_1fr] gap-3 border-t border-slate-100 px-4 py-4 text-sm text-slate-700"
                         >
                           <p className="font-medium text-slate-950">{item.test_name}</p>
                           <p>{item.quantity}</p>

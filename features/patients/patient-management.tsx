@@ -337,11 +337,11 @@ export function PatientManagement() {
         <Card className="overflow-hidden border-blue-100 bg-[linear-gradient(135deg,rgba(10,92,163,0.98),rgba(56,189,248,0.92))] text-white shadow-soft">
           <CardContent
             className={cn(
-              "grid gap-4 p-4 md:grid-cols-[minmax(0,1fr)_repeat(3,minmax(120px,0.34fr))] md:items-center",
+              "grid grid-cols-2 gap-3 p-4 md:grid-cols-[minmax(0,1fr)_repeat(3,minmax(120px,0.34fr))] md:items-center",
               frontDeskMode && "gap-3 p-3 md:grid-cols-[minmax(0,1fr)_repeat(3,minmax(110px,0.32fr))]"
             )}
           >
-            <div className="space-y-2">
+            <div className="col-span-2 space-y-2 md:col-span-1">
               <Badge className="w-fit border-white/20 bg-white/10 text-white">
                 Patient directory
               </Badge>

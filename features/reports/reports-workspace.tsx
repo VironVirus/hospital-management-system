@@ -728,7 +728,7 @@ export function ReportsWorkspace() {
                               {group.bundles.map((bundle) => (
                                 <div
                                   key={bundle.sampleKey}
-                                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white"
+                                  className="overflow-x-auto rounded-2xl border border-slate-200 bg-white"
                                 >
                                   <div className="flex flex-wrap items-center justify-between gap-2 bg-blue-50 px-4 py-3">
                                     <div>
@@ -744,7 +744,7 @@ export function ReportsWorkspace() {
                                       {bundle.rows.length === 1 ? "" : "s"}
                                     </Badge>
                                   </div>
-                                  <div className="grid grid-cols-[1.6fr_1fr_0.7fr_1.2fr_0.8fr] gap-3 border-t border-blue-100 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600">
+                                  <div className="grid min-w-[760px] grid-cols-[1.6fr_1fr_0.7fr_1.2fr_0.8fr] gap-3 border-t border-blue-100 bg-slate-50 px-4 py-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-600">
                                     <span>Test</span>
                                     <span>Result</span>
                                     <span>Unit</span>
@@ -754,7 +754,7 @@ export function ReportsWorkspace() {
                                   {bundle.rows.map((row, index) => (
                                     <div
                                       key={`${bundle.sampleKey}-${row.orderTestId}-${index}`}
-                                      className="grid grid-cols-[1.6fr_1fr_0.7fr_1.2fr_0.8fr] gap-3 border-t border-slate-100 px-4 py-4 text-sm text-slate-700"
+                                      className="grid min-w-[760px] grid-cols-[1.6fr_1fr_0.7fr_1.2fr_0.8fr] gap-3 border-t border-slate-100 px-4 py-4 text-sm text-slate-700"
                                     >
                                       <div>
                                         <p className="font-medium text-slate-950">

@@ -790,8 +790,8 @@ export function TestCatalogueAdmin() {
             ) : null}
 
             {!testsQuery.isLoading && !testsQuery.isError ? (
-              <div className="overflow-hidden rounded-xl border border-slate-200">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="min-w-[900px] divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50">
                     <tr className="text-left text-slate-500">
                       <th className="px-4 py-3 font-medium">Test ID</th>
