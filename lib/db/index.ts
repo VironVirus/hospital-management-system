@@ -9,11 +9,14 @@ declare global {
 }
 
 function databaseOptions() {
-  const host = process.env.DB_HOST;
-  const database = process.env.DB_NAME;
-  const user = process.env.DB_USER;
+  const configuredHost = process.env.DB_HOST;
+  const database = process.env.DB_NAME?.trim();
+  const user = process.env.DB_USER?.trim();
   const password = process.env.DB_PASSWORD;
-  if (!host || !database || !user) return null;
+  if (!configuredHost || !database || !user) return null;
+  const host = configuredHost.trim().toLowerCase() === "localhost"
+    ? "127.0.0.1"
+    : configuredHost.trim();
   return {
     host,
     database,
