@@ -567,7 +567,7 @@ export function OrdersManagement() {
       printHtmlDocument(buildInvoicePrintHtml(invoice));
       toast({
         title: "Bill sent to printer",
-        description: `${invoice.invoice_number} is ready for printing.`,
+
         variant: "success"
       });
     } catch (error) {
@@ -861,7 +861,7 @@ export function OrdersManagement() {
       <Card className="border-blue-100">
         <CardContent className="flex items-center gap-3 p-6 text-sm text-slate-600">
           <Loader2 className="h-4 w-4 animate-spin text-blue-700" />
-          Loading tests workspace...
+          Loading...
         </CardContent>
       </Card>
     );
@@ -875,9 +875,6 @@ export function OrdersManagement() {
             <ShieldAlert className="h-5 w-5" />
             Test access is restricted
           </CardTitle>
-          <CardDescription className="text-red-800">
-            Your current role does not include test entry or specimen tracking.
-          </CardDescription>
         </CardHeader>
       </Card>
     );
@@ -1014,7 +1011,7 @@ export function OrdersManagement() {
     setErrors((current) => ({ ...current, selected_test_ids: undefined }));
     toast({
       title: `${bundle.label} added`,
-      description: `${bundle.matchedTests.length} test${bundle.matchedTests.length > 1 ? "s" : ""} added to this request.`,
+
       variant: "success"
     });
   };
@@ -1042,7 +1039,7 @@ export function OrdersManagement() {
     setErrors((current) => ({ ...current, selected_test_ids: undefined }));
     toast({
       title: `${bundle.name} added`,
-      description: `${bundle.tests.length} saved test${bundle.tests.length > 1 ? "s" : ""} added.`,
+
       variant: "success"
     });
     void recordBundleUsage(bundle.id);
@@ -1122,7 +1119,7 @@ export function OrdersManagement() {
     }
   };
 
-  const handleDeleteBundle = async (bundleId: string, bundleNameValue: string) => {
+  const handleDeleteBundle = async (bundleId: string) => {
     setDeletingBundleId(bundleId);
 
     try {
@@ -1151,7 +1148,7 @@ export function OrdersManagement() {
       });
       toast({
         title: "Bundle removed",
-        description: `${bundleNameValue} was removed from this hospital.`,
+
         variant: "success"
       });
     } catch (error) {
@@ -1234,7 +1231,7 @@ export function OrdersManagement() {
         );
         toast({
           title: "Test order updated",
-          description: `${created.orderNumber} now includes ${created.samples.length} extra test(s).`,
+
           variant: "success"
         });
         setEditingOrderId(null);
@@ -1280,7 +1277,7 @@ export function OrdersManagement() {
       );
       toast({
         title: "Test request created",
-        description: `${created.orderNumber} has ${created.samples.length} sample label(s).`,
+
         variant: "success"
       });
       setFormState(initialOrderFormState);
@@ -1395,17 +1392,13 @@ export function OrdersManagement() {
           </CardHeader>
           <CardContent className="p-6">
             {!canCreateOrders ? (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
-                Your role can view tests, but only reception and admin users can create new
-                test requests.
-              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">View only</div>
             ) : (
               <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
                 <form className="space-y-5" onSubmit={handleSubmit}>
                 {editingOrder ? (
                   <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-                    You are editing order <strong>{editingOrder.order_number}</strong>. New
-                    tests added here will keep this same order/sample number.
+                    Editing <strong>{editingOrder.order_number}</strong>
                     <Button
                       type="button"
                       variant="ghost"
@@ -1550,9 +1543,6 @@ export function OrdersManagement() {
                           </option>
                         ))}
                       </select>
-                      <p className="text-xs text-slate-500">
-                        Choose routine, urgent, or stat before final submission.
-                      </p>
                     </div>
                   </div>
                 </div>
@@ -1645,7 +1635,7 @@ export function OrdersManagement() {
                               type="button"
                               className="rounded-full p-1 text-slate-400 hover:bg-white hover:text-red-600"
                               disabled={deletingBundleId === bundle.id}
-                              onClick={() => handleDeleteBundle(bundle.id, bundle.name)}
+                              onClick={() => handleDeleteBundle(bundle.id)}
                               aria-label={`Delete ${bundle.name}`}
                             >
                               {deletingBundleId === bundle.id ? (
@@ -1990,9 +1980,6 @@ export function OrdersManagement() {
                   <FlaskConical className="h-5 w-5 text-blue-700" />
                   Recent tests
                 </CardTitle>
-                <CardDescription>
-                  Last five requests for quick follow-up.
-                </CardDescription>
               </div>
               <Button
                 type="button"
@@ -2162,9 +2149,6 @@ export function OrdersManagement() {
               <div>
                 <p className="font-semibold text-slate-950">
                   Bill ready for {createdOrder.orderNumber}
-                </p>
-                <p className="text-sm text-slate-600">
-                  The invoice is linked to this test order and this section now becomes the next action point.
                 </p>
               </div>
               <Button asChild autoFocus>

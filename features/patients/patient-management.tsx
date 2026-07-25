@@ -29,7 +29,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle
 } from "@/components/ui/card";
@@ -217,7 +216,7 @@ export function PatientManagement() {
       <Card className="border-blue-100">
         <CardContent className="flex items-center gap-3 p-6 text-sm text-slate-600">
           <Loader2 className="h-4 w-4 animate-spin text-blue-700" />
-          Loading patient workspace...
+          Loading...
         </CardContent>
       </Card>
     );
@@ -231,9 +230,6 @@ export function PatientManagement() {
             <ShieldAlert className="h-5 w-5" />
             Patient access is restricted
           </CardTitle>
-          <CardDescription className="text-red-800">
-            Your current role does not include patient registration or history access.
-          </CardDescription>
         </CardHeader>
       </Card>
     );
@@ -311,7 +307,7 @@ export function PatientManagement() {
       setSubmitSuccess("Patient registered successfully.");
       toast({
         title: "Patient registered",
-        description: `${parsed.data.name.trim()} has been added to the hospital register.`,
+
         variant: "success"
       });
       startTransition(() => setPage(1));
@@ -378,11 +374,6 @@ export function PatientManagement() {
                   <FileSearch className="h-5 w-5 text-blue-700" />
                   Patient directory
                 </CardTitle>
-                {!frontDeskMode ? (
-                  <CardDescription>
-                    Search by patient name, phone number, or Hospital ID.
-                  </CardDescription>
-                ) : null}
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline">Hospital record</Badge>
@@ -611,9 +602,6 @@ export function PatientManagement() {
                   <UserPlus className="h-5 w-5 text-blue-700" />
                   Register patient
                 </CardTitle>
-                <CardDescription>
-                  Capture a new patient into the hospital register.
-                </CardDescription>
               </div>
               <Badge variant="outline">
                 {canRegisterPatients ? "Reception/Admin" : "View only"}
@@ -622,10 +610,7 @@ export function PatientManagement() {
           </CardHeader>
           <CardContent>
             {!canRegisterPatients ? (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
-                Your role can search and review patients, but registration is limited to
-                reception and admin users.
-              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">View only</div>
             ) : (
               <form className="space-y-4" onSubmit={handleSubmit}>
                 <div className="grid gap-4 md:grid-cols-2">

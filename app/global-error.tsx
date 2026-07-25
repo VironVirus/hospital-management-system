@@ -16,11 +16,9 @@ export default function GlobalError({
               <AlertTriangle className="h-5 w-5" />
               <h1 className="text-lg font-semibold">Application error</h1>
             </div>
-            <p className="mt-4 text-sm text-slate-300">
-              A critical rendering error occurred. Refresh the app and retry the action.
-            </p>
+            <p className="mt-4 text-sm text-slate-300">Please try again.</p>
             <pre className="mt-6 overflow-x-auto rounded-2xl bg-slate-950 p-4 text-xs text-slate-300">
-              {error.message || "Unexpected application error."}
+              {error.digest || "Error"}
             </pre>
           </div>
         </main>

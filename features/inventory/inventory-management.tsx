@@ -279,7 +279,7 @@ export function InventoryManagement() {
       <Card className="border-blue-100">
         <CardContent className="flex items-center gap-3 p-6 text-sm text-slate-600">
           <Loader2 className="h-4 w-4 animate-spin text-blue-700" />
-          Loading inventory workspace...
+          Loading...
         </CardContent>
       </Card>
     );
@@ -293,9 +293,6 @@ export function InventoryManagement() {
             <ShieldAlert className="h-5 w-5" />
             Inventory access is restricted
           </CardTitle>
-          <CardDescription className="text-red-800">
-            Your current role does not include stock monitoring or inventory management.
-          </CardDescription>
         </CardHeader>
       </Card>
     );
@@ -433,7 +430,7 @@ export function InventoryManagement() {
         setSubmitSuccess(`Updated ${updatePayload.name} successfully.`);
         toast({
           title: "Inventory item updated",
-          description: `${updatePayload.name} was updated successfully.`,
+
           variant: "success"
         });
       } else {
@@ -460,7 +457,7 @@ export function InventoryManagement() {
         setSubmitSuccess(`Added ${row.name} to inventory.`);
         toast({
           title: "Inventory item created",
-          description: `${row.name} has been added to inventory.`,
+
           variant: "success"
         });
       }
@@ -514,7 +511,7 @@ export function InventoryManagement() {
       setSubmitSuccess(`Deleted ${item.name} successfully.`);
       toast({
         title: "Inventory item deleted",
-        description: `${item.name} and its history were removed.`,
+
         variant: "success"
       });
       await Promise.all([
@@ -576,7 +573,7 @@ export function InventoryManagement() {
       setTransactionSuccess("Inventory movement recorded successfully.");
       toast({
         title: "Stock movement logged",
-        description: `${parsed.data.transaction_type.replaceAll("_", " ")} recorded for ${selectedItem.name}.`,
+
         variant: "success"
       });
       setTransactionFormState({
@@ -643,9 +640,6 @@ export function InventoryManagement() {
                 <CardTitle className="text-slate-950">
                   {editingItemId ? "Edit inventory item" : "Register inventory item"}
                 </CardTitle>
-                <CardDescription>
-                  Track reagents, consumables, and kits with lot, expiry, and reorder details.
-                </CardDescription>
               </div>
               {editingItemId ? (
                 <Button onClick={resetItemForm} type="button" variant="outline">
@@ -657,10 +651,7 @@ export function InventoryManagement() {
 
           <CardContent className="space-y-4">
             {!canManageInventory ? (
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
-                Your role can view stock levels and alerts, but only inventory managers can create
-                or update items.
-              </div>
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">View only</div>
             ) : null}
 
             {submitError ? (
@@ -864,14 +855,11 @@ export function InventoryManagement() {
               Notifications
             </Badge>
             <CardTitle className="text-slate-950">Low stock and expiry alerts</CardTitle>
-            <CardDescription>
-              Reorder signals and expiry notifications across the hospital store.
-            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {alertFeed.length === 0 ? (
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-800">
-                No inventory alerts right now. Stock levels and expiry dates look healthy.
+                No alerts.
               </div>
             ) : null}
 
@@ -916,9 +904,6 @@ export function InventoryManagement() {
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <CardTitle className="text-slate-950">Inventory catalogue</CardTitle>
-                <CardDescription>
-                  Search, review, edit, or archive stock items by alert status.
-                </CardDescription>
               </div>
               <div className="relative min-w-[240px]">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -1068,9 +1053,6 @@ export function InventoryManagement() {
           <Card className="border-slate-200">
             <CardHeader>
               <CardTitle className="text-slate-950">Selected item</CardTitle>
-              <CardDescription>
-                Stock profile, expiry watch, and recent movement history.
-              </CardDescription>
             </CardHeader>
 
             <CardContent className="space-y-4">
@@ -1190,9 +1172,6 @@ export function InventoryManagement() {
                   <Card className="border-slate-200">
                     <CardHeader>
                       <CardTitle className="text-base text-slate-950">Stock movement</CardTitle>
-                      <CardDescription>
-                        Record stock in, stock out, usage, or adjustment for this item.
-                      </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       {transactionError ? (
@@ -1230,14 +1209,6 @@ export function InventoryManagement() {
                               </option>
                             ))}
                           </select>
-                          <p className="text-xs text-slate-500">
-                            {
-                              inventoryTransactionOptions.find(
-                                (option) =>
-                                  option.value === transactionFormState.transaction_type
-                              )?.description
-                            }
-                          </p>
                         </div>
 
                         <div className="grid gap-4 md:grid-cols-3">
@@ -1345,9 +1316,6 @@ export function InventoryManagement() {
                   <Card className="border-slate-200">
                     <CardHeader>
                       <CardTitle className="text-base text-slate-950">Usage log</CardTitle>
-                      <CardDescription>
-                        Recent stock movements for this item, including usage and adjustments.
-                      </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-3">
                       {transactionsQuery.isLoading ? (
@@ -1360,7 +1328,7 @@ export function InventoryManagement() {
                       {!transactionsQuery.isLoading &&
                       (transactionsQuery.data ?? []).length === 0 ? (
                         <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
-                          No stock movements have been recorded for this item yet.
+                          No stock movements.
                         </div>
                       ) : null}
 
@@ -1414,7 +1382,7 @@ export function InventoryManagement() {
                 </>
               ) : (
                 <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-sm text-slate-600">
-                  Choose an inventory item to review stock profile, alerts, and usage logs.
+                  Select an item.
                 </div>
               )}
             </CardContent>

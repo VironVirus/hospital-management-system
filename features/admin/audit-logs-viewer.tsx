@@ -144,7 +144,7 @@ export function AuditLogsViewer() {
       <Card className="border-blue-100">
         <CardContent className="flex items-center gap-3 p-6 text-sm text-slate-600">
           <Loader2 className="h-4 w-4 animate-spin text-blue-700" />
-          Loading audit workspace...
+          Loading...
         </CardContent>
       </Card>
     );
@@ -156,11 +156,8 @@ export function AuditLogsViewer() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-red-900">
             <ShieldAlert className="h-5 w-5" />
-            Admin access required
+            Access unavailable
           </CardTitle>
-          <CardDescription className="text-red-800">
-            Only the hospital Admin can review the full system audit trail.
-          </CardDescription>
         </CardHeader>
       </Card>
     );
@@ -171,7 +168,7 @@ export function AuditLogsViewer() {
       <section className="grid gap-4 md:grid-cols-3">
         <Card className="border-blue-100">
           <CardHeader className="pb-2">
-            <CardDescription>Database logs</CardDescription>
+            <CardDescription>All events</CardDescription>
             <CardTitle className="text-3xl text-slate-950">{stats.total}</CardTitle>
           </CardHeader>
         </Card>
@@ -195,12 +192,8 @@ export function AuditLogsViewer() {
             <div>
               <CardTitle className="flex items-center gap-2">
                 <Activity className="h-5 w-5 text-blue-700" />
-                Full audit logs
+                Activity log
               </CardTitle>
-              <CardDescription>
-                Review changes across patient registration, orders, results, inventory, and
-                billing from the central audit trail.
-              </CardDescription>
             </div>
             <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_180px_160px] xl:min-w-[720px]">
               <div className="relative">
@@ -208,7 +201,7 @@ export function AuditLogsViewer() {
                 <Input
                   className="pl-9"
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search action, entity, actor ID, or payload"
+                  placeholder="Search activity"
                   value={search}
                 />
               </div>

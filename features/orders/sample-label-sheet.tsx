@@ -127,7 +127,7 @@ export function SampleLabelSheet({
             created_at: new Date().toISOString(),
             from_status: sample.sample_status,
             id: logId,
-            notes: "Printed from order workspace.",
+            notes: "St Gianna Specialist Hospital",
             order_test_id: sample.order_test_id,
             to_status: sample.sample_status
           } satisfies Tables<"sample_custody_logs">,

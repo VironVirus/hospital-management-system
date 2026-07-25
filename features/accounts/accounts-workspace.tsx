@@ -152,11 +152,9 @@ async function fetchAccountsData(facilityId: string): Promise<AccountsData> {
 }
 
 function SummaryTile({
-  description,
   title,
   value
 }: {
-  description: string;
   title: string;
   value: string;
 }) {
@@ -165,7 +163,6 @@ function SummaryTile({
       <CardHeader className="pb-3">
         <CardDescription>{title}</CardDescription>
         <CardTitle className="text-3xl text-slate-950">{value}</CardTitle>
-        <p className="text-sm text-slate-500">{description}</p>
       </CardHeader>
     </Card>
   );
@@ -405,7 +402,7 @@ export function AccountsWorkspace() {
       setExpenseSuccess(`${row.title} was added successfully.`);
       toast({
         title: "Expense recorded",
-        description: `${row.title} has been added to the accounts register.`,
+
         variant: "success"
       });
 
@@ -452,7 +449,7 @@ export function AccountsWorkspace() {
 
       toast({
         title: "Expense deleted",
-        description: `${expense.title} was removed from the accounts register.`,
+
         variant: "success"
       });
 
@@ -499,7 +496,7 @@ export function AccountsWorkspace() {
       <Card className="border-blue-100">
         <CardContent className="flex items-center gap-3 p-6 text-sm text-slate-600">
           <Loader2 className="h-4 w-4 animate-spin text-blue-700" />
-          Loading accounts workspace...
+          Loading...
         </CardContent>
       </Card>
     );
@@ -513,10 +510,6 @@ export function AccountsWorkspace() {
             <ShieldAlert className="h-5 w-5" />
             Accounts access is restricted
           </CardTitle>
-          <CardDescription className="text-red-800">
-            Only Admin and Accountant users can access income, expenditure,
-            and cashflow analysis.
-          </CardDescription>
         </CardHeader>
       </Card>
     );
@@ -578,7 +571,7 @@ export function AccountsWorkspace() {
         <Card className="border-blue-100">
           <CardContent className="flex items-center gap-3 p-6 text-sm text-slate-600">
             <Loader2 className="h-4 w-4 animate-spin text-blue-700" />
-            Loading invoices, payments, inventory costs, and expenses...
+            Loading...
           </CardContent>
         </Card>
       ) : null}
@@ -588,29 +581,25 @@ export function AccountsWorkspace() {
           <CardContent className="p-6 text-sm text-red-800">
             {accountsQuery.error instanceof Error
               ? accountsQuery.error.message
-              : "Unable to load the accounts workspace."}
+              : "Unable to load."}
           </CardContent>
         </Card>
       ) : null}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <SummaryTile
-          description="Invoices issued in the selected month."
           title="Total billed"
           value={formatCurrency(summary.billed)}
         />
         <SummaryTile
-          description="Payments received in the selected month."
           title="Cash received"
           value={formatCurrency(summary.collected)}
         />
         <SummaryTile
-          description="Manual expenses plus inventory costs for the selected month."
           title="Total cost"
           value={formatCurrency(summary.totalCost)}
         />
         <SummaryTile
-          description="Collected cash minus manual expenses and inventory purchases."
           title="Net cashflow"
           value={formatCurrency(summary.netCashflow)}
         />
@@ -618,22 +607,18 @@ export function AccountsWorkspace() {
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <SummaryTile
-          description="Open balance still sitting on unpaid or partial invoices."
           title="Outstanding"
           value={formatCurrency(summary.outstanding)}
         />
         <SummaryTile
-          description="Direct operating costs entered by the finance team."
           title="Manual expenses"
           value={formatCurrency(summary.manualExpenses)}
         />
         <SummaryTile
-          description="Cost of inventory stock-ins posted in the selected month."
           title="Inventory purchases"
           value={formatCurrency(summary.inventoryPurchaseCost)}
         />
         <SummaryTile
-          description="Cost of inventory usage and stock-outs in the selected month."
           title="Inventory usage"
           value={formatCurrency(summary.inventoryUsageCost)}
         />
@@ -648,9 +633,6 @@ export function AccountsWorkspace() {
                   <Wallet className="h-5 w-5 text-blue-700" />
                   Income by test
                 </CardTitle>
-                <CardDescription>
-                  See which billed tests brought in the most revenue this month.
-                </CardDescription>
               </div>
               <Badge variant="outline">{incomeByTest.length} billed test lines</Badge>
             </div>
@@ -658,7 +640,7 @@ export function AccountsWorkspace() {
           <CardContent className="space-y-4">
             {incomeByTest.length === 0 ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600">
-                No billed test income matched the selected month.
+                No income found.
               </div>
             ) : null}
 
@@ -692,14 +674,11 @@ export function AccountsWorkspace() {
               <ReceiptText className="h-5 w-5 text-blue-700" />
               Income by category
             </CardTitle>
-            <CardDescription>
-              Revenue grouped by the test categories stored in the catalogue.
-            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {incomeByCategory.length === 0 ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600">
-                No test category income matched the selected month.
+                No income found.
               </div>
             ) : null}
 
@@ -730,14 +709,11 @@ export function AccountsWorkspace() {
         <Card className="border-slate-200">
           <CardHeader>
             <CardTitle className="text-slate-950">Invoice income register</CardTitle>
-            <CardDescription>
-              Track what came in, who was billed, and which tests were on each invoice.
-            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {filteredInvoices.length === 0 ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600">
-                No invoices matched the selected month and search.
+                No invoices found.
               </div>
             ) : null}
 
@@ -778,9 +754,6 @@ export function AccountsWorkspace() {
         <Card className="border-slate-200">
           <CardHeader>
             <CardTitle className="text-slate-950">Post manual expenditure</CardTitle>
-            <CardDescription>
-              Add transport, maintenance, utility, salary support, and other non-stock costs.
-            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {expenseError ? (
@@ -901,14 +874,11 @@ export function AccountsWorkspace() {
         <Card className="border-slate-200">
           <CardHeader>
             <CardTitle className="text-slate-950">Expense register</CardTitle>
-            <CardDescription>
-              Manual costs recorded for the selected month.
-            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {filteredExpenses.length === 0 ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600">
-                No expenses matched the selected month and search.
+                No expenses found.
               </div>
             ) : null}
 
@@ -957,14 +927,11 @@ export function AccountsWorkspace() {
         <Card className="border-slate-200">
           <CardHeader>
             <CardTitle className="text-slate-950">Inventory-based monthly cost</CardTitle>
-            <CardDescription>
-              Purchase and usage cost posted through the inventory movement log.
-            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {inventoryCostRows.length === 0 ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600">
-                No inventory cost rows matched the selected month.
+                No inventory costs found.
               </div>
             ) : null}
 

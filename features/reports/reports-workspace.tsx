@@ -25,7 +25,6 @@ import {
   CardTitle
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
 import {
   buildPrintHtml,
   buildPatientReportBundles,
@@ -353,7 +352,7 @@ export function ReportsWorkspace() {
       <Card className="border-blue-100">
         <CardContent className="flex items-center gap-3 p-6 text-sm text-slate-600">
           <Loader2 className="h-4 w-4 animate-spin text-blue-700" />
-          Loading reports workspace...
+          Loading...
         </CardContent>
       </Card>
     );
@@ -377,10 +376,6 @@ export function ReportsWorkspace() {
             <ShieldAlert className="h-5 w-5" />
             Reporting access is restricted
           </CardTitle>
-          <CardDescription className="text-red-800">
-            Only Admin, Receptionist, and HOD of Lab / Chief Scientist
-            users can release patient reports.
-          </CardDescription>
         </CardHeader>
       </Card>
     );
@@ -499,9 +494,6 @@ export function ReportsWorkspace() {
               <Card className="border-slate-200">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base text-slate-950">Verified orders</CardTitle>
-                  <CardDescription>
-                    Choose one or more orders to preview, print, or download.
-                  </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {reportsQuery.isLoading ? (
@@ -521,7 +513,7 @@ export function ReportsWorkspace() {
 
                   {!reportsQuery.isLoading && filteredOrders.length === 0 ? (
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
-                      No verified reports matched the current filters.
+                      No reports found.
                     </div>
                   ) : null}
 
@@ -822,19 +814,13 @@ export function ReportsWorkspace() {
               ) : (
                 <Card className="border-slate-200">
                   <CardContent className="p-10 text-center text-sm text-slate-600">
-                    Choose a verified order to preview its professional report.
+                    Select a report.
                   </CardContent>
                 </Card>
               )}
             </div>
           </div>
 
-          <Separator />
-
-          <p className="text-xs text-slate-500">
-            Report release automatically writes to the audit trail and advances verified
-            samples to the reported state.
-          </p>
         </CardContent>
       </Card>
     </div>

@@ -282,7 +282,7 @@ export function BillingWorkspace() {
       setInvoiceSuccess("Invoice details updated successfully.");
       toast({
         title: "Invoice updated",
-        description: `${selectedInvoice.invoice_number} details were saved successfully.`,
+
         variant: "success"
       });
       await queryClient.invalidateQueries({ queryKey: ["billing-invoices"] });
@@ -324,7 +324,7 @@ export function BillingWorkspace() {
       setPaymentSuccess("Payment recorded successfully.");
       toast({
         title: "Payment recorded",
-        description: `${selectedInvoice.invoice_number} received ${formatCurrency(paymentForm.amount)}.`,
+
         variant: "success"
       });
       setPaymentForm({
@@ -374,7 +374,7 @@ export function BillingWorkspace() {
       });
       toast({
         title: "Receipt generated",
-        description: `${payment.receipt_number} was downloaded successfully.`,
+
         variant: "success"
       });
     } catch (error) {
@@ -396,7 +396,7 @@ export function BillingWorkspace() {
       <Card className="border-blue-100">
         <CardContent className="flex items-center gap-3 p-6 text-sm text-slate-600">
           <Loader2 className="h-4 w-4 animate-spin text-blue-700" />
-          Loading billing workspace...
+          Loading...
         </CardContent>
       </Card>
     );
@@ -410,10 +410,6 @@ export function BillingWorkspace() {
             <ShieldAlert className="h-5 w-5" />
             Billing access is restricted
           </CardTitle>
-          <CardDescription className="text-red-800">
-            Only Admin and Accountant users can access invoices, receipts,
-            and revenue operations.
-          </CardDescription>
         </CardHeader>
       </Card>
     );
@@ -468,13 +464,7 @@ export function BillingWorkspace() {
       <Card className="border-blue-100 shadow-soft">
         <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <CardTitle className="text-slate-950">Invoice and receipt workspace</CardTitle>
-            {!frontDeskMode ? (
-              <CardDescription>
-                Automatic invoices are linked to test requests and priced from the current
-                test catalogue.
-              </CardDescription>
-            ) : null}
+            <CardTitle className="text-slate-950">Invoices and receipts</CardTitle>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative min-w-[240px]">
@@ -529,7 +519,6 @@ export function BillingWorkspace() {
             <Card className="border-slate-200">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base text-slate-950">Invoices</CardTitle>
-                <CardDescription>Filter by payment status and inspect each order invoice.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-3">
                 {invoicesQuery.isLoading ? (
@@ -705,9 +694,6 @@ export function BillingWorkspace() {
                   <Card className="border-slate-200">
                     <CardHeader>
                       <CardTitle className="text-base text-slate-950">Invoice settings</CardTitle>
-                      <CardDescription>
-                        Add notes or due dates without breaking automatic totals.
-                      </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       {invoiceError ? (
@@ -755,9 +741,6 @@ export function BillingWorkspace() {
                   <Card className="border-slate-200">
                     <CardHeader>
                       <CardTitle className="text-base text-slate-950">Register payment</CardTitle>
-                      <CardDescription>
-                        Record settlement and generate a downloadable receipt immediately.
-                      </CardDescription>
                     </CardHeader>
                     <CardContent className="space-y-4">
                       {paymentError ? (
@@ -852,14 +835,11 @@ export function BillingWorkspace() {
                 <Card className="border-slate-200">
                   <CardHeader>
                     <CardTitle className="text-base text-slate-950">Receipts and payment history</CardTitle>
-                    <CardDescription>
-                      Download receipts for each posted payment and review collection history.
-                    </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
                     {(selectedInvoice.invoice_payments ?? []).length === 0 ? (
                       <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
-                        No payments have been posted against this invoice yet.
+                        No payments.
                       </div>
                     ) : null}
 
@@ -902,8 +882,7 @@ export function BillingWorkspace() {
             ) : (
                 <Card className="border-slate-200">
                   <CardContent className="p-10 text-center text-sm text-slate-600">
-                    Choose an invoice to review charges, print the bill, register payments,
-                    and generate receipts.
+                    Select an invoice.
                   </CardContent>
                 </Card>
             )}

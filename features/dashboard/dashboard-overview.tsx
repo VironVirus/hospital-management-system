@@ -214,7 +214,6 @@ function SummaryCard({ hint, icon: Icon, label, tone = "blue", value }: SummaryC
 function ChartShell({
   actions,
   children,
-  description,
   title
 }: {
   actions?: ReactNode;
@@ -228,7 +227,6 @@ function ChartShell({
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <CardTitle>{title}</CardTitle>
-            <CardDescription>{description}</CardDescription>
           </div>
           {actions}
         </div>
@@ -341,9 +339,6 @@ function ActivityNotificationsPanel({
           <BellRing className="h-5 w-5 text-blue-700" />
           Activity notifications
         </CardTitle>
-        <CardDescription>
-          Live action items for verification, stock pressure, expiry risk, and receivables.
-        </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3 lg:grid-cols-3">
         {notifications.map((notification) => {
@@ -368,7 +363,6 @@ function ActivityNotificationsPanel({
                 </div>
                 <Icon className="h-5 w-5" />
               </div>
-              <p className="mt-3 text-xs leading-5 opacity-90">{notification.description}</p>
             </Link>
           );
         })}
@@ -554,11 +548,7 @@ export function DashboardOverview() {
       <Card className="border-red-200 bg-red-50/80">
         <CardHeader>
           <CardTitle className="text-red-950">Dashboard data could not load</CardTitle>
-          <CardDescription className="text-red-900">
-            {dashboardQuery.error instanceof Error
-              ? dashboardQuery.error.message
-              : "Unable to load dashboard analytics."}
-          </CardDescription>
+          <CardDescription className="text-red-900">Please try again.</CardDescription>
         </CardHeader>
       </Card>
     );

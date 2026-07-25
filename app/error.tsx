@@ -19,16 +19,9 @@ export default function Error({
             <AlertTriangle className="h-5 w-5" />
             Something went wrong
           </CardTitle>
-          <CardDescription className="text-red-800">
-            The page hit an unexpected error. You can retry safely without losing your local
-            queue.
-          </CardDescription>
+          <CardDescription className="text-red-800">Please try again.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-800">
-            The app could not complete this request. Please retry. If it continues, share
-            this reference with support.
-          </p>
           {error.digest ? (
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
               Reference: {error.digest}

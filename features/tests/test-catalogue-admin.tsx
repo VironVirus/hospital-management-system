@@ -347,11 +347,6 @@ export function TestCatalogueAdmin() {
     [facilitiesQuery.data]
   );
 
-  const currentFacility = useMemo(
-    () => visibleFacilities.find((facility) => facility.id === facilityId) ?? null,
-    [facilityId, visibleFacilities]
-  );
-
   useEffect(() => {
     if (!submitSuccess) {
       return;
@@ -375,7 +370,7 @@ export function TestCatalogueAdmin() {
       <Card className="border-blue-100">
         <CardContent className="flex items-center gap-3 p-6 text-sm text-slate-600">
           <Loader2 className="h-4 w-4 animate-spin text-blue-700" />
-          Loading access and role information...
+          Loading...
         </CardContent>
       </Card>
     );
@@ -387,11 +382,8 @@ export function TestCatalogueAdmin() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-red-900">
             <ShieldAlert className="h-5 w-5" />
-            Admin access required
+            Access unavailable
           </CardTitle>
-          <CardDescription className="text-red-800">
-            Only the hospital Admin can manage the test catalogue.
-          </CardDescription>
         </CardHeader>
       </Card>
     );
@@ -594,7 +586,7 @@ export function TestCatalogueAdmin() {
       setSubmitSuccess(editingId ? "Test updated successfully." : "Test added successfully.");
       toast({
         title: editingId ? "Test updated" : "Test created",
-        description: `${insertPayload.name} was saved successfully.`,
+
         variant: "success"
       });
       resetForm();
@@ -651,7 +643,7 @@ export function TestCatalogueAdmin() {
       await testsQuery.refetch();
       toast({
         title: "Test removed",
-        description: "The catalogue entry was deleted successfully.",
+
         variant: "success"
       });
     } catch (error) {
@@ -722,10 +714,6 @@ export function TestCatalogueAdmin() {
                   <TestTube2 className="h-5 w-5 text-blue-700" />
                   Test catalogue
                 </CardTitle>
-                <CardDescription>
-                  Search, filter, and maintain active laboratory tests without cluttering
-                  the screen.
-                </CardDescription>
               </div>
               <Badge variant="outline">Hospital Admin</Badge>
             </div>
@@ -908,23 +896,9 @@ export function TestCatalogueAdmin() {
               <Plus className="h-5 w-5 text-blue-700" />
               {editingId ? "Edit test" : "Add test"}
             </CardTitle>
-            <CardDescription>
-              Define pricing, result type, unit, and reference range rules.
-            </CardDescription>
           </CardHeader>
           <CardContent>
             <form className="space-y-4" onSubmit={handleSubmit}>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                <p className="text-sm font-semibold text-slate-950">Hospital catalogue</p>
-                <p className="mt-1 text-xs leading-5 text-slate-600">
-                  Every test belongs automatically to this hospital.
-                </p>
-
-                <div className="mt-3 rounded-xl border border-blue-100 bg-white px-3 py-3 text-sm text-slate-700">
-                  New catalogue items belong to <strong>{currentFacility?.name || "this hospital"}</strong>.
-                </div>
-              </div>
-
               <div className="space-y-2">
                 <Label htmlFor="test-code">Test ID</Label>
                 <Input
@@ -933,9 +907,7 @@ export function TestCatalogueAdmin() {
                   onChange={(event) => setField("test_code", event.target.value.toUpperCase())}
                   placeholder={`${getTestCodePrefix(formState.category)}00001`}
                 />
-                <p className="text-xs text-slate-500">
-                  Leave blank to auto-generate from the category prefix.
-                </p>
+                <p className="text-xs text-slate-500">Optional</p>
                 {errors.test_code ? (
                   <p className="text-sm text-red-700">{errors.test_code}</p>
                 ) : null}
@@ -1164,9 +1136,7 @@ export function TestCatalogueAdmin() {
                       }
                       placeholder={"Positive\nNegative"}
                     />
-                    <p className="text-xs text-slate-500">
-                      Enter one option per line for dropdown-style result entry.
-                    </p>
+                    <p className="text-xs text-slate-500">One option per line</p>
                   </div>
                 ) : formState.reference_range.mode === "panel" ? (
                   <div className="space-y-4">
@@ -1174,9 +1144,6 @@ export function TestCatalogueAdmin() {
                       <div>
                         <p className="text-sm font-medium text-slate-900">
                           Parameters in this test
-                        </p>
-                        <p className="text-xs text-slate-600">
-                          Add each result line that should appear under this test.
                         </p>
                       </div>
                       <div className="flex flex-wrap items-end gap-2">
@@ -1462,9 +1429,6 @@ export function TestCatalogueAdmin() {
               <div className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3">
                 <div>
                   <p className="text-sm font-medium text-slate-900">Availability</p>
-                  <p className="text-xs text-slate-500">
-                    Only active tests should appear in daily operations.
-                  </p>
                 </div>
                 <button
                   type="button"

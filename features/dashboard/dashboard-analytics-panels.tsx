@@ -22,7 +22,6 @@ import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle
 } from "@/components/ui/card";
@@ -63,7 +62,6 @@ function getNumericValue(
 function ChartShell({
   actions,
   children,
-  description,
   title
 }: {
   actions?: ReactNode;
@@ -77,7 +75,6 @@ function ChartShell({
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <CardTitle>{title}</CardTitle>
-            <CardDescription>{description}</CardDescription>
           </div>
           {actions}
         </div>

@@ -40,7 +40,7 @@ export default function AccountPage() {
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><KeyRound className="h-5 w-5 text-blue-700" />Account security</CardTitle>
-        <CardDescription>Use a unique password of at least 12 characters. Changing it signs this account out on other devices.</CardDescription>
+        <CardDescription>Minimum 12 characters</CardDescription>
       </CardHeader>
       <CardContent>
         <form className="space-y-4" onSubmit={submit}>

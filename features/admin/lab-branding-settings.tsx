@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle
 } from "@/components/ui/card";
@@ -33,7 +32,6 @@ export type LabBrandingSettings = {
 type BrandingFormState = Omit<LabBrandingSettings, "facility_id">;
 
 type LabBrandingSettingsPanelProps = {
-  description?: string;
   facilityIdOverride?: string | null;
   facilityName?: string | null;
   title?: string;
@@ -106,7 +104,6 @@ function normalizeFormValue(value: string) {
 }
 
 export function LabBrandingSettingsPanel({
-  description = "Control the identity shown on PDFs, printed reports, and patient-facing documents.",
   facilityIdOverride,
   facilityName,
   title = "Lab branding and reports"
@@ -170,9 +167,6 @@ export function LabBrandingSettingsPanel({
       <Card className="border-amber-200 bg-amber-50 shadow-sm">
         <CardHeader>
           <CardTitle>{title}</CardTitle>
-          <CardDescription>
-            Branding can only be edited for this hospital.
-          </CardDescription>
         </CardHeader>
       </Card>
     );
@@ -186,7 +180,7 @@ export function LabBrandingSettingsPanel({
     if (!targetFacilityId) {
       toast({
         title: "Access unavailable",
-        description: "Unable to save.",
+
         variant: "error"
       });
       return;
@@ -256,7 +250,6 @@ export function LabBrandingSettingsPanel({
           <FileText className="h-5 w-5 text-blue-700" />
           {title}
         </CardTitle>
-        <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
         {brandingQuery.isLoading ? (

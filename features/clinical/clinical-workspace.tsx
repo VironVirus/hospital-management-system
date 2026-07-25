@@ -195,7 +195,7 @@ export function ClinicalWorkspace() {
       setPatientId("");
       setSelectedEncounterId(id);
       await refreshChart();
-      toast({ title: "Encounter opened", description: "The patient is ready for clinical documentation.", variant: "success" });
+      toast({ title: "Encounter opened", variant: "success" });
     } catch (error) {
       toast({ title: "Could not open encounter", description: error instanceof Error ? error.message : "Please try again.", variant: "error" });
     } finally {
@@ -220,7 +220,7 @@ export function ClinicalWorkspace() {
       throwIfHospitalError(error);
       setVitals(initialVitals);
       await refreshChart();
-      toast({ title: "Vitals recorded", description: "The observation is now in the patient timeline.", variant: "success" });
+      toast({ title: "Vitals recorded", variant: "success" });
     } catch (error) {
       toast({ title: "Vitals not saved", description: error instanceof Error ? error.message : "Please try again.", variant: "error" });
     } finally { setSaving(false); }
@@ -241,7 +241,7 @@ export function ClinicalWorkspace() {
       throwIfHospitalError(error);
       setNote(initialNote);
       await refreshChart();
-      toast({ title: noteType === "Clinical Report" ? "Report saved" : "Clinical presentation saved", description: "The document was added to the longitudinal record.", variant: "success" });
+      toast({ title: noteType === "Clinical Report" ? "Report saved" : "Clinical presentation saved", variant: "success" });
     } catch (error) {
       toast({ title: "Clinical note not saved", description: error instanceof Error ? error.message : "Please try again.", variant: "error" });
     } finally { setSaving(false); }
@@ -261,14 +261,14 @@ export function ClinicalWorkspace() {
       throwIfHospitalError(error);
       setDiagnosis({ diagnosis_name: "", icd10_code: "", diagnosis_type: "Working", notes: "" });
       await refreshChart();
-      toast({ title: "Diagnosis recorded", description: "The diagnosis is now linked to this encounter.", variant: "success" });
+      toast({ title: "Diagnosis recorded", variant: "success" });
     } catch (error) {
       toast({ title: "Diagnosis not saved", description: error instanceof Error ? error.message : "Please try again.", variant: "error" });
     } finally { setSaving(false); }
   };
 
   if (loading || workspaceQuery.isLoading) {
-    return <Card><CardContent className="flex items-center gap-3 p-8 text-sm text-slate-600"><Loader2 className="h-4 w-4 animate-spin" />Loading clinical workspace...</CardContent></Card>;
+    return <Card><CardContent className="flex items-center gap-3 p-8 text-sm text-slate-600"><Loader2 className="h-4 w-4 animate-spin" />Loading...</CardContent></Card>;
   }
 
   if (!canAccess || !facilityId) {
@@ -290,7 +290,7 @@ export function ClinicalWorkspace() {
 
       {canOpenEncounter ? (
         <Card>
-          <CardHeader><CardTitle className="flex items-center gap-2"><Plus className="h-5 w-5 text-teal-700" />Open an encounter</CardTitle><CardDescription>Start an outpatient, emergency, inpatient, or telemedicine visit.</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="flex items-center gap-2"><Plus className="h-5 w-5 text-teal-700" />Open an encounter</CardTitle></CardHeader>
           <CardContent>
             <form className="grid gap-3 lg:grid-cols-[1fr_180px_1.4fr_auto]" onSubmit={createEncounter}>
               <select className="h-10 rounded-lg border bg-background px-3 text-sm" value={patientId} onChange={(event) => setPatientId(event.target.value)} required>
@@ -307,7 +307,7 @@ export function ClinicalWorkspace() {
 
       <div className="grid gap-6 xl:grid-cols-[0.72fr_1.28fr]">
         <Card>
-          <CardHeader><CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5 text-teal-700" />Encounter register</CardTitle><CardDescription>Search by patient, Hospital ID, or encounter number.</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5 text-teal-700" />Encounter register</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             <div className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search encounters" /></div>
             <div className="max-h-[680px] space-y-2 overflow-y-auto pr-1">
@@ -341,7 +341,7 @@ export function ClinicalWorkspace() {
                 {panel === "diagnosis" ? <div className="space-y-5">{canManage ? <form className="grid gap-3 rounded-2xl border bg-slate-50 p-4 sm:grid-cols-2" onSubmit={saveDiagnosis}><Input value={diagnosis.diagnosis_name} onChange={(event) => setDiagnosis((current) => ({ ...current, diagnosis_name: event.target.value }))} placeholder="Diagnosis" required /><Input value={diagnosis.icd10_code} onChange={(event) => setDiagnosis((current) => ({ ...current, icd10_code: event.target.value }))} placeholder="ICD-10 code (optional)" /><select className="h-10 rounded-lg border bg-background px-3 text-sm" value={diagnosis.diagnosis_type} onChange={(event) => setDiagnosis((current) => ({ ...current, diagnosis_type: event.target.value }))}>{["Working", "Differential", "Confirmed", "Final"].map((item) => <option key={item}>{item}</option>)}</select><Input value={diagnosis.notes} onChange={(event) => setDiagnosis((current) => ({ ...current, notes: event.target.value }))} placeholder="Clinical notes" /><Button className="sm:col-span-2" disabled={saving}>Add diagnosis</Button></form> : null}<div className="space-y-2">{(chart?.diagnoses ?? []).map((item) => <div key={item.id} className="flex items-start justify-between gap-4 rounded-xl border p-4"><div><p className="font-semibold">{item.diagnosis_name}</p><p className="mt-1 text-sm text-slate-600">{item.icd10_code || "No ICD-10 code"} · {item.diagnosis_type}</p></div><Badge variant={item.status === "Active" ? "default" : "secondary"}>{item.status}</Badge></div>)}</div></div> : null}
               </CardContent>
             </>
-          ) : <CardContent className="flex min-h-[420px] items-center justify-center text-sm text-slate-500">Open a patient encounter to begin clinical documentation.</CardContent>}
+          ) : <CardContent className="flex min-h-[420px] items-center justify-center text-sm text-slate-500">Select an encounter.</CardContent>}
         </Card>
       </div>
     </div>

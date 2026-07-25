@@ -266,7 +266,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
 
       toast({
         title: "Patient updated",
-        description: `${parsed.data.name.trim()} was saved successfully.`,
+
         variant: "success"
       });
 
@@ -317,7 +317,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
 
       toast({
         title: "Patient deleted",
-        description: `${patient.name} was removed from the directory.`,
+
         variant: "success"
       });
 
@@ -374,9 +374,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
       <Card className="border-red-100 bg-red-50/70">
         <CardHeader>
           <CardTitle className="text-red-900">Unable to load patient</CardTitle>
-          <CardDescription className="text-red-800">
-            {(patientQuery.error as Error).message}
-          </CardDescription>
+          <CardDescription className="text-red-800">Please try again.</CardDescription>
         </CardHeader>
       </Card>
     );
@@ -387,9 +385,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
       <Card className="border-red-100 bg-red-50/70">
         <CardHeader>
           <CardTitle className="text-red-900">Unable to load test history</CardTitle>
-          <CardDescription className="text-red-800">
-            {(ordersQuery.error as Error).message}
-          </CardDescription>
+          <CardDescription className="text-red-800">Please try again.</CardDescription>
         </CardHeader>
       </Card>
     );
@@ -400,9 +396,6 @@ export function PatientHistory({ patientId }: { patientId: string }) {
       <Card className="border-amber-200 bg-amber-50/80">
         <CardHeader>
           <CardTitle className="text-amber-950">Patient not found</CardTitle>
-          <CardDescription className="text-amber-900">
-            This patient record is unavailable.
-          </CardDescription>
         </CardHeader>
       </Card>
     );
@@ -464,11 +457,6 @@ export function PatientHistory({ patientId }: { patientId: string }) {
               </Badge>
               <div>
                 <p className="text-2xl font-semibold">{patient.name}</p>
-                <p className="mt-2 max-w-2xl text-sm text-blue-50">
-                  Open the full record to review contact details, clinical signs, test
-                  history, and billing actions without exposing private data in the main
-                  directory.
-                </p>
               </div>
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
@@ -521,9 +509,6 @@ export function PatientHistory({ patientId }: { patientId: string }) {
                 <CalendarRange className="h-5 w-5 text-blue-700" />
                 Patient details
               </CardTitle>
-              <CardDescription>
-                Full patient information is visible here after profile access is opened.
-              </CardDescription>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-2">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -591,9 +576,6 @@ export function PatientHistory({ patientId }: { patientId: string }) {
                 <TestTube2 className="h-5 w-5 text-blue-700" />
                 Clinical signs
               </CardTitle>
-              <CardDescription>
-                Initial symptoms or context recorded during registration.
-              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
@@ -608,9 +590,6 @@ export function PatientHistory({ patientId }: { patientId: string }) {
                 <FileText className="h-5 w-5 text-blue-700" />
                 Previous tests
               </CardTitle>
-              <CardDescription>
-                Historical test requests and specimen progress for this patient.
-              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {orders.length === 0 ? (
@@ -713,7 +692,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
                       ))
                     ) : (
                       <p className="text-sm text-slate-600">
-                        No specimen entries have been recorded for this request yet.
+                        No samples found.
                       </p>
                     )}
                   </div>
@@ -727,9 +706,6 @@ export function PatientHistory({ patientId }: { patientId: string }) {
           <Card className="border-blue-100">
             <CardHeader>
               <CardTitle>Quick actions</CardTitle>
-              <CardDescription>
-                Move from the patient profile straight into testing or billing.
-              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               <Button asChild className="w-full justify-between">
@@ -749,10 +725,6 @@ export function PatientHistory({ patientId }: { patientId: string }) {
                   <FileText className="h-4 w-4" />
                 </Link>
               </Button>
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600">
-                Use the tests shortcut to preselect this patient on the Tests page. Use the
-                billing shortcut to jump straight to this patient&apos;s invoice list.
-              </div>
             </CardContent>
           </Card>
 
@@ -763,9 +735,6 @@ export function PatientHistory({ patientId }: { patientId: string }) {
                   <PencilLine className="h-5 w-5 text-blue-700" />
                   Admin patient controls
                 </CardTitle>
-                <CardDescription>
-                  Edit this patient record or remove it if no tests are linked yet.
-                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {!isEditing ? (

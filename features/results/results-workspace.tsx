@@ -297,7 +297,7 @@ export function ResultsWorkspace() {
       <Card className="border-blue-100">
         <CardContent className="flex items-center gap-3 p-6 text-sm text-slate-600">
           <Loader2 className="h-4 w-4 animate-spin text-blue-700" />
-          Loading results workspace...
+          Loading...
         </CardContent>
       </Card>
     );
@@ -321,9 +321,6 @@ export function ResultsWorkspace() {
             <ShieldAlert className="h-5 w-5" />
             Results access is restricted
           </CardTitle>
-          <CardDescription className="text-red-800">
-            Your role does not include result entry or verification.
-          </CardDescription>
         </CardHeader>
       </Card>
     );
@@ -385,7 +382,7 @@ export function ResultsWorkspace() {
       setActionSuccess("Sample moved to In Progress.");
       toast({
         title: "Sample updated",
-        description: `${selectedSample.sample_code} moved to In Progress.`,
+
         variant: "success"
       });
       await refreshAfterChange();
@@ -474,7 +471,7 @@ export function ResultsWorkspace() {
       setActionSuccess("Result verified successfully.");
       toast({
         title: "Result verified",
-        description: `${selectedSample.sample_code} has been approved for reporting.`,
+
         variant: "success"
       });
       await refreshAfterChange();
@@ -523,9 +520,6 @@ export function ResultsWorkspace() {
               <FlaskConical className="h-5 w-5 text-blue-700" />
               Results queue
             </CardTitle>
-            <CardDescription>
-              Search active samples for technician entry and HOD/chief scientist approval.
-            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
@@ -607,14 +601,11 @@ export function ResultsWorkspace() {
         <Card className="border-blue-100">
           <CardHeader>
             <CardTitle>Result entry and verification</CardTitle>
-            <CardDescription>
-              Technician entry, abnormal flagging, and HOD/chief scientist approval for the selected sample.
-            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             {!selectedSample || !selectedTest ? (
               <div className="rounded-2xl border border-dashed border-blue-200 bg-blue-50/60 px-5 py-8 text-center text-sm text-slate-600">
-                Select a sample from the queue to enter or verify results.
+                Select a sample.
               </div>
             ) : (
               <>
@@ -688,8 +679,7 @@ export function ResultsWorkspace() {
                 <div className="space-y-4 rounded-2xl border border-slate-200 p-4">
                   {["Verified", "Reported"].includes(selectedSample.status) ? (
                     <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-                      Updating this result will reopen it for verification before it can be
-                      reported again.
+                      Saving requires verification again.
                     </div>
                   ) : null}
 

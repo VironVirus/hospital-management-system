@@ -544,10 +544,7 @@ export function QcWorkspace() {
     return (
       <Card className="border-amber-200 bg-amber-50">
         <CardHeader>
-          <CardTitle className="text-amber-950">Quality control access required</CardTitle>
-          <CardDescription className="text-amber-900">
-            QC is available to Admin, Lab Scientist, and HOD of Lab / Chief Scientist roles.
-          </CardDescription>
+          <CardTitle className="text-amber-950">Access unavailable</CardTitle>
         </CardHeader>
       </Card>
     );
@@ -570,10 +567,6 @@ export function QcWorkspace() {
         <h1 className="mt-4 text-3xl font-semibold tracking-tight">
           Controls, calibration, and analyzer maintenance
         </h1>
-        <p className="mt-3 max-w-3xl text-sm leading-6 text-blue-100">
-          Keep a traceable QC record for reagent controls, analyzer checks, calibration due dates,
-          and maintenance events before patient results are released.
-        </p>
       </section>
 
       <section className="grid gap-4 md:grid-cols-4">
@@ -587,9 +580,7 @@ export function QcWorkspace() {
         <Card className="border-red-200 bg-red-50">
           <CardHeader>
             <CardTitle className="text-red-950">QC data could not load</CardTitle>
-            <CardDescription className="text-red-900">
-              {qcQuery.error instanceof Error ? qcQuery.error.message : "Please try again."}
-            </CardDescription>
+            <CardDescription className="text-red-900">Please try again.</CardDescription>
           </CardHeader>
         </Card>
       ) : null}
@@ -598,7 +589,6 @@ export function QcWorkspace() {
         <Card className="border-blue-100 shadow-sm">
           <CardHeader>
             <CardTitle>QC controls</CardTitle>
-            <CardDescription>Register control lots and expected ranges.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             {canManage ? (
@@ -735,7 +725,6 @@ export function QcWorkspace() {
         <Card className="border-blue-100 shadow-sm">
           <CardHeader>
             <CardTitle>QC runs</CardTitle>
-            <CardDescription>Record daily or batch control results before patient work.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             {canManage ? (
@@ -841,7 +830,6 @@ export function QcWorkspace() {
         <Card className="border-blue-100 shadow-sm">
           <CardHeader>
             <CardTitle>Analyzers</CardTitle>
-            <CardDescription>Register instruments and their location.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             {canManage ? (
@@ -926,7 +914,6 @@ export function QcWorkspace() {
         <Card className="border-blue-100 shadow-sm">
           <CardHeader>
             <CardTitle>Calibration and maintenance</CardTitle>
-            <CardDescription>Track analyzer readiness, due dates, and interventions.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             {canManage ? (

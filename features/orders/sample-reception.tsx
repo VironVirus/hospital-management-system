@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle
 } from "@/components/ui/card";
@@ -231,9 +230,6 @@ export function SampleReception() {
             <ShieldAlert className="h-5 w-5" />
             Sample reception is restricted
           </CardTitle>
-          <CardDescription className="text-red-800">
-            Your current role does not include sample scanning or receipt updates.
-          </CardDescription>
         </CardHeader>
       </Card>
     );
@@ -285,7 +281,7 @@ export function SampleReception() {
       setStatusSuccess(`Sample moved to ${formatSampleStatus(nextStatus)}.`);
       toast({
         title: "Sample updated",
-        description: `${sampleQuery.data.sample_code} moved to ${formatSampleStatus(nextStatus)}.`,
+
         variant: "success"
       });
       await Promise.all([
@@ -323,12 +319,6 @@ export function SampleReception() {
                   <ScanLine className="h-5 w-5 text-blue-700" />
                   Sample reception
                 </CardTitle>
-                {!frontDeskMode ? (
-                  <CardDescription>
-                    Scan or enter a barcode to retrieve a sample and update its workflow
-                    status.
-                  </CardDescription>
-                ) : null}
               </div>
               <Button
                 type="button"
@@ -496,11 +486,6 @@ export function SampleReception() {
               <Waypoints className="h-5 w-5 text-blue-700" />
               Chain of custody
             </CardTitle>
-            {!frontDeskMode ? (
-              <CardDescription>
-                Automatic status log for the selected sample, plus the current open queue.
-              </CardDescription>
-            ) : null}
           </CardHeader>
           <CardContent className="space-y-4">
             {foundSample ? (

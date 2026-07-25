@@ -7,6 +7,7 @@ coverage/
 dist/
 
 # Environment
+env
 .env
 .env.local
 .env.development

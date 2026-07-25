@@ -276,10 +276,7 @@ export function ReceiptDocument({
           </View>
         </View>
 
-        <Text style={styles.footer}>
-          This thermal receipt confirms payment collection for the billed laboratory
-          services. Keep it for reconciliation and patient support.
-        </Text>
+        <Text style={styles.footer}>Payment receipt</Text>
       </Page>
     </Document>
   );
