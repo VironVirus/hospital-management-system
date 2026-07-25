@@ -23,11 +23,45 @@ export type AccountInvoiceRow = Tables<"invoices"> & {
     ordered_at: string;
     patients: {
       id: string;
+      hospital_id?: string | null;
       lab_id: string;
       name: string;
       phone: string | null;
     } | null;
   } | null;
+};
+
+export type AccountHospitalCharge = {
+  id: string;
+  patient_id: string;
+  encounter_id: string | null;
+  description: string;
+  category: string;
+  quantity: number;
+  unit_price: number;
+  total_amount: number;
+  amount_paid: number;
+  payment_status: "Unpaid" | "Partial" | "Paid" | "Waived";
+  charged_at: string;
+  patients: {
+    id: string;
+    name: string;
+    hospital_id: string | null;
+    lab_id: string;
+    phone: string | null;
+  } | null;
+  clinical_encounters: { id: string; encounter_number: string } | null;
+};
+
+export type AccountHospitalPayment = {
+  id: string;
+  charge_id: string;
+  patient_id: string;
+  amount: number;
+  payment_method: string;
+  reference_number: string | null;
+  notes: string | null;
+  received_at: string;
 };
 
 export type AccountExpenseRow = Tables<"expenses"> & {
@@ -144,6 +178,8 @@ export function buildIncomeByCategory(rows: IncomeByTestRow[]) {
 
 export function buildAccountsSummary(args: {
   expenses: AccountExpenseRow[];
+  hospitalCharges: AccountHospitalCharge[];
+  hospitalPayments: AccountHospitalPayment[];
   invoices: AccountInvoiceRow[];
   monthKey: string;
   payments: Tables<"invoice_payments">[];
@@ -151,14 +187,23 @@ export function buildAccountsSummary(args: {
 }) {
   const billed = args.invoices
     .filter((invoice) => isWithinMonth(invoice.issued_at, args.monthKey))
-    .reduce((sum, invoice) => sum + Number(invoice.total_amount), 0);
+    .reduce((sum, invoice) => sum + Number(invoice.total_amount), 0) +
+    args.hospitalCharges
+      .filter((charge) => isWithinMonth(charge.charged_at, args.monthKey))
+      .reduce((sum, charge) => sum + Number(charge.total_amount), 0);
 
   const collected = args.payments
     .filter((payment) => isWithinMonth(payment.received_at, args.monthKey))
-    .reduce((sum, payment) => sum + Number(payment.amount), 0);
+    .reduce((sum, payment) => sum + Number(payment.amount), 0) +
+    args.hospitalPayments
+      .filter((payment) => isWithinMonth(payment.received_at, args.monthKey))
+      .reduce((sum, payment) => sum + Number(payment.amount), 0);
 
   const outstanding = args.invoices.reduce(
     (sum, invoice) => sum + Math.max(Number(invoice.total_amount) - Number(invoice.amount_paid), 0),
+    0
+  ) + args.hospitalCharges.reduce(
+    (sum, charge) => sum + Math.max(Number(charge.total_amount) - Number(charge.amount_paid), 0),
     0
   );
 
@@ -266,6 +311,7 @@ export function exportAccountsWorkbook(args: {
   incomeByTest: IncomeByTestRow[];
   inventoryCostRows: Array<Record<string, string | number>>;
   invoiceRows: Array<Record<string, string | number>>;
+  serviceChargeRows: Array<Record<string, string | number>>;
   monthKey: string;
   summary: ReturnType<typeof buildAccountsSummary>;
 }) {
@@ -299,6 +345,7 @@ export function exportAccountsWorkbook(args: {
       <body>
         ${buildSpreadsheetTable("Summary", summaryRows)}
         ${buildSpreadsheetTable("Invoices", args.invoiceRows)}
+        ${buildSpreadsheetTable("Service Charges", args.serviceChargeRows)}
         ${buildSpreadsheetTable(
           "Income By Test",
           args.incomeByTest.map((row) => ({
@@ -341,6 +388,23 @@ export function buildInvoiceExportRows(invoices: AccountInvoiceRow[]) {
     "Total Amount": Number(invoice.total_amount),
     "Amount Paid": Number(invoice.amount_paid),
     "Balance Due": Math.max(Number(invoice.total_amount) - Number(invoice.amount_paid), 0)
+  }));
+}
+
+export function buildServiceChargeExportRows(charges: AccountHospitalCharge[]) {
+  return charges.map((charge) => ({
+    "Date": charge.charged_at,
+    "Patient": charge.patients?.name || "Unknown patient",
+    "Hospital ID": charge.patients?.hospital_id || charge.patients?.lab_id || "-",
+    "Encounter": charge.clinical_encounters?.encounter_number || "-",
+    "Category": charge.category,
+    "Description": charge.description,
+    "Quantity": Number(charge.quantity),
+    "Unit Price": Number(charge.unit_price),
+    "Total Amount": Number(charge.total_amount),
+    "Amount Paid": Number(charge.amount_paid),
+    "Balance Due": Math.max(Number(charge.total_amount) - Number(charge.amount_paid), 0),
+    "Payment Status": charge.payment_status
   }));
 }
 

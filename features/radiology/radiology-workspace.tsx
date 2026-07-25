@@ -78,7 +78,8 @@ export function RadiologyWorkspace() {
   const refresh = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["hospital", "radiology"] }),
-      queryClient.invalidateQueries({ queryKey: ["hospital", "billing"] })
+      queryClient.invalidateQueries({ queryKey: ["hospital", "billing"] }),
+      queryClient.invalidateQueries({ queryKey: ["accounts-workspace"] })
     ]);
   };
 

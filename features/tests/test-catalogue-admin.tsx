@@ -15,7 +15,6 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { canAccessAdministrationRole } from "@/lib/guards";
 import { commitOnlineMutation, generateId, resolveOnlineQuery } from "@/lib/online-core";
@@ -284,6 +283,7 @@ export function TestCatalogueAdmin() {
   const [status, setStatus] = useState<FilterStatus>("all");
   const [resultType, setResultType] = useState<FilterResultType>("all");
   const [categoryFilter, setCategoryFilter] = useState<FilterCategory>("all");
+  const [selectedTestId, setSelectedTestId] = useState<string | null>(null);
   const [formState, setFormState] = useState<TestFormValues>(initialFormState);
   const [targetFacilityId, setTargetFacilityId] = useState<string>("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -318,10 +318,10 @@ export function TestCatalogueAdmin() {
   });
 
   const testsQuery = useQuery({
-    queryKey: ["tests", facilityId, query, categoryFilter, status, resultType],
+    queryKey: ["tests", facilityId, query, status, resultType],
     queryFn: () =>
       fetchTests({
-        category: categoryFilter,
+        category: "all",
         query,
         resultType,
         status,
@@ -496,6 +496,16 @@ export function TestCatalogueAdmin() {
                     test.reference_range.text
                   )
           : initialFormState.reference_range
+    });
+    window.requestAnimationFrame(() => {
+      document.getElementById("test-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
+
+  const openNewTestForm = () => {
+    resetForm();
+    window.requestAnimationFrame(() => {
+      document.getElementById("test-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   };
 
@@ -681,6 +691,28 @@ export function TestCatalogueAdmin() {
   };
 
   const tests = testsQuery.data ?? [];
+  const categoryOptions = [
+    { key: "all" as const, label: "All tests", count: tests.length },
+    ...testCategories.map((category) => ({
+      key: category as FilterCategory,
+      label: category,
+      count: tests.filter((test) => normalizeTestCategory(test.category) === category).length
+    })),
+    {
+      key: "uncategorized" as const,
+      label: "Uncategorized",
+      count: tests.filter((test) => normalizeTestCategory(test.category) === null).length
+    }
+  ];
+  const visibleTests = tests.filter((test) => {
+    if (categoryFilter === "all") return true;
+    const normalizedCategory = normalizeTestCategory(test.category);
+    return categoryFilter === "uncategorized"
+      ? normalizedCategory === null
+      : normalizedCategory === categoryFilter;
+  });
+  const selectedTest =
+    visibleTests.find((test) => test.id === selectedTestId) ?? visibleTests[0] ?? null;
 
   return (
     <div className="space-y-6">
@@ -705,21 +737,24 @@ export function TestCatalogueAdmin() {
         </Card>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+      <section className="space-y-6">
         <Card className="border-blue-100">
           <CardHeader>
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <CardTitle className="flex items-center gap-2">
                   <TestTube2 className="h-5 w-5 text-blue-700" />
                   Test catalogue
                 </CardTitle>
               </div>
-              <Badge variant="outline">Hospital Admin</Badge>
+              <Button type="button" size="sm" onClick={openNewTestForm}>
+                <Plus className="h-4 w-4" />
+                Add test
+              </Button>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
-              <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_220px_180px_180px_220px]">
+            <div className="grid gap-3 sm:grid-cols-3">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
                 <Input
@@ -729,22 +764,6 @@ export function TestCatalogueAdmin() {
                   onChange={(event) => setQuery(event.target.value)}
                 />
               </div>
-
-              <select
-                className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
-                value={categoryFilter}
-                onChange={(event) =>
-                  setCategoryFilter(event.target.value as FilterCategory)
-                }
-              >
-                <option value="all">All categories</option>
-                {testCategories.map((category) => (
-                  <option key={category} value={category}>
-                    {category}
-                  </option>
-                ))}
-                <option value="uncategorized">Uncategorized</option>
-              </select>
 
               <select
                 className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
@@ -772,8 +791,6 @@ export function TestCatalogueAdmin() {
               </select>
             </div>
 
-            <Separator />
-
             {testsQuery.isLoading ? (
               <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600">
                 <Loader2 className="h-4 w-4 animate-spin text-blue-700" />
@@ -790,107 +807,131 @@ export function TestCatalogueAdmin() {
             ) : null}
 
             {!testsQuery.isLoading && !testsQuery.isError ? (
-              <div className="overflow-x-auto rounded-xl border border-slate-200">
-                <table className="min-w-[900px] divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50">
-                    <tr className="text-left text-slate-500">
-                      <th className="px-4 py-3 font-medium">Test ID</th>
-                      <th className="px-4 py-3 font-medium">Name</th>
-                      <th className="px-4 py-3 font-medium">Scope</th>
-                      <th className="px-4 py-3 font-medium">Type</th>
-                      <th className="px-4 py-3 font-medium">Reference range</th>
-                      <th className="px-4 py-3 font-medium">Price</th>
-                      <th className="px-4 py-3 font-medium">Status</th>
-                      <th className="px-4 py-3 font-medium">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 bg-white">
-                    {tests.length === 0 ? (
-                      <tr>
-                        <td
-                          colSpan={8}
-                          className="px-4 py-8 text-center text-slate-500"
-                        >
-                          No tests matched the current search or filters.
-                        </td>
-                      </tr>
-                    ) : null}
+              <div className="grid gap-4 xl:grid-cols-[220px_minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Categories
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-1">
+                    {categoryOptions.map((category) => (
+                      <button
+                        key={category.key}
+                        type="button"
+                        onClick={() => {
+                          setCategoryFilter(category.key);
+                          setSelectedTestId(null);
+                        }}
+                        className={`flex min-w-0 items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-sm transition ${
+                          categoryFilter === category.key
+                            ? "border-blue-300 bg-blue-600 text-white"
+                            : "border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50"
+                        }`}
+                      >
+                        <span className="truncate font-medium">{category.label}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-xs ${
+                          categoryFilter === category.key ? "bg-white/20" : "bg-slate-100"
+                        }`}>
+                          {category.count}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-                    {tests.map((test) => (
-                      <tr key={test.id}>
-                        <td className="px-4 py-3 font-semibold text-slate-700">
-                          {test.test_code}
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-slate-900">{test.name}</div>
-                          <div className="text-xs text-slate-500">
-                            {getTestCategoryLabel(test.category) + " • " + (test.unit || "No unit")}
+                <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                  <div className="mb-3 flex items-center justify-between gap-3 px-1">
+                    <p className="font-semibold text-slate-950">
+                      {categoryOptions.find((item) => item.key === categoryFilter)?.label}
+                    </p>
+                    <Badge variant="outline">{visibleTests.length}</Badge>
+                  </div>
+                  <div className="max-h-[560px] space-y-2 overflow-y-auto pr-1">
+                    {visibleTests.map((test) => (
+                      <button
+                        key={test.id}
+                        type="button"
+                        onClick={() => setSelectedTestId(test.id)}
+                        className={`w-full rounded-xl border p-3 text-left transition ${
+                          selectedTest?.id === test.id
+                            ? "border-blue-300 bg-blue-50"
+                            : "border-slate-200 hover:border-blue-200 hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-950">{test.name}</p>
+                            <p className="mt-1 text-xs text-slate-500">{test.test_code} · {test.result_type}</p>
                           </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="space-y-1">
-                            <Badge variant="outline">Facility-owned</Badge>
-                            <p className="text-xs text-slate-500">
-                              {test.facilities?.name || "Hospital"}{" "}
-                              {test.facilities?.code ? `(${test.facilities.code})` : ""}
-                            </p>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 capitalize text-slate-700">
-                          {test.result_type}
-                        </td>
-                        <td className="px-4 py-3 text-slate-700">
-                          {formatReferenceRange(test.reference_range)}
-                        </td>
-                        <td className="px-4 py-3 text-slate-700">
-                        N{test.price.toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3">
-                          <Badge variant={test.is_active ? "default" : "secondary"}>
+                          <Badge variant={test.is_active ? "secondary" : "outline"}>
                             {test.is_active ? "Active" : "Inactive"}
                           </Badge>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              disabled={test.facility_id !== facilityId}
-                              onClick={() => loadForEdit(test)}
-                            >
-                              <Pencil className="h-4 w-4" />
-                              Edit
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              disabled={
-                                deletingId === test.id ||
-                                test.facility_id !== facilityId
-                              }
-                              onClick={() => handleDelete(test.id)}
-                            >
-                              {deletingId === test.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <Trash2 className="h-4 w-4" />
-                              )}
-                              Delete
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
+                        </div>
+                      </button>
                     ))}
-                  </tbody>
-                </table>
+                    {!visibleTests.length ? (
+                      <p className="rounded-xl border border-dashed p-8 text-center text-sm text-slate-500">
+                        No tests in this category.
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+                  {selectedTest ? (
+                    <div className="space-y-5">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">{selectedTest.test_code}</p>
+                          <h3 className="mt-1 break-words text-xl font-semibold text-slate-950">{selectedTest.name}</h3>
+                          <p className="mt-1 text-sm text-slate-500">{getTestCategoryLabel(selectedTest.category)}</p>
+                        </div>
+                        <Badge variant={selectedTest.is_active ? "default" : "secondary"}>
+                          {selectedTest.is_active ? "Active" : "Inactive"}
+                        </Badge>
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-xl bg-slate-50 p-3">
+                          <p className="text-xs text-slate-500">Price</p>
+                          <p className="mt-1 font-semibold text-slate-950">₦{Number(selectedTest.price).toLocaleString("en-NG")}</p>
+                        </div>
+                        <div className="rounded-xl bg-slate-50 p-3">
+                          <p className="text-xs text-slate-500">Result type</p>
+                          <p className="mt-1 font-semibold capitalize text-slate-950">{selectedTest.result_type}</p>
+                        </div>
+                        <div className="rounded-xl bg-slate-50 p-3 sm:col-span-2">
+                          <p className="text-xs text-slate-500">Reference range</p>
+                          <p className="mt-1 break-words font-medium text-slate-950">{formatReferenceRange(selectedTest.reference_range)}</p>
+                        </div>
+                        <div className="rounded-xl bg-slate-50 p-3 sm:col-span-2">
+                          <p className="text-xs text-slate-500">Unit</p>
+                          <p className="mt-1 font-medium text-slate-950">{selectedTest.unit || "Not set"}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <Button type="button" className="sm:flex-1" disabled={selectedTest.facility_id !== facilityId} onClick={() => loadForEdit(selectedTest)}>
+                          <Pencil className="h-4 w-4" />
+                          Edit test
+                        </Button>
+                        <Button type="button" variant="outline" className="sm:flex-1" disabled={deletingId === selectedTest.id || selectedTest.facility_id !== facilityId} onClick={() => handleDelete(selectedTest.id)}>
+                          {deletingId === selectedTest.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex min-h-64 items-center justify-center rounded-xl border border-dashed p-8 text-center text-sm text-slate-500">
+                      Select a test to view its details.
+                    </div>
+                  )}
+                </div>
               </div>
             ) : null}
           </CardContent>
         </Card>
 
-        <Card className="border-blue-100">
+        <Card id="test-form" className="scroll-mt-24 border-blue-100">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Plus className="h-5 w-5 text-blue-700" />

@@ -1,9 +1,11 @@
 export type PatientOption = {
   id: string;
+  facility_id: string;
   name: string;
   hospital_id: string | null;
   lab_id: string;
   phone: string | null;
+  created_at: string;
 };
 
 export type Encounter = {

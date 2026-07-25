@@ -13,15 +13,21 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
+  CalendarPlus,
   ChevronLeft,
   ChevronRight,
   FileSearch,
+  FlaskConical,
   Keyboard,
   Loader2,
   PencilLine,
+  Pill,
+  Plus,
+  ScanSearch,
   Search,
   ShieldAlert,
-  UserPlus
+  UserPlus,
+  X
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { Badge } from "@/components/ui/badge";
@@ -43,6 +49,7 @@ import {
   type PatientFormValues
 } from "@/features/patients/schema";
 import { formatPatientAge } from "@/features/patients/patient-utils";
+import { NigeriaLocationFields } from "@/features/patients/nigeria-location-fields";
 import { useFrontDeskMode } from "@/hooks/use-front-desk-mode";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -50,16 +57,52 @@ import {
   canManagePatientsRole,
   canRegisterPatientsRole
 } from "@/lib/guards";
-import { commitOnlineMutation, generateId, resolveOnlineQuery } from "@/lib/online-core";
+import { resolveOnlineQuery } from "@/lib/online-core";
 import { getAppClient } from "@/lib/app-client";
 import { cn } from "@/lib/utils";
-import type { Database, TablesInsert } from "@/types/database";
+import type { Database } from "@/types/database";
 
 type SearchPatientRow =
   Database["public"]["Functions"]["search_patients"]["Returns"][number];
 type FormErrors = Partial<Record<keyof PatientFormValues | "form", string>>;
 type ConsentFilter = "all" | "consented" | "pending";
 type HistoryFilter = "all" | "with_orders" | "new";
+type RegistrationTestOption = { id: string; name: string; test_code: string; category: string | null; price: number };
+type RegistrationMedicationOption = { id: string; generic_name: string; brand_name: string | null; strength: string; route: string | null; unit_price: number; quantity_on_hand: number };
+type RegistrationRadiologyOption = { id: string; name: string; modality: string; unit_price: number };
+type MedicationRequest = {
+  medication_id: string;
+  dose: string;
+  frequency: string;
+  duration: string;
+  route: string;
+  quantity: string;
+  instructions: string;
+};
+
+const initialMedicationRequest: MedicationRequest = {
+  medication_id: "",
+  dose: "",
+  frequency: "",
+  duration: "",
+  route: "",
+  quantity: "1",
+  instructions: ""
+};
+
+const initialRegistrationServices = {
+  billRegistration: false,
+  registrationFee: "",
+  bookConsultation: false,
+  consultationFee: "",
+  sendToLab: false,
+  labTestIds: [] as string[],
+  sendToPharmacy: false,
+  medicationRequests: [] as MedicationRequest[],
+  sendToRadiology: false,
+  radiologyServiceId: "",
+  radiologyIndication: ""
+};
 
 const PAGE_SIZE = 20;
 
@@ -99,6 +142,27 @@ async function fetchPatients(searchTerm: string, page: number) {
   });
 }
 
+async function fetchRegistrationOptions() {
+  const database = getAppClient();
+  const [tests, medications, radiology] = await Promise.all([
+    database.from("tests").select("id, name, test_code, category, price").eq("is_active", true).order("name", { ascending: true }),
+    database.from("medications").select("id, generic_name, brand_name, strength, route, unit_price, quantity_on_hand").eq("is_active", true).order("generic_name", { ascending: true }),
+    database.from("radiology_services").select("id, name, modality, unit_price").eq("is_active", true).order("name", { ascending: true })
+  ]);
+  if (tests.error) throw new Error(tests.error.message);
+  if (medications.error) throw new Error(medications.error.message);
+  if (radiology.error) throw new Error(radiology.error.message);
+  return {
+    tests: (tests.data ?? []) as RegistrationTestOption[],
+    medications: (medications.data ?? []) as RegistrationMedicationOption[],
+    radiology: (radiology.data ?? []) as RegistrationRadiologyOption[]
+  };
+}
+
+function formatNaira(value: number) {
+  return new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(Number(value));
+}
+
 export function PatientManagement() {
   const queryClient = useQueryClient();
   const { role, loading, facilityId } = useAuth();
@@ -118,6 +182,8 @@ export function PatientManagement() {
   const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [searchFocused, setSearchFocused] = useState(false);
+  const [registrationServices, setRegistrationServices] = useState(initialRegistrationServices);
+  const [medicationRequest, setMedicationRequest] = useState<MedicationRequest>(initialMedicationRequest);
 
   const canViewPatients = canAccessPatientsRole(role);
   const canManagePatients = canManagePatientsRole(role);
@@ -127,6 +193,12 @@ export function PatientManagement() {
     queryKey: ["patients", deferredSearchTerm, page],
     queryFn: () => fetchPatients(deferredSearchTerm, page),
     enabled: canViewPatients && Boolean(facilityId)
+  });
+  const registrationOptionsQuery = useQuery({
+    queryKey: ["patient-registration-options", facilityId],
+    queryFn: fetchRegistrationOptions,
+    enabled: canRegisterPatients && Boolean(facilityId),
+    staleTime: 60_000
   });
 
   useEffect(() => {
@@ -271,47 +343,75 @@ export function PatientManagement() {
       return;
     }
 
-    const now = new Date().toISOString();
-    const payload: TablesInsert<"patients"> = {
-      lab_id: parsed.data.lab_id.trim(),
-      hospital_id: toNullable(parsed.data.lab_id),
-      name: parsed.data.name.trim(),
-      phone: toNullable(parsed.data.phone),
-      dob: parsed.data.dob || null,
-      sex: parsed.data.sex || null,
-      address: toNullable(parsed.data.address),
-      email: toNullable(parsed.data.email),
-      emergency_contact: toNullable(parsed.data.emergency_contact),
-      facility_id: facilityId,
-      id: generateId(),
-      national_id: toNullable(parsed.data.national_id),
-      lga: toNullable(parsed.data.lga),
-      state: toNullable(parsed.data.state),
-      ndpr_consent: parsed.data.ndpr_consent,
-      ndpr_consent_at: parsed.data.ndpr_consent ? now : null,
-      notes: toNullable(parsed.data.notes),
-      created_at: now,
-      updated_at: now
-    };
+    if (registrationServices.billRegistration && Number(registrationServices.registrationFee) <= 0) {
+      setSubmitError("Enter the registration fee.");
+      return;
+    }
+    if (registrationServices.bookConsultation && Number(registrationServices.consultationFee) <= 0) {
+      setSubmitError("Enter the consultation fee.");
+      return;
+    }
+    if (registrationServices.sendToLab && registrationServices.labTestIds.length === 0) {
+      setSubmitError("Select at least one laboratory test.");
+      return;
+    }
+    if (registrationServices.sendToPharmacy && registrationServices.medicationRequests.length === 0) {
+      setSubmitError("Add at least one medication request.");
+      return;
+    }
+    if (registrationServices.sendToRadiology && !registrationServices.radiologyServiceId) {
+      setSubmitError("Select a radiology service.");
+      return;
+    }
 
     try {
       setSaving(true);
-      await commitOnlineMutation({
-        action: "insert",
-        entity: "patients",
-        payload,
-        recordId: payload.id as string
+      const { data, error } = await getAppClient().rpc("register_patient_with_services", {
+        patient: {
+          ...parsed.data,
+          lab_id: parsed.data.lab_id.trim(),
+          phone: toNullable(parsed.data.phone),
+          dob: parsed.data.dob || null,
+          sex: parsed.data.sex || null,
+          address: toNullable(parsed.data.address),
+          email: toNullable(parsed.data.email),
+          emergency_contact: toNullable(parsed.data.emergency_contact),
+          national_id: toNullable(parsed.data.national_id),
+          lga: toNullable(parsed.data.lga),
+          state: toNullable(parsed.data.state),
+          notes: toNullable(parsed.data.notes)
+        },
+        bill_registration: registrationServices.billRegistration,
+        registration_fee: Number(registrationServices.registrationFee || 0),
+        book_consultation: registrationServices.bookConsultation,
+        consultation_fee: Number(registrationServices.consultationFee || 0),
+        lab_test_ids: registrationServices.sendToLab ? registrationServices.labTestIds : [],
+        medication_requests: registrationServices.sendToPharmacy ? registrationServices.medicationRequests.map((item) => ({ ...item, quantity: Number(item.quantity) })) : [],
+        radiology_service_id: registrationServices.sendToRadiology ? registrationServices.radiologyServiceId : null,
+        radiology_indication: registrationServices.radiologyIndication.trim() || null
       });
+      if (error) throw new Error(error.message);
+      const result = data as { hospital_id?: string; order_number?: string; radiology_request_number?: string } | null;
 
       setFormState(initialPatientFormState);
-      setSubmitSuccess("Patient registered successfully.");
+      setRegistrationServices(initialRegistrationServices);
+      setMedicationRequest(initialMedicationRequest);
+      setSubmitSuccess(`Patient registered${result?.hospital_id ? ` · ${result.hospital_id}` : ""}.`);
       toast({
-        title: "Patient registered",
-
+        title: `Patient registered${result?.hospital_id ? ` · ${result.hospital_id}` : ""}`,
+        description: [result?.order_number ? `Lab ${result.order_number}` : null, result?.radiology_request_number ? `Radiology ${result.radiology_request_number}` : null].filter(Boolean).join(" · ") || undefined,
         variant: "success"
       });
       startTransition(() => setPage(1));
-      await queryClient.invalidateQueries({ queryKey: ["patients"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["patients"] }),
+        queryClient.invalidateQueries({ queryKey: ["orders"] }),
+        queryClient.invalidateQueries({ queryKey: ["billing-invoices"] }),
+        queryClient.invalidateQueries({ queryKey: ["hospital", "billing"] }),
+        queryClient.invalidateQueries({ queryKey: ["hospital", "pharmacy"] }),
+        queryClient.invalidateQueries({ queryKey: ["hospital", "radiology"] }),
+        queryClient.invalidateQueries({ queryKey: ["accounts-workspace"] })
+      ]);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to register patient.";
@@ -324,6 +424,22 @@ export function PatientManagement() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const addMedicationRequest = () => {
+    if (!medicationRequest.medication_id || !medicationRequest.dose.trim() || !medicationRequest.frequency.trim() || !medicationRequest.duration.trim()) {
+      setSubmitError("Complete the medication, dose, frequency, and duration.");
+      return;
+    }
+    setRegistrationServices((current) => ({
+      ...current,
+      medicationRequests: [
+        ...current.medicationRequests.filter((item) => item.medication_id !== medicationRequest.medication_id),
+        medicationRequest
+      ]
+    }));
+    setMedicationRequest(initialMedicationRequest);
+    setSubmitError(null);
   };
 
   const patients = filteredPatients;
@@ -747,35 +863,16 @@ export function PatientManagement() {
                     ) : null}
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="lga">LGA</Label>
-                    <Input
-                      id="lga"
-                      value={formState.lga}
-                      onChange={(event) =>
-                        handleFieldChange("lga", event.target.value)
-                      }
-                      placeholder="Eti-Osa"
-                    />
-                    {errors.lga ? (
-                      <p className="text-xs text-red-700">{errors.lga}</p>
-                    ) : null}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="state">State</Label>
-                    <Input
-                      id="state"
-                      value={formState.state}
-                      onChange={(event) =>
-                        handleFieldChange("state", event.target.value)
-                      }
-                      placeholder="Lagos"
-                    />
-                    {errors.state ? (
-                      <p className="text-xs text-red-700">{errors.state}</p>
-                    ) : null}
-                  </div>
+                  <NigeriaLocationFields
+                    idPrefix="patient-registration"
+                    state={formState.state}
+                    stateError={errors.state}
+                    lga={formState.lga}
+                    lgaError={errors.lga}
+                    onChange={(location) =>
+                      setFormState((current) => ({ ...current, ...location }))
+                    }
+                  />
                 </div>
 
                 <div className="space-y-2">
@@ -805,6 +902,199 @@ export function PatientManagement() {
                   />
                   {errors.notes ? (
                     <p className="text-xs text-red-700">{errors.notes}</p>
+                  ) : null}
+                </div>
+
+                <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div>
+                    <p className="font-semibold text-slate-950">Billing and next service</p>
+                    <p className="mt-1 text-xs text-slate-500">Choose only what the patient needs now.</p>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="rounded-xl border border-slate-200 bg-white p-3">
+                      <span className="flex items-center gap-2 text-sm font-medium text-slate-900">
+                        <input
+                          type="checkbox"
+                          checked={registrationServices.billRegistration}
+                          onChange={(event) => setRegistrationServices((current) => ({ ...current, billRegistration: event.target.checked }))}
+                        />
+                        Bill registration
+                      </span>
+                      {registrationServices.billRegistration ? (
+                        <Input
+                          className="mt-3"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={registrationServices.registrationFee}
+                          onChange={(event) => setRegistrationServices((current) => ({ ...current, registrationFee: event.target.value }))}
+                          placeholder="Registration fee (₦)"
+                          required
+                        />
+                      ) : null}
+                    </label>
+
+                    <label className="rounded-xl border border-slate-200 bg-white p-3">
+                      <span className="flex items-center gap-2 text-sm font-medium text-slate-900">
+                        <input
+                          type="checkbox"
+                          checked={registrationServices.bookConsultation}
+                          onChange={(event) => setRegistrationServices((current) => ({ ...current, bookConsultation: event.target.checked }))}
+                        />
+                        <CalendarPlus className="h-4 w-4 text-blue-700" />
+                        Book consultation
+                      </span>
+                      {registrationServices.bookConsultation ? (
+                        <Input
+                          className="mt-3"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={registrationServices.consultationFee}
+                          onChange={(event) => setRegistrationServices((current) => ({ ...current, consultationFee: event.target.value }))}
+                          placeholder="Consultation fee (₦)"
+                          required
+                        />
+                      ) : null}
+                    </label>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                    <label className="flex items-center gap-2 text-sm font-medium text-slate-900">
+                      <input
+                        type="checkbox"
+                        checked={registrationServices.sendToLab}
+                        onChange={(event) => setRegistrationServices((current) => ({ ...current, sendToLab: event.target.checked }))}
+                      />
+                      <FlaskConical className="h-4 w-4 text-blue-700" />
+                      Send to laboratory
+                    </label>
+                    {registrationServices.sendToLab ? (
+                      <div className="mt-3 max-h-56 space-y-2 overflow-y-auto rounded-xl border border-slate-100 bg-slate-50 p-2">
+                        {(registrationOptionsQuery.data?.tests ?? []).map((test) => {
+                          const checked = registrationServices.labTestIds.includes(test.id);
+                          return (
+                            <label key={test.id} className="flex items-start justify-between gap-3 rounded-lg bg-white p-2 text-sm">
+                              <span className="flex min-w-0 items-start gap-2">
+                                <input
+                                  className="mt-1"
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => setRegistrationServices((current) => ({
+                                    ...current,
+                                    labTestIds: checked ? current.labTestIds.filter((id) => id !== test.id) : [...current.labTestIds, test.id]
+                                  }))}
+                                />
+                                <span className="min-w-0">
+                                  <span className="block font-medium text-slate-900">{test.name}</span>
+                                  <span className="block text-xs text-slate-500">{test.test_code} · {test.category || "Uncategorized"}</span>
+                                </span>
+                              </span>
+                              <span className="shrink-0 text-xs font-semibold text-slate-700">{formatNaira(test.price)}</span>
+                            </label>
+                          );
+                        })}
+                        {!registrationOptionsQuery.data?.tests.length ? <p className="p-3 text-sm text-slate-500">No active tests.</p> : null}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                    <label className="flex items-center gap-2 text-sm font-medium text-slate-900">
+                      <input
+                        type="checkbox"
+                        checked={registrationServices.sendToPharmacy}
+                        onChange={(event) => setRegistrationServices((current) => ({ ...current, sendToPharmacy: event.target.checked }))}
+                      />
+                      <Pill className="h-4 w-4 text-emerald-700" />
+                      Send to pharmacy
+                    </label>
+                    {registrationServices.sendToPharmacy ? (
+                      <div className="mt-3 space-y-3">
+                        <select
+                          className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                          value={medicationRequest.medication_id}
+                          onChange={(event) => {
+                            const medication = registrationOptionsQuery.data?.medications.find((item) => item.id === event.target.value);
+                            setMedicationRequest((current) => ({ ...current, medication_id: event.target.value, route: medication?.route ?? "" }));
+                          }}
+                        >
+                          <option value="">Select medication</option>
+                          {(registrationOptionsQuery.data?.medications ?? []).map((medication) => (
+                            <option key={medication.id} value={medication.id}>
+                              {medication.generic_name} {medication.strength} · {formatNaira(medication.unit_price)} · {medication.quantity_on_hand} available
+                            </option>
+                          ))}
+                        </select>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          <Input value={medicationRequest.dose} onChange={(event) => setMedicationRequest((current) => ({ ...current, dose: event.target.value }))} placeholder="Dose, e.g. 500 mg" />
+                          <Input value={medicationRequest.frequency} onChange={(event) => setMedicationRequest((current) => ({ ...current, frequency: event.target.value }))} placeholder="Frequency, e.g. twice daily" />
+                          <Input value={medicationRequest.duration} onChange={(event) => setMedicationRequest((current) => ({ ...current, duration: event.target.value }))} placeholder="Duration, e.g. 5 days" />
+                          <Input type="number" min="1" value={medicationRequest.quantity} onChange={(event) => setMedicationRequest((current) => ({ ...current, quantity: event.target.value }))} placeholder="Quantity" />
+                          <Input value={medicationRequest.route} onChange={(event) => setMedicationRequest((current) => ({ ...current, route: event.target.value }))} placeholder="Route" />
+                          <Input value={medicationRequest.instructions} onChange={(event) => setMedicationRequest((current) => ({ ...current, instructions: event.target.value }))} placeholder="Instructions" />
+                        </div>
+                        <Button type="button" variant="outline" className="w-full" onClick={addMedicationRequest}>
+                          <Plus className="h-4 w-4" />
+                          Add medication
+                        </Button>
+                        <div className="space-y-2">
+                          {registrationServices.medicationRequests.map((request) => {
+                            const medication = registrationOptionsQuery.data?.medications.find((item) => item.id === request.medication_id);
+                            return (
+                              <div key={request.medication_id} className="flex items-start justify-between gap-3 rounded-lg bg-emerald-50 p-3 text-sm">
+                                <div>
+                                  <p className="font-medium text-slate-950">{medication ? `${medication.generic_name} ${medication.strength}` : "Medication"}</p>
+                                  <p className="mt-1 text-xs text-slate-600">{request.dose} · {request.frequency} · {request.duration} · Qty {request.quantity}</p>
+                                </div>
+                                <Button type="button" size="sm" variant="ghost" onClick={() => setRegistrationServices((current) => ({ ...current, medicationRequests: current.medicationRequests.filter((item) => item.medication_id !== request.medication_id) }))}>
+                                  <X className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white p-3">
+                    <label className="flex items-center gap-2 text-sm font-medium text-slate-900">
+                      <input
+                        type="checkbox"
+                        checked={registrationServices.sendToRadiology}
+                        onChange={(event) => setRegistrationServices((current) => ({ ...current, sendToRadiology: event.target.checked }))}
+                      />
+                      <ScanSearch className="h-4 w-4 text-violet-700" />
+                      Send to radiology
+                    </label>
+                    {registrationServices.sendToRadiology ? (
+                      <div className="mt-3 space-y-2">
+                        <select
+                          className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm"
+                          value={registrationServices.radiologyServiceId}
+                          onChange={(event) => setRegistrationServices((current) => ({ ...current, radiologyServiceId: event.target.value }))}
+                        >
+                          <option value="">Select radiology service</option>
+                          {(registrationOptionsQuery.data?.radiology ?? []).map((service) => (
+                            <option key={service.id} value={service.id}>{service.name} · {service.modality} · {formatNaira(service.unit_price)}</option>
+                          ))}
+                        </select>
+                        <Textarea
+                          value={registrationServices.radiologyIndication}
+                          onChange={(event) => setRegistrationServices((current) => ({ ...current, radiologyIndication: event.target.value }))}
+                          placeholder="Reason for the radiology request"
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {registrationOptionsQuery.isLoading ? (
+                    <p className="flex items-center gap-2 text-xs text-slate-500"><Loader2 className="h-3.5 w-3.5 animate-spin" />Loading services...</p>
+                  ) : null}
+                  {registrationOptionsQuery.isError ? (
+                    <p className="text-xs text-red-700">Unable to load service catalogues.</p>
                   ) : null}
                 </div>
 

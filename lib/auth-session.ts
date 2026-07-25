@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import type { RowDataPacket } from "mysql2/promise";
 import { getPool, isDatabaseConfigured, migrateDatabase } from "@/lib/db";
 import { hashToken } from "@/lib/security";
+import { getPreviewSession, isPreviewMode } from "@/lib/preview-mode";
 import type { AppRole, UserProfile } from "@/lib/auth-types";
 
 export const SESSION_COOKIE = "st_gianna_session";
@@ -35,6 +36,7 @@ type SessionRow = RowDataPacket & {
 };
 
 export async function createSession(userId: string) {
+  if (isPreviewMode()) return;
   await migrateDatabase();
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_HOURS * 60 * 60 * 1000);
@@ -54,6 +56,10 @@ export async function createSession(userId: string) {
 
 export async function destroySession() {
   const store = await cookies();
+  if (isPreviewMode()) {
+    store.delete(SESSION_COOKIE);
+    return;
+  }
   const token = store.get(SESSION_COOKIE)?.value;
   if (token && isDatabaseConfigured()) {
     await migrateDatabase();
@@ -63,6 +69,7 @@ export async function destroySession() {
 }
 
 export async function getCurrentSession(): Promise<AppSession | null> {
+  if (isPreviewMode()) return getPreviewSession();
   if (!isDatabaseConfigured()) return null;
   await migrateDatabase();
   const store = await cookies();

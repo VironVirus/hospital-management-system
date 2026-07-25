@@ -4,6 +4,7 @@ import type { RowDataPacket } from "mysql2/promise";
 import { getCurrentSession } from "@/lib/auth-session";
 import { getPool, nextCounter, withTransaction } from "@/lib/db";
 import { HOSPITAL_ID } from "@/lib/db/schema";
+import { handlePreviewRpc, isPreviewMode } from "@/lib/preview-mode";
 
 function response(data: unknown = null) {
   return NextResponse.json({ data, error: null });
@@ -24,6 +25,7 @@ export async function POST(request: Request) {
     const payload = await request.json().catch(() => null) as { name?: string; args?: Record<string, unknown> } | null;
     const name = payload?.name || "";
     const args = payload?.args || {};
+    if (isPreviewMode()) return NextResponse.json(handlePreviewRpc(name, args));
     const pool = getPool();
 
     if (name === "search_patients") {
@@ -46,6 +48,162 @@ export async function POST(request: Request) {
         [...params, size, (page - 1) * size]
       );
       return response(rows.map((row) => ({ ...row, total_count: Number(counts[0]?.total || 0), similarity_score: 1 })));
+    }
+
+    if (name === "register_patient_with_services") {
+      if (!["Admin", "Receptionist"].includes(session.profile.role)) return forbidden();
+      const patient = (args.patient && typeof args.patient === "object" ? args.patient : {}) as Record<string, unknown>;
+      const patientName = String(patient.name || "").trim();
+      if (patientName.length < 2) throw new Error("Enter the patient's full name.");
+      if (!patient.ndpr_consent) throw new Error("Patient consent is required before registration.");
+
+      const labTestIds = [...new Set((Array.isArray(args.lab_test_ids) ? args.lab_test_ids : []).map(String).filter(Boolean))];
+      const medicationRequests = (Array.isArray(args.medication_requests) ? args.medication_requests : []) as Array<Record<string, unknown>>;
+      const radiologyServiceId = String(args.radiology_service_id || "").trim();
+      const bookConsultation = Boolean(args.book_consultation);
+      const billRegistration = Boolean(args.bill_registration);
+      const registrationFee = Math.max(Number(args.registration_fee || 0), 0);
+      const consultationFee = Math.max(Number(args.consultation_fee || 0), 0);
+      if (labTestIds.length > 100 || medicationRequests.length > 30) throw new Error("Too many services were selected at once.");
+
+      const data = await withTransaction(async (connection) => {
+        const patientId = randomUUID();
+        const enteredHospitalId = String(patient.lab_id || patient.hospital_id || "").trim();
+        const hospitalId = enteredHospitalId || `SGH-${new Date().getUTCFullYear()}-${String(await nextCounter("hospital_patient", connection)).padStart(6, "0")}`;
+        const nullable = (value: unknown) => String(value || "").trim() || null;
+        await connection.execute(
+          `INSERT INTO patients
+            (id, facility_id, hospital_id, lab_id, name, phone, dob, sex, address, email, emergency_contact, national_id, lga, state, ndpr_consent, ndpr_consent_at, notes, created_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, UTC_TIMESTAMP(3), ?, ?)`,
+          [patientId, HOSPITAL_ID, hospitalId, hospitalId, patientName, nullable(patient.phone), nullable(patient.dob), nullable(patient.sex), nullable(patient.address), nullable(patient.email), nullable(patient.emergency_contact), nullable(patient.national_id), nullable(patient.lga), nullable(patient.state), nullable(patient.notes), session.user.id]
+        );
+
+        const needsEncounter = bookConsultation || labTestIds.length > 0 || medicationRequests.length > 0 || Boolean(radiologyServiceId);
+        const encounterId = needsEncounter ? randomUUID() : null;
+        const encounterNumber = needsEncounter
+          ? `ENC-${String(await nextCounter("encounter", connection)).padStart(7, "0")}`
+          : null;
+        if (encounterId && encounterNumber) {
+          await connection.execute(
+            "INSERT INTO clinical_encounters (id, facility_id, patient_id, encounter_number, encounter_type, status, created_by) VALUES (?, ?, ?, ?, 'Outpatient', 'Open', ?)",
+            [encounterId, HOSPITAL_ID, patientId, encounterNumber, session.user.id]
+          );
+        }
+
+        const createCharge = async (input: { id?: string; description: string; category: string; quantity?: number; unitPrice: number; radiologyRequestId?: string | null }) => {
+          const quantity = Math.max(Number(input.quantity || 1), 0);
+          const total = quantity * Math.max(Number(input.unitPrice || 0), 0);
+          await connection.execute(
+            `INSERT INTO encounter_charges
+              (id, facility_id, patient_id, encounter_id, radiology_request_id, description, category, quantity, unit_price, total_amount, payment_status, charged_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [input.id || randomUUID(), HOSPITAL_ID, patientId, encounterId, input.radiologyRequestId || null, input.description, input.category, quantity, input.unitPrice, total, total > 0 ? "Unpaid" : "Paid", session.user.id]
+          );
+        };
+
+        if (billRegistration) {
+          await createCharge({ description: "Patient registration", category: "Registration", unitPrice: registrationFee });
+        }
+        if (bookConsultation) {
+          await createCharge({ description: "Consultation", category: "Consultation", unitPrice: consultationFee });
+        }
+
+        let orderNumber: string | null = null;
+        let invoiceNumber: string | null = null;
+        if (labTestIds.length) {
+          const placeholders = labTestIds.map(() => "?").join(",");
+          const [tests] = await connection.query<RowDataPacket[]>(
+            `SELECT id, name, price FROM tests WHERE id IN (${placeholders}) AND facility_id = ? AND is_active = 1 ORDER BY name`,
+            [...labTestIds, HOSPITAL_ID]
+          );
+          if (tests.length !== labTestIds.length) throw new Error("One or more laboratory tests are unavailable.");
+          const orderId = randomUUID();
+          orderNumber = `ORD-${String(await nextCounter("lab_order", connection)).padStart(6, "0")}`;
+          await connection.execute(
+            "INSERT INTO orders (id, facility_id, order_number, patient_id, status, priority, notes, ordered_by) VALUES (?, ?, ?, ?, 'Registered', 'routine', ?, ?)",
+            [orderId, HOSPITAL_ID, orderNumber, patientId, encounterNumber ? `Registration handoff · ${encounterNumber}` : "Registration handoff", session.user.id]
+          );
+          const orderTests: Array<{ id: string; name: string; price: number }> = [];
+          for (const test of tests) {
+            const orderTestId = randomUUID();
+            const sampleCode = `SMP-${String(await nextCounter("sample", connection)).padStart(7, "0")}`;
+            await connection.execute(
+              "INSERT INTO order_tests (id, order_id, test_id, specimen_label, status, sample_code, barcode_value, qr_value) VALUES (?, ?, ?, ?, 'Registered', ?, ?, ?)",
+              [orderTestId, orderId, test.id, test.name, sampleCode, sampleCode, sampleCode]
+            );
+            orderTests.push({ id: orderTestId, name: String(test.name), price: Number(test.price || 0) });
+          }
+          const subtotal = orderTests.reduce((sum, test) => sum + test.price, 0);
+          const invoiceId = randomUUID();
+          invoiceNumber = `INV-${String(await nextCounter("invoice", connection)).padStart(6, "0")}`;
+          await connection.execute(
+            "INSERT INTO invoices (id, facility_id, order_id, invoice_number, subtotal, total_amount, payment_status, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            [invoiceId, HOSPITAL_ID, orderId, invoiceNumber, subtotal, subtotal, subtotal > 0 ? "Unpaid" : "Paid", session.user.id]
+          );
+          for (const test of orderTests) await connection.execute(
+            "INSERT INTO invoice_items (id, invoice_id, order_test_id, test_name, quantity, unit_price, line_total) VALUES (?, ?, ?, ?, 1, ?, ?)",
+            [randomUUID(), invoiceId, test.id, test.name, test.price, test.price]
+          );
+        }
+
+        let prescriptionId: string | null = null;
+        if (medicationRequests.length) {
+          const medicationIds = [...new Set(medicationRequests.map((item) => String(item.medication_id || "")).filter(Boolean))];
+          const placeholders = medicationIds.map(() => "?").join(",");
+          const [medications] = await connection.query<RowDataPacket[]>(
+            `SELECT * FROM medications WHERE id IN (${placeholders}) AND facility_id = ? AND is_active = 1`,
+            [...medicationIds, HOSPITAL_ID]
+          );
+          const medicationIndex = new Map(medications.map((item) => [String(item.id), item]));
+          if (medicationIndex.size !== medicationIds.length) throw new Error("One or more medications are unavailable.");
+          if (!encounterId) throw new Error("A patient visit is required for a pharmacy request.");
+          prescriptionId = randomUUID();
+          await connection.execute(
+            "INSERT INTO prescriptions (id, facility_id, patient_id, encounter_id, status, notes, prescribed_by) VALUES (?, ?, ?, ?, 'Pending', ?, ?)",
+            [prescriptionId, HOSPITAL_ID, patientId, encounterId, "Created during patient registration", session.user.id]
+          );
+          for (const item of medicationRequests) {
+            const medication = medicationIndex.get(String(item.medication_id || ""));
+            if (!medication) throw new Error("Select a medication from the hospital list.");
+            const dose = String(item.dose || "").trim();
+            const frequency = String(item.frequency || "").trim();
+            const duration = String(item.duration || "").trim();
+            if (!dose || !frequency || !duration) throw new Error(`Complete the dose, frequency, and duration for ${medication.generic_name}.`);
+            const quantity = Math.max(Number(item.quantity || 1), 1);
+            const prescriptionItemId = randomUUID();
+            const medicationName = [medication.generic_name, medication.brand_name, medication.strength].filter(Boolean).join(" · ");
+            await connection.execute(
+              `INSERT INTO prescription_items
+                (id, prescription_id, medication_id, medication_name, dose, frequency, duration, route, quantity, instructions, unit_price)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [prescriptionItemId, prescriptionId, medication.id, medicationName, dose, frequency, duration, String(item.route || medication.route || "").trim() || null, quantity, String(item.instructions || "").trim() || null, Number(medication.unit_price || 0)]
+            );
+            await createCharge({ id: prescriptionItemId, description: medicationName, category: "Medication", quantity, unitPrice: Number(medication.unit_price || 0) });
+          }
+        }
+
+        let radiologyRequestNumber: string | null = null;
+        if (radiologyServiceId) {
+          const [services] = await connection.query<RowDataPacket[]>(
+            "SELECT * FROM radiology_services WHERE id = ? AND facility_id = ? AND is_active = 1 LIMIT 1",
+            [radiologyServiceId, HOSPITAL_ID]
+          );
+          const service = services[0];
+          if (!service) throw new Error("The selected radiology service is unavailable.");
+          const requestId = randomUUID();
+          radiologyRequestNumber = `RAD-${String(await nextCounter("radiology", connection)).padStart(7, "0")}`;
+          await connection.execute(
+            `INSERT INTO radiology_requests
+              (id, facility_id, request_number, patient_id, encounter_id, service_id, clinical_indication, priority, status, requested_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, 'Routine', 'Requested', ?)`,
+            [requestId, HOSPITAL_ID, radiologyRequestNumber, patientId, encounterId, service.id, String(args.radiology_indication || "Requested during registration").trim(), session.user.id]
+          );
+          await createCharge({ description: String(service.name), category: "Radiology", unitPrice: Number(service.unit_price || 0), radiologyRequestId: requestId });
+        }
+
+        return { patient_id: patientId, hospital_id: hospitalId, encounter_id: encounterId, encounter_number: encounterNumber, order_number: orderNumber, invoice_number: invoiceNumber, prescription_id: prescriptionId, radiology_request_number: radiologyRequestNumber };
+      });
+      return response(data);
     }
 
     if (name === "bump_test_bundle_usage") {
@@ -117,6 +275,127 @@ export async function POST(request: Request) {
         );
       });
       return response(null);
+    }
+
+    if (name === "create_clinical_lab_order") {
+      if (!["Admin", "Doctor", "Nurse", "Receptionist"].includes(session.profile.role)) return forbidden();
+      const patientId = String(args.patient_id || "");
+      const encounterId = String(args.encounter_id || "");
+      const testIds = [...new Set((Array.isArray(args.test_ids) ? args.test_ids : []).map(String).filter(Boolean))];
+      if (!patientId || !encounterId || !testIds.length) throw new Error("Select at least one laboratory test.");
+
+      const data = await withTransaction(async (connection) => {
+        const [encounters] = await connection.query<RowDataPacket[]>(
+          "SELECT id, encounter_number FROM clinical_encounters WHERE id = ? AND patient_id = ? AND facility_id = ? LIMIT 1",
+          [encounterId, patientId, HOSPITAL_ID]
+        );
+        if (!encounters[0]) throw new Error("Clinical encounter not found.");
+        const placeholders = testIds.map(() => "?").join(",");
+        const [tests] = await connection.query<RowDataPacket[]>(
+          `SELECT id, name, price FROM tests WHERE id IN (${placeholders}) AND facility_id = ? AND is_active = 1 ORDER BY name`,
+          [...testIds, HOSPITAL_ID]
+        );
+        if (tests.length !== testIds.length) throw new Error("One or more laboratory tests are unavailable.");
+
+        const orderId = randomUUID();
+        const orderNumber = `ORD-${String(await nextCounter("lab_order", connection)).padStart(6, "0")}`;
+        const priority = ["routine", "urgent", "stat"].includes(String(args.priority || "").toLowerCase())
+          ? String(args.priority).toLowerCase()
+          : "routine";
+        const notes = [
+          `Clinical encounter ${String(encounters[0].encounter_number)}`,
+          String(args.notes || "").trim()
+        ].filter(Boolean).join(" · ");
+        await connection.execute(
+          "INSERT INTO orders (id, facility_id, order_number, patient_id, status, priority, notes, ordered_by) VALUES (?, ?, ?, ?, 'Registered', ?, ?, ?)",
+          [orderId, HOSPITAL_ID, orderNumber, patientId, priority, notes || null, session.user.id]
+        );
+
+        const orderTests: Array<{ id: string; name: string; price: number }> = [];
+        for (const test of tests) {
+          const orderTestId = randomUUID();
+          const sampleCode = `SMP-${String(await nextCounter("sample", connection)).padStart(7, "0")}`;
+          await connection.execute(
+            "INSERT INTO order_tests (id, order_id, test_id, specimen_label, status, sample_code, barcode_value, qr_value) VALUES (?, ?, ?, ?, 'Registered', ?, ?, ?)",
+            [orderTestId, orderId, test.id, test.name, sampleCode, sampleCode, sampleCode]
+          );
+          orderTests.push({ id: orderTestId, name: String(test.name), price: Number(test.price || 0) });
+        }
+
+        const subtotal = orderTests.reduce((sum, test) => sum + test.price, 0);
+        const invoiceId = randomUUID();
+        const invoiceNumber = `INV-${String(await nextCounter("invoice", connection)).padStart(6, "0")}`;
+        await connection.execute(
+          "INSERT INTO invoices (id, facility_id, order_id, invoice_number, subtotal, total_amount, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          [invoiceId, HOSPITAL_ID, orderId, invoiceNumber, subtotal, subtotal, session.user.id]
+        );
+        for (const test of orderTests) await connection.execute(
+          "INSERT INTO invoice_items (id, invoice_id, order_test_id, test_name, quantity, unit_price, line_total) VALUES (?, ?, ?, ?, 1, ?, ?)",
+          [randomUUID(), invoiceId, test.id, test.name, test.price, test.price]
+        );
+        return { order_id: orderId, order_number: orderNumber, invoice_number: invoiceNumber };
+      });
+      return response(data);
+    }
+
+    if (name === "create_clinical_prescription") {
+      if (!["Admin", "Doctor"].includes(session.profile.role)) return forbidden();
+      const patientId = String(args.patient_id || "");
+      const encounterId = String(args.encounter_id || "");
+      const items = (Array.isArray(args.items) ? args.items : []) as Array<Record<string, unknown>>;
+      if (!patientId || !encounterId || !items.length) throw new Error("Add at least one medication.");
+      if (items.length > 50) throw new Error("Too many medications were added at once.");
+
+      const data = await withTransaction(async (connection) => {
+        const [encounters] = await connection.query<RowDataPacket[]>(
+          "SELECT id FROM clinical_encounters WHERE id = ? AND patient_id = ? AND facility_id = ? LIMIT 1",
+          [encounterId, patientId, HOSPITAL_ID]
+        );
+        if (!encounters[0]) throw new Error("Clinical encounter not found.");
+        const medicationIds = [...new Set(items.map((item) => String(item.medication_id || "")).filter(Boolean))];
+        const placeholders = medicationIds.map(() => "?").join(",");
+        let medications: RowDataPacket[] = [];
+        if (medicationIds.length) {
+          const [rows] = await connection.query<RowDataPacket[]>(
+            `SELECT * FROM medications WHERE id IN (${placeholders}) AND facility_id = ? AND is_active = 1`,
+            [...medicationIds, HOSPITAL_ID]
+          );
+          medications = rows;
+        }
+        const medicationIndex = new Map(medications.map((item) => [String(item.id), item]));
+        if (medicationIndex.size !== medicationIds.length) throw new Error("One or more medications are unavailable.");
+
+        const prescriptionId = randomUUID();
+        await connection.execute(
+          "INSERT INTO prescriptions (id, facility_id, patient_id, encounter_id, status, notes, prescribed_by) VALUES (?, ?, ?, ?, 'Pending', ?, ?)",
+          [prescriptionId, HOSPITAL_ID, patientId, encounterId, String(args.notes || "").trim() || null, session.user.id]
+        );
+        for (const item of items) {
+          const medication = medicationIndex.get(String(item.medication_id || ""));
+          if (!medication) throw new Error("Select a medication from the hospital list.");
+          const dose = String(item.dose || "").trim();
+          const frequency = String(item.frequency || "").trim();
+          const duration = String(item.duration || "").trim();
+          if (!dose || !frequency || !duration) throw new Error(`Complete the dose, frequency, and duration for ${medication.generic_name}.`);
+          const quantity = Math.max(Number(item.quantity || 1), 1);
+          const prescriptionItemId = randomUUID();
+          await connection.execute(
+            `INSERT INTO prescription_items
+              (id, prescription_id, medication_id, medication_name, dose, frequency, duration, route, quantity, instructions, unit_price)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [prescriptionItemId, prescriptionId, medication.id, [medication.generic_name, medication.brand_name, medication.strength].filter(Boolean).join(" · "), dose, frequency, duration, String(item.route || medication.route || "").trim() || null, quantity, String(item.instructions || "").trim() || null, Number(medication.unit_price || 0)]
+          );
+          const total = quantity * Number(medication.unit_price || 0);
+          await connection.execute(
+            `INSERT INTO encounter_charges
+              (id, facility_id, patient_id, encounter_id, description, category, quantity, unit_price, total_amount, payment_status, charged_by)
+             VALUES (?, ?, ?, ?, ?, 'Medication', ?, ?, ?, ?, ?)`,
+            [prescriptionItemId, HOSPITAL_ID, patientId, encounterId, [medication.generic_name, medication.brand_name, medication.strength].filter(Boolean).join(" · "), quantity, Number(medication.unit_price || 0), total, total > 0 ? "Unpaid" : "Paid", session.user.id]
+          );
+        }
+        return { prescription_id: prescriptionId };
+      });
+      return response(data);
     }
 
     if (name === "dispense_prescription") {

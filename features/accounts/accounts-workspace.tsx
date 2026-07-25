@@ -33,12 +33,15 @@ import {
   buildInventoryCostExportRows,
   buildInventoryCostRows,
   buildInvoiceExportRows,
+  buildServiceChargeExportRows,
   exportAccountsWorkbook,
   formatCurrency,
   getCurrentMonthKey,
   isWithinMonth,
   normalizeCategory,
   type AccountExpenseRow,
+  type AccountHospitalCharge,
+  type AccountHospitalPayment,
   type AccountInvoiceRow
 } from "@/features/accounts/accounts-utils";
 import { useToast } from "@/hooks/use-toast";
@@ -50,6 +53,8 @@ import type { Json, Tables, TablesInsert } from "@/types/database";
 
 type AccountsData = {
   expenses: AccountExpenseRow[];
+  hospitalCharges: AccountHospitalCharge[];
+  hospitalPayments: AccountHospitalPayment[];
   inventoryItems: Tables<"inventory_items">[];
   inventoryTransactions: Tables<"inventory_transactions">[];
   invoices: AccountInvoiceRow[];
@@ -93,12 +98,12 @@ async function fetchAccountsData(facilityId: string): Promise<AccountsData> {
     throw new Error("Service unavailable.");
   }
 
-  const [invoicesResponse, expensesResponse, transactionsResponse, inventoryResponse] =
+  const [invoicesResponse, expensesResponse, transactionsResponse, inventoryResponse, chargesResponse, hospitalPaymentsResponse] =
     await Promise.all([
       database
         .from("invoices")
         .select(
-          "id, facility_id, order_id, invoice_number, subtotal, discount_amount, total_amount, amount_paid, payment_status, notes, issued_at, due_at, created_at, created_by, updated_at, orders(id, order_number, ordered_at, patients(id, name, lab_id, phone)), invoice_items(id, invoice_id, order_test_id, test_name, quantity, unit_price, line_total, created_at, order_tests(test_id, tests(id, name, category))), invoice_payments(id, facility_id, invoice_id, receipt_number, amount, payment_method, reference_number, notes, received_at, received_by, created_at)"
+          "id, facility_id, order_id, invoice_number, subtotal, discount_amount, total_amount, amount_paid, payment_status, notes, issued_at, due_at, created_at, created_by, updated_at, orders(id, order_number, ordered_at, patients(id, name, hospital_id, lab_id, phone)), invoice_items(id, invoice_id, order_test_id, test_name, quantity, unit_price, line_total, created_at, order_tests(test_id, tests(id, name, category))), invoice_payments(id, facility_id, invoice_id, receipt_number, amount, payment_method, reference_number, notes, received_at, received_by, created_at)"
         )
         .eq("facility_id", facilityId)
         .gte("issued_at", startIso)
@@ -123,7 +128,21 @@ async function fetchAccountsData(facilityId: string): Promise<AccountsData> {
         .select("*")
         .eq("facility_id", facilityId)
         .order("updated_at", { ascending: false })
-        .limit(240)
+        .limit(240),
+      database
+        .from("encounter_charges")
+        .select("id, patient_id, encounter_id, description, category, quantity, unit_price, total_amount, amount_paid, payment_status, charged_at, patients(id, name, hospital_id, lab_id, phone), clinical_encounters(id, encounter_number)")
+        .eq("facility_id", facilityId)
+        .gte("charged_at", startIso)
+        .order("charged_at", { ascending: false })
+        .limit(600),
+      database
+        .from("hospital_payments")
+        .select("id, charge_id, patient_id, amount, payment_method, reference_number, notes, received_at")
+        .eq("facility_id", facilityId)
+        .gte("received_at", startIso)
+        .order("received_at", { ascending: false })
+        .limit(600)
     ]);
 
   if (invoicesResponse.error) {
@@ -142,8 +161,18 @@ async function fetchAccountsData(facilityId: string): Promise<AccountsData> {
     throw new Error(inventoryResponse.error.message);
   }
 
+  if (chargesResponse.error) {
+    throw new Error(chargesResponse.error.message);
+  }
+
+  if (hospitalPaymentsResponse.error) {
+    throw new Error(hospitalPaymentsResponse.error.message);
+  }
+
   return {
     expenses: (expensesResponse.data ?? []) as AccountExpenseRow[],
+    hospitalCharges: (chargesResponse.data ?? []) as AccountHospitalCharge[],
+    hospitalPayments: (hospitalPaymentsResponse.data ?? []) as AccountHospitalPayment[],
     inventoryItems: (inventoryResponse.data ?? []) as Tables<"inventory_items">[],
     inventoryTransactions:
       (transactionsResponse.data ?? []) as Tables<"inventory_transactions">[],
@@ -230,6 +259,50 @@ export function AccountsWorkspace() {
     });
   }, [accountsQuery.data?.invoices, deferredSearch, monthKey]);
 
+  const filteredHospitalCharges = useMemo(() => {
+    const needle = deferredSearch.trim().toLowerCase();
+    return (accountsQuery.data?.hospitalCharges ?? []).filter((charge) => {
+      if (!isWithinMonth(charge.charged_at, monthKey)) return false;
+      if (!needle) return true;
+      return [
+        charge.patients?.name,
+        charge.patients?.hospital_id,
+        charge.patients?.lab_id,
+        charge.clinical_encounters?.encounter_number,
+        charge.category,
+        charge.description,
+        charge.payment_status
+      ].filter(Boolean).join(" ").toLowerCase().includes(needle);
+    });
+  }, [accountsQuery.data?.hospitalCharges, deferredSearch, monthKey]);
+
+  const billingLedger = useMemo(() => [
+    ...filteredInvoices.map((invoice) => ({
+      id: `invoice-${invoice.id}`,
+      reference: invoice.invoice_number,
+      date: invoice.issued_at,
+      patientName: invoice.orders?.patients?.name || "Unknown patient",
+      hospitalId: invoice.orders?.patients?.hospital_id || invoice.orders?.patients?.lab_id || "No hospital ID",
+      category: "Laboratory",
+      description: (invoice.invoice_items ?? []).map((item) => item.test_name).join(", ") || "Laboratory tests",
+      status: invoice.payment_status,
+      total: Number(invoice.total_amount),
+      paid: Number(invoice.amount_paid)
+    })),
+    ...filteredHospitalCharges.map((charge) => ({
+      id: `charge-${charge.id}`,
+      reference: charge.clinical_encounters?.encounter_number || "Service charge",
+      date: charge.charged_at,
+      patientName: charge.patients?.name || "Unknown patient",
+      hospitalId: charge.patients?.hospital_id || charge.patients?.lab_id || "No hospital ID",
+      category: charge.category,
+      description: charge.description,
+      status: charge.payment_status,
+      total: Number(charge.total_amount),
+      paid: Number(charge.amount_paid)
+    }))
+  ].sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime()), [filteredHospitalCharges, filteredInvoices]);
+
   const filteredExpenses = useMemo(() => {
     const needle = deferredSearch.trim().toLowerCase();
 
@@ -285,10 +358,17 @@ export function AccountsWorkspace() {
     [accountsQuery.data?.invoices, fallbackTestMap, monthKey]
   );
 
-  const incomeByCategory = useMemo(
-    () => buildIncomeByCategory(incomeByTest),
-    [incomeByTest]
-  );
+  const incomeByCategory = useMemo(() => {
+    const totals = new Map(buildIncomeByCategory(incomeByTest).map((row) => [row.category, row]));
+    (accountsQuery.data?.hospitalCharges ?? [])
+      .filter((charge) => isWithinMonth(charge.charged_at, monthKey))
+      .forEach((charge) => {
+        const category = normalizeCategory(charge.category);
+        const current = totals.get(category) ?? { category, revenue: 0, tests: 0 };
+        totals.set(category, { ...current, revenue: current.revenue + Number(charge.total_amount), tests: current.tests + 1 });
+      });
+    return [...totals.values()].sort((left, right) => right.revenue - left.revenue);
+  }, [accountsQuery.data?.hospitalCharges, incomeByTest, monthKey]);
 
   const inventoryCostRows = useMemo(
     () =>
@@ -304,12 +384,14 @@ export function AccountsWorkspace() {
     () =>
       buildAccountsSummary({
         expenses: accountsQuery.data?.expenses ?? [],
+        hospitalCharges: accountsQuery.data?.hospitalCharges ?? [],
+        hospitalPayments: accountsQuery.data?.hospitalPayments ?? [],
         invoices: accountsQuery.data?.invoices ?? [],
         monthKey,
         payments: invoicePayments,
         transactions: accountsQuery.data?.inventoryTransactions ?? []
       }),
-    [accountsQuery.data?.expenses, accountsQuery.data?.inventoryTransactions, accountsQuery.data?.invoices, invoicePayments, monthKey]
+    [accountsQuery.data?.expenses, accountsQuery.data?.hospitalCharges, accountsQuery.data?.hospitalPayments, accountsQuery.data?.inventoryTransactions, accountsQuery.data?.invoices, invoicePayments, monthKey]
   );
 
   const topTestRevenue = incomeByTest[0]?.revenue ?? 0;
@@ -477,6 +559,7 @@ export function AccountsWorkspace() {
         incomeByTest,
         inventoryCostRows: buildInventoryCostExportRows(inventoryCostRows),
         invoiceRows: buildInvoiceExportRows(filteredInvoices),
+        serviceChargeRows: buildServiceChargeExportRows(filteredHospitalCharges),
         monthKey,
         summary
       });
@@ -548,7 +631,7 @@ export function AccountsWorkspace() {
               <Input
                 id="accounts-search"
                 className="pl-9"
-                placeholder="Invoice, patient, test, expense"
+                placeholder="Patient, hospital ID, service, invoice"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
               />
@@ -687,7 +770,7 @@ export function AccountsWorkspace() {
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-sm font-semibold text-slate-950">{row.category}</p>
-                    <p className="text-xs text-slate-500">{row.tests} billed test group(s)</p>
+                    <p className="text-xs text-slate-500">{row.tests} billed line(s)</p>
                   </div>
                   <p className="text-sm font-semibold text-slate-950">{formatCurrency(row.revenue)}</p>
                 </div>
@@ -708,41 +791,40 @@ export function AccountsWorkspace() {
       <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
         <Card className="border-slate-200">
           <CardHeader>
-            <CardTitle className="text-slate-950">Invoice income register</CardTitle>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <CardTitle className="text-slate-950">Billing register</CardTitle>
+              <Badge variant="outline">{billingLedger.length} records</Badge>
+            </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            {filteredInvoices.length === 0 ? (
+            {billingLedger.length === 0 ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600">
-                No invoices found.
+                No billing records found.
               </div>
             ) : null}
 
-            {filteredInvoices.map((invoice) => (
-              <div key={invoice.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+            {billingLedger.map((record) => (
+              <div key={record.id} className="rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
+                  <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-semibold text-slate-950">{invoice.invoice_number}</p>
-                      <Badge variant="outline">{invoice.payment_status}</Badge>
+                      <p className="text-sm font-semibold text-slate-950">{record.reference}</p>
+                      <Badge variant="secondary">{record.category}</Badge>
+                      <Badge variant="outline">{record.status}</Badge>
                     </div>
                     <p className="mt-1 text-sm text-slate-600">
-                      {invoice.orders?.patients?.name || "Unknown patient"} •{" "}
-                      {invoice.orders?.patients?.lab_id || "No lab ID"} •{" "}
-                      {invoice.orders?.order_number || "No order number"}
+                      {record.patientName} • {record.hospitalId}
                     </p>
-                    <p className="mt-2 text-xs text-slate-500">
-                      Tests: {(invoice.invoice_items ?? []).map((item) => item.test_name).join(", ") || "No tests"}
+                    <p className="mt-2 break-words text-xs text-slate-500">
+                      {record.description} • {new Intl.DateTimeFormat("en-NG", { dateStyle: "medium", timeStyle: "short" }).format(new Date(record.date))}
                     </p>
                   </div>
                   <div className="text-left lg:text-right">
                     <p className="text-sm font-semibold text-slate-950">
-                      {formatCurrency(invoice.total_amount)}
+                      {formatCurrency(record.total)}
                     </p>
                     <p className="mt-1 text-xs text-slate-500">
-                      Paid {formatCurrency(invoice.amount_paid)} • Due{" "}
-                      {formatCurrency(
-                        Math.max(Number(invoice.total_amount) - Number(invoice.amount_paid), 0)
-                      )}
+                      Paid {formatCurrency(record.paid)} • Due {formatCurrency(Math.max(record.total - record.paid, 0))}
                     </p>
                   </div>
                 </div>

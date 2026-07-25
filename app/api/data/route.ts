@@ -5,6 +5,7 @@ import { getCurrentSession } from "@/lib/auth-session";
 import { getPool, migrateDatabase, nextCounter } from "@/lib/db";
 import { HOSPITAL_ID } from "@/lib/db/schema";
 import type { AppRole } from "@/lib/auth-types";
+import { handlePreviewData, isPreviewMode } from "@/lib/preview-mode";
 
 type Filter = { column: string; operator: "eq" | "neq" | "in" | "is" | "gte" | "lte" | "like" | "ilike"; value: unknown };
 type QueryPayload = {
@@ -53,7 +54,7 @@ const readRoles: Partial<Record<string, AppRole[]>> = {
   vital_signs: ["Admin", "Receptionist", "LabScientist", "Doctor", "Nurse", "Pharmacist", "Radiologist"],
   clinical_notes: ["Admin", "Receptionist", "LabScientist", "Doctor", "Nurse", "Pharmacist", "Radiologist"],
   diagnoses: ["Admin", "Receptionist", "LabScientist", "Doctor", "Nurse", "Pharmacist", "Radiologist"],
-  medications: ["Admin", "Doctor", "Nurse", "Pharmacist", "Storekeeper"], prescriptions: ["Admin", "Receptionist", "LabScientist", "Doctor", "Nurse", "Pharmacist", "Storekeeper", "Radiologist"], prescription_items: ["Admin", "Receptionist", "LabScientist", "Doctor", "Nurse", "Pharmacist", "Storekeeper", "Radiologist"],
+  medications: ["Admin", "Receptionist", "Doctor", "Nurse", "Pharmacist", "Storekeeper"], prescriptions: ["Admin", "Receptionist", "LabScientist", "Doctor", "Nurse", "Pharmacist", "Storekeeper", "Radiologist"], prescription_items: ["Admin", "Receptionist", "LabScientist", "Doctor", "Nurse", "Pharmacist", "Storekeeper", "Radiologist"],
   encounter_charges: ["Admin", "Receptionist", "LabScientist", "Accountant", "Doctor", "Nurse", "Pharmacist", "Radiologist"], hospital_payments: ["Admin", "Receptionist", "Accountant"],
   radiology_services: ["Admin", "Receptionist", "LabScientist", "Accountant", "Doctor", "Nurse", "Pharmacist", "Radiologist"],
   radiology_requests: ["Admin", "Receptionist", "LabScientist", "Accountant", "Doctor", "Nurse", "Pharmacist", "Radiologist"], radiology_reports: ["Admin", "Receptionist", "LabScientist", "Doctor", "Nurse", "Pharmacist", "Radiologist"],
@@ -69,7 +70,7 @@ const mutationRoles: Partial<Record<string, AppRole[]>> = {
   inventory_items: ["Admin", "Accountant", "Storekeeper", "Pharmacist", "LabScientist"],
   inventory_transactions: ["Admin", "Accountant", "Storekeeper", "Pharmacist", "LabScientist"], expenses: ["Admin", "Accountant"],
   audit_logs: ["Admin", "LabScientist", "Verifier", "Accountant"], lab_branding_settings: ["Admin"],
-  wards: ["Admin", "Nurse"], beds: ["Admin", "Nurse"], clinical_encounters: ["Admin", "Receptionist", "Doctor", "Nurse"],
+  wards: ["Admin"], beds: ["Admin"], clinical_encounters: ["Admin", "Receptionist", "Doctor", "Nurse"],
   admissions: ["Admin", "Doctor", "Nurse"], vital_signs: ["Admin", "Doctor", "Nurse"], clinical_notes: ["Admin", "Doctor", "Nurse"],
   diagnoses: ["Admin", "Doctor"], medications: ["Admin", "Pharmacist", "Storekeeper"], prescriptions: ["Admin", "Doctor", "Pharmacist"],
   prescription_items: ["Admin", "Doctor", "Pharmacist"], encounter_charges: ["Admin", "Receptionist", "Accountant"], hospital_payments: ["Admin", "Receptionist", "Accountant"],
@@ -336,6 +337,33 @@ async function syncInvoice(orderId: string, actorId: string) {
 
 async function afterInsert(table: string, records: Record<string, unknown>[], actorId: string) {
   if (table === "order_tests") for (const record of records) await syncInvoice(String(record.order_id), actorId);
+  if (table === "prescription_items") {
+    for (const record of records) {
+      const [prescriptions] = await getPool().query<RowDataPacket[]>(
+        "SELECT patient_id, encounter_id FROM prescriptions WHERE id = ? AND facility_id = ? LIMIT 1",
+        [String(record.prescription_id), HOSPITAL_ID]
+      );
+      const prescription = prescriptions[0];
+      if (!prescription) continue;
+      const quantity = Math.max(Number(record.quantity || 1), 0);
+      const unitPrice = Math.max(Number(record.unit_price || 0), 0);
+      const total = quantity * unitPrice;
+      await getPool().execute(
+        `INSERT INTO encounter_charges
+          (id, facility_id, patient_id, encounter_id, description, category, quantity, unit_price, total_amount, payment_status, charged_by)
+         VALUES (?, ?, ?, ?, ?, 'Medication', ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE description = VALUES(description), quantity = VALUES(quantity), unit_price = VALUES(unit_price), total_amount = VALUES(total_amount)`,
+        [String(record.id), HOSPITAL_ID, prescription.patient_id, prescription.encounter_id, String(record.medication_name || "Medication"), quantity, unitPrice, total, total > 0 ? "Unpaid" : "Paid", actorId]
+      );
+    }
+  }
+  if (table === "beds") {
+    const wardIds = [...new Set(records.map((record) => String(record.ward_id)).filter(Boolean))];
+    for (const wardId of wardIds) await getPool().execute(
+      "UPDATE wards SET capacity = (SELECT COUNT(*) FROM beds WHERE ward_id = ?) WHERE id = ? AND facility_id = ?",
+      [wardId, wardId, HOSPITAL_ID]
+    );
+  }
   if (table === "radiology_requests") {
     for (const record of records) {
       const [services] = await getPool().query<RowDataPacket[]>("SELECT name, unit_price FROM radiology_services WHERE id = ? LIMIT 1", [String(record.service_id)]);
@@ -362,8 +390,9 @@ export async function POST(request: Request) {
   try {
     const session = await getCurrentSession();
     if (!session) return NextResponse.json({ error: { message: "Sign in required." } }, { status: 401 });
-    await migrateDatabase();
     const payload = await request.json() as QueryPayload;
+    if (isPreviewMode()) return NextResponse.json(handlePreviewData(payload));
+    await migrateDatabase();
     const table = payload.table || "";
     const operation = payload.operation || "select";
     if (!tables.has(table)) return NextResponse.json({ error: { message: "Unknown data resource." } }, { status: 400 });
@@ -376,8 +405,11 @@ export async function POST(request: Request) {
     if (operation !== "select" && !(mutationRoles[table] ?? []).includes(session.profile.role)) {
       return NextResponse.json({ error: { message: "Your staff role cannot perform this action." } }, { status: 403 });
     }
-    if (operation === "delete" && table !== "test_bundles") {
+    if (operation === "delete" && table !== "test_bundles" && table !== "beds") {
       return NextResponse.json({ error: { message: "Clinical and financial records cannot be deleted from the application." } }, { status: 403 });
+    }
+    if (operation === "delete" && table === "beds" && session.profile.role !== "Admin") {
+      return NextResponse.json({ error: { message: "Admin access required." } }, { status: 403 });
     }
     if (table === "profiles" && session.profile.role !== "Admin") return NextResponse.json({ error: { message: "Admin access required." } }, { status: 403 });
     const allowedColumns = await columnsFor(table);
@@ -444,6 +476,29 @@ export async function POST(request: Request) {
       return NextResponse.json({ data: payload.single ? rows[0] ?? null : rows, error: null });
     }
 
+    if (table === "beds") {
+      const [beds] = await pool.query<RowDataPacket[]>(`SELECT id, ward_id, status FROM beds${where}`, filters.params as never[]);
+      if (beds.some((bed) => bed.status === "Occupied")) {
+        return NextResponse.json({ error: { message: "An occupied bed cannot be removed." } }, { status: 409 });
+      }
+      const bedIds = beds.map((bed) => String(bed.id));
+      if (bedIds.length) {
+        const [history] = await pool.query<RowDataPacket[]>(
+          `SELECT COUNT(*) AS total FROM admissions WHERE bed_id IN (${bedIds.map(() => "?").join(",")})`,
+          bedIds
+        );
+        if (Number(history[0]?.total || 0) > 0) {
+          return NextResponse.json({ error: { message: "A bed with admission history cannot be removed. Set it to Maintenance instead." } }, { status: 409 });
+        }
+      }
+      const wardIds = [...new Set(beds.map((bed) => String(bed.ward_id)))];
+      const [result] = await pool.execute<ResultSetHeader>(`DELETE FROM ${identifier(table)}${where}`, filters.params as never[]);
+      for (const wardId of wardIds) await pool.execute(
+        "UPDATE wards SET capacity = (SELECT COUNT(*) FROM beds WHERE ward_id = ?) WHERE id = ? AND facility_id = ?",
+        [wardId, wardId, HOSPITAL_ID]
+      );
+      return NextResponse.json({ data: { deleted: result.affectedRows }, error: null });
+    }
     const [result] = await pool.execute<ResultSetHeader>(`DELETE FROM ${identifier(table)}${where}`, filters.params as never[]);
     return NextResponse.json({ data: { deleted: result.affectedRows }, error: null });
   } catch (error) {

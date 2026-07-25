@@ -41,6 +41,7 @@ import {
   formatPatientDate
 } from "@/features/patients/patient-utils";
 import { PatientClinicalRecord } from "@/features/patients/patient-clinical-record";
+import { NigeriaLocationFields } from "@/features/patients/nigeria-location-fields";
 import { useToast } from "@/hooks/use-toast";
 import {
   canAccessPatientsRole,
@@ -862,22 +863,16 @@ export function PatientHistory({ patientId }: { patientId: string }) {
                           }
                         />
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="patient-lga">LGA</Label>
-                        <Input
-                          id="patient-lga"
-                          value={formState.lga}
-                          onChange={(event) => handleFieldChange("lga", event.target.value)}
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="patient-state">State</Label>
-                        <Input
-                          id="patient-state"
-                          value={formState.state}
-                          onChange={(event) => handleFieldChange("state", event.target.value)}
-                        />
-                      </div>
+                      <NigeriaLocationFields
+                        idPrefix="patient-edit"
+                        state={formState.state}
+                        stateError={errors.state}
+                        lga={formState.lga}
+                        lgaError={errors.lga}
+                        onChange={(location) =>
+                          setFormState((current) => ({ ...current, ...location }))
+                        }
+                      />
                     </div>
 
                     <div className="space-y-2">

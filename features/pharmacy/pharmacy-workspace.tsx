@@ -60,7 +60,9 @@ export function PharmacyWorkspace() {
   const refresh = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["hospital", "pharmacy"] }),
-      queryClient.invalidateQueries({ queryKey: ["hospital", "overview"] })
+      queryClient.invalidateQueries({ queryKey: ["hospital", "overview"] }),
+      queryClient.invalidateQueries({ queryKey: ["hospital", "billing"] }),
+      queryClient.invalidateQueries({ queryKey: ["accounts-workspace"] })
     ]);
   };
 

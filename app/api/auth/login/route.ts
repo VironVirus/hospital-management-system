@@ -3,15 +3,17 @@ import type { RowDataPacket } from "mysql2/promise";
 import { createSession, getCurrentSession } from "@/lib/auth-session";
 import { getPool, migrateDatabase } from "@/lib/db";
 import { verifyPassword } from "@/lib/security";
+import { isPreviewMode } from "@/lib/preview-mode";
 
 type LoginRow = RowDataPacket & { id: string; password_hash: string; is_active: number; approval_status: string };
 
 export async function POST(request: Request) {
   try {
-    await migrateDatabase();
     const payload = await request.json().catch(() => null) as { email?: string; password?: string } | null;
     const email = payload?.email?.trim().toLowerCase();
     if (!email || !payload?.password) return NextResponse.json({ error: "Enter your email and password." }, { status: 400 });
+    if (isPreviewMode()) return NextResponse.json({ session: await getCurrentSession() });
+    await migrateDatabase();
     const [rows] = await getPool().query<LoginRow[]>(
       "SELECT id, password_hash, is_active, approval_status FROM profiles WHERE email = ? LIMIT 1",
       [email]

@@ -141,7 +141,7 @@ const navigation: NavigationItem[] = [
   },
   {
     href: "/billing",
-    label: "Billing",
+    label: "Laboratory Billing",
     icon: Wallet,
     roles: ["Admin", "Accountant"] as AppRole[],
     group: "Operations"
