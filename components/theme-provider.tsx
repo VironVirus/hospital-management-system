@@ -21,6 +21,25 @@ const STORAGE_KEY = "lims-nigeria-theme";
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
+function safeGetStoredTheme() {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const value = window.localStorage.getItem(STORAGE_KEY);
+    return value === "light" || value === "dark" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function safeSetStoredTheme(theme: Theme) {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(STORAGE_KEY, theme);
+  } catch {}
+}
+
 function getSystemTheme(): Theme {
   if (typeof window === "undefined") {
     return "light";
@@ -33,14 +52,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const [resolvedTheme, setResolvedTheme] = useState<Theme>("light");
 
   useEffect(() => {
-    const storedTheme =
-      typeof window !== "undefined"
-        ? window.localStorage.getItem(STORAGE_KEY)
-        : null;
-    const nextTheme =
-      storedTheme === "light" || storedTheme === "dark"
-        ? storedTheme
-        : getSystemTheme();
+    const nextTheme = safeGetStoredTheme() || getSystemTheme();
 
     setResolvedTheme(nextTheme);
   }, []);
@@ -48,23 +60,27 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const root = document.documentElement;
     root.classList.toggle("dark", resolvedTheme === "dark");
-    window.localStorage.setItem(STORAGE_KEY, resolvedTheme);
+    safeSetStoredTheme(resolvedTheme);
   }, [resolvedTheme]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
 
     const handleChange = () => {
-      const storedTheme = window.localStorage.getItem(STORAGE_KEY);
-      if (storedTheme === "light" || storedTheme === "dark") {
+      if (safeGetStoredTheme()) {
         return;
       }
 
       setResolvedTheme(mediaQuery.matches ? "dark" : "light");
     };
 
-    mediaQuery.addEventListener("change", handleChange);
-    return () => mediaQuery.removeEventListener("change", handleChange);
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", handleChange);
+      return () => mediaQuery.removeEventListener("change", handleChange);
+    }
+
+    mediaQuery.addListener(handleChange);
+    return () => mediaQuery.removeListener(handleChange);
   }, []);
 
   const value = useMemo<ThemeContextValue>(
