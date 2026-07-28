@@ -3,8 +3,8 @@ import { Hospital } from "lucide-react";
 
 export default function AuthLayout({ children }: { children: ReactNode }) {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10 dark:bg-slate-950 sm:px-6">
-      <section className="w-full max-w-md space-y-6">
+    <main className="flex min-h-screen w-full items-center justify-center bg-slate-50 px-4 py-10 dark:bg-slate-950 sm:px-6">
+      <section className="mx-auto w-full max-w-md space-y-6">
         <header className="text-center">
           <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-700 text-white">
             <Hospital className="h-7 w-7" />

@@ -13,7 +13,7 @@ import { useAuth } from "@/components/auth-provider";
 export default function LoginPage() {
   const router = useRouter();
   const { refreshProfile, session, loading: authLoading } = useAuth();
-  const [form, setForm] = useState<LoginFormValues>({ email: "", password: "" });
+  const [form, setForm] = useState<LoginFormValues>({ identifier: "", password: "" });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -47,7 +47,7 @@ export default function LoginPage() {
   return <Card className="border-blue-100 bg-white/90 shadow-xl shadow-blue-100/50 backdrop-blur">
     <CardHeader><CardTitle className="text-2xl text-slate-950">Staff sign in</CardTitle></CardHeader>
     <CardContent><form className="space-y-4" onSubmit={handleSubmit}>
-      <div className="space-y-2"><Label htmlFor="email">Email</Label><Input id="email" type="email" autoComplete="email" value={form.email} onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))} placeholder="staff@stgiannahospital.com" required /></div>
+      <div className="space-y-2"><Label htmlFor="identifier">Login ID</Label><Input id="identifier" type="text" autoComplete="username" value={form.identifier} onChange={(event) => setForm((current) => ({ ...current, identifier: event.target.value }))} placeholder="staff email or login ID" required /></div>
       <div className="space-y-2"><Label htmlFor="password">Password</Label><Input id="password" type="password" autoComplete="current-password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} placeholder="••••••••" required /></div>
       {error ? <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
       <Button type="submit" className="w-full" disabled={loading || authLoading}>{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <LockKeyhole className="h-4 w-4" />}{loading ? "Signing in..." : "Sign in"}</Button>

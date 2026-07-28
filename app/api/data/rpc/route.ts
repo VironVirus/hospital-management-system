@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import type { RowDataPacket } from "mysql2/promise";
-import { getCurrentSession } from "@/lib/auth-session";
+import { getCurrentSession, isPreviewSession } from "@/lib/auth-session";
 import { getPool, nextCounter, withTransaction } from "@/lib/db";
 import { HOSPITAL_ID } from "@/lib/db/schema";
 
@@ -18,16 +18,21 @@ function forbidden() {
 }
 
 export async function POST(request: Request) {
+  let previewSession = false;
+  let name = "";
+
   try {
     const session = await getCurrentSession();
     if (!session) return NextResponse.json({ data: null, error: { message: "Sign in required." } }, { status: 401 });
+    previewSession = isPreviewSession(session);
+    const currentSession = session;
     const payload = await request.json().catch(() => null) as { name?: string; args?: Record<string, unknown> } | null;
-    const name = payload?.name || "";
+    name = payload?.name || "";
     const args = payload?.args || {};
     const pool = getPool();
 
     if (name === "search_patients") {
-      if (session.profile.role === "Storekeeper") return forbidden();
+      if (currentSession.profile.role === "Storekeeper") return forbidden();
       const term = String(args.search_term || "").trim();
       const page = Math.max(Number(args.page_number || 1), 1);
       const size = Math.min(Math.max(Number(args.page_size || 10), 1), 100);
@@ -49,7 +54,7 @@ export async function POST(request: Request) {
     }
 
     if (name === "register_patient_with_services") {
-      if (!["Admin", "Receptionist"].includes(session.profile.role)) return forbidden();
+      if (!["Admin", "Receptionist"].includes(currentSession.profile.role)) return forbidden();
       const patient = (args.patient && typeof args.patient === "object" ? args.patient : {}) as Record<string, unknown>;
       const patientName = String(patient.name || "").trim();
       if (patientName.length < 2) throw new Error("Enter the patient's full name.");
@@ -73,7 +78,7 @@ export async function POST(request: Request) {
           `INSERT INTO patients
             (id, facility_id, hospital_id, lab_id, name, phone, dob, sex, address, email, emergency_contact, national_id, lga, state, ndpr_consent, ndpr_consent_at, notes, created_by)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, UTC_TIMESTAMP(3), ?, ?)`,
-          [patientId, HOSPITAL_ID, hospitalId, hospitalId, patientName, nullable(patient.phone), nullable(patient.dob), nullable(patient.sex), nullable(patient.address), nullable(patient.email), nullable(patient.emergency_contact), nullable(patient.national_id), nullable(patient.lga), nullable(patient.state), nullable(patient.notes), session.user.id]
+          [patientId, HOSPITAL_ID, hospitalId, hospitalId, patientName, nullable(patient.phone), nullable(patient.dob), nullable(patient.sex), nullable(patient.address), nullable(patient.email), nullable(patient.emergency_contact), nullable(patient.national_id), nullable(patient.lga), nullable(patient.state), nullable(patient.notes), currentSession.user.id]
         );
 
         const needsEncounter = bookConsultation || labTestIds.length > 0 || medicationRequests.length > 0 || Boolean(radiologyServiceId);
@@ -84,7 +89,7 @@ export async function POST(request: Request) {
         if (encounterId && encounterNumber) {
           await connection.execute(
             "INSERT INTO clinical_encounters (id, facility_id, patient_id, encounter_number, encounter_type, status, created_by) VALUES (?, ?, ?, ?, 'Outpatient', 'Open', ?)",
-            [encounterId, HOSPITAL_ID, patientId, encounterNumber, session.user.id]
+            [encounterId, HOSPITAL_ID, patientId, encounterNumber, currentSession.user.id]
           );
         }
 
@@ -95,7 +100,7 @@ export async function POST(request: Request) {
             `INSERT INTO encounter_charges
               (id, facility_id, patient_id, encounter_id, radiology_request_id, description, category, quantity, unit_price, total_amount, payment_status, charged_by)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [input.id || randomUUID(), HOSPITAL_ID, patientId, encounterId, input.radiologyRequestId || null, input.description, input.category, quantity, input.unitPrice, total, total > 0 ? "Unpaid" : "Paid", session.user.id]
+            [input.id || randomUUID(), HOSPITAL_ID, patientId, encounterId, input.radiologyRequestId || null, input.description, input.category, quantity, input.unitPrice, total, total > 0 ? "Unpaid" : "Paid", currentSession.user.id]
           );
         };
 
@@ -119,7 +124,7 @@ export async function POST(request: Request) {
           orderNumber = `ORD-${String(await nextCounter("lab_order", connection)).padStart(6, "0")}`;
           await connection.execute(
             "INSERT INTO orders (id, facility_id, order_number, patient_id, status, priority, notes, ordered_by) VALUES (?, ?, ?, ?, 'Registered', 'routine', ?, ?)",
-            [orderId, HOSPITAL_ID, orderNumber, patientId, encounterNumber ? `Registration handoff · ${encounterNumber}` : "Registration handoff", session.user.id]
+            [orderId, HOSPITAL_ID, orderNumber, patientId, encounterNumber ? `Registration handoff · ${encounterNumber}` : "Registration handoff", currentSession.user.id]
           );
           const orderTests: Array<{ id: string; name: string; price: number }> = [];
           for (const test of tests) {
@@ -136,7 +141,7 @@ export async function POST(request: Request) {
           invoiceNumber = `INV-${String(await nextCounter("invoice", connection)).padStart(6, "0")}`;
           await connection.execute(
             "INSERT INTO invoices (id, facility_id, order_id, invoice_number, subtotal, total_amount, payment_status, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            [invoiceId, HOSPITAL_ID, orderId, invoiceNumber, subtotal, subtotal, subtotal > 0 ? "Unpaid" : "Paid", session.user.id]
+            [invoiceId, HOSPITAL_ID, orderId, invoiceNumber, subtotal, subtotal, subtotal > 0 ? "Unpaid" : "Paid", currentSession.user.id]
           );
           for (const test of orderTests) await connection.execute(
             "INSERT INTO invoice_items (id, invoice_id, order_test_id, test_name, quantity, unit_price, line_total) VALUES (?, ?, ?, ?, 1, ?, ?)",
@@ -158,7 +163,7 @@ export async function POST(request: Request) {
           prescriptionId = randomUUID();
           await connection.execute(
             "INSERT INTO prescriptions (id, facility_id, patient_id, encounter_id, status, notes, prescribed_by) VALUES (?, ?, ?, ?, 'Pending', ?, ?)",
-            [prescriptionId, HOSPITAL_ID, patientId, encounterId, "Created during patient registration", session.user.id]
+            [prescriptionId, HOSPITAL_ID, patientId, encounterId, "Created during patient registration", currentSession.user.id]
           );
           for (const item of medicationRequests) {
             const medication = medicationIndex.get(String(item.medication_id || ""));
@@ -194,7 +199,7 @@ export async function POST(request: Request) {
             `INSERT INTO radiology_requests
               (id, facility_id, request_number, patient_id, encounter_id, service_id, clinical_indication, priority, status, requested_by)
              VALUES (?, ?, ?, ?, ?, ?, ?, 'Routine', 'Requested', ?)`,
-            [requestId, HOSPITAL_ID, radiologyRequestNumber, patientId, encounterId, service.id, String(args.radiology_indication || "Requested during registration").trim(), session.user.id]
+            [requestId, HOSPITAL_ID, radiologyRequestNumber, patientId, encounterId, service.id, String(args.radiology_indication || "Requested during registration").trim(), currentSession.user.id]
           );
           await createCharge({ description: String(service.name), category: "Radiology", unitPrice: Number(service.unit_price || 0), radiologyRequestId: requestId });
         }
@@ -205,13 +210,13 @@ export async function POST(request: Request) {
     }
 
     if (name === "bump_test_bundle_usage") {
-      if (!["Admin", "Receptionist", "LabScientist"].includes(session.profile.role)) return forbidden();
+      if (!["Admin", "Receptionist", "LabScientist"].includes(currentSession.profile.role)) return forbidden();
       await pool.execute("UPDATE test_bundles SET usage_count = usage_count + 1, last_used_at = UTC_TIMESTAMP(3) WHERE id = ? AND facility_id = ?", [String(args.target_bundle_id), HOSPITAL_ID]);
       return response(null);
     }
 
     if (name === "apply_inventory_transaction") {
-      if (!["Admin", "Accountant", "Storekeeper", "Pharmacist", "LabScientist"].includes(session.profile.role)) return forbidden();
+      if (!["Admin", "Accountant", "Storekeeper", "Pharmacist", "LabScientist"].includes(currentSession.profile.role)) return forbidden();
       await withTransaction(async (connection) => {
         const [items] = await connection.query<RowDataPacket[]>("SELECT * FROM inventory_items WHERE id = ? AND facility_id = ? FOR UPDATE", [String(args.target_item_id), HOSPITAL_ID]);
         const item = items[0];
@@ -229,14 +234,14 @@ export async function POST(request: Request) {
         await connection.execute(
           `INSERT INTO inventory_transactions (id, facility_id, item_id, transaction_type, quantity, unit_cost, total_cost, balance_after, reason, reference_number, notes, performed_by)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [id, HOSPITAL_ID, item.id, type, quantity, unitCost, quantity * unitCost, next, args.reason_value || null, args.reference_number_value || null, args.notes_value || null, session.user.id]
+          [id, HOSPITAL_ID, item.id, type, quantity, unitCost, quantity * unitCost, next, args.reason_value || null, args.reference_number_value || null, args.notes_value || null, currentSession.user.id]
         );
       });
       return response(null);
     }
 
     if (name === "register_invoice_payment") {
-      if (!["Admin", "Accountant"].includes(session.profile.role)) return forbidden();
+      if (!["Admin", "Accountant"].includes(currentSession.profile.role)) return forbidden();
       const data = await withTransaction(async (connection) => {
         const [invoices] = await connection.query<RowDataPacket[]>("SELECT * FROM invoices WHERE id = ? AND facility_id = ? FOR UPDATE", [String(args.target_invoice_id), HOSPITAL_ID]);
         const invoice = invoices[0];
@@ -250,7 +255,7 @@ export async function POST(request: Request) {
         await connection.execute(
           `INSERT INTO invoice_payments (id, facility_id, invoice_id, receipt_number, amount, payment_method, reference_number, notes, received_by)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [paymentId, HOSPITAL_ID, invoice.id, receipt, amount, args.payment_method_value, args.reference_number_value || null, args.notes_value || null, session.user.id]
+          [paymentId, HOSPITAL_ID, invoice.id, receipt, amount, args.payment_method_value, args.reference_number_value || null, args.notes_value || null, currentSession.user.id]
         );
         const status = moneyStatus(paid, total);
         await connection.execute("UPDATE invoices SET amount_paid = ?, payment_status = ? WHERE id = ?", [paid, status, invoice.id]);
@@ -260,23 +265,23 @@ export async function POST(request: Request) {
     }
 
     if (name === "verify_result") {
-      if (!["Admin", "Verifier"].includes(session.profile.role)) throw new Error("Only a result verifier can approve results.");
+      if (!["Admin", "Verifier"].includes(currentSession.profile.role)) throw new Error("Only a result verifier can approve results.");
       await withTransaction(async (connection) => {
         const [results] = await connection.query<RowDataPacket[]>("SELECT * FROM order_test_results WHERE id = ? FOR UPDATE", [String(args.target_result_id)]);
         const result = results[0];
         if (!result) throw new Error("Result not found.");
-        await connection.execute("UPDATE order_test_results SET verified_by = ?, verified_at = UTC_TIMESTAMP(3) WHERE id = ?", [session.user.id, result.id]);
+        await connection.execute("UPDATE order_test_results SET verified_by = ?, verified_at = UTC_TIMESTAMP(3) WHERE id = ?", [currentSession.user.id, result.id]);
         await connection.execute("UPDATE order_tests SET status = 'Verified', verified_at = UTC_TIMESTAMP(3) WHERE id = ?", [result.order_test_id]);
         await connection.execute(
           "INSERT INTO audit_logs (id, facility_id, entity_table, entity_id, action, payload, actor_id) VALUES (?, ?, 'order_test_results', ?, 'result_verified', ?, ?)",
-          [randomUUID(), HOSPITAL_ID, result.id, JSON.stringify({ verification_notes: args.verification_notes || null }), session.user.id]
+          [randomUUID(), HOSPITAL_ID, result.id, JSON.stringify({ verification_notes: args.verification_notes || null }), currentSession.user.id]
         );
       });
       return response(null);
     }
 
     if (name === "create_clinical_lab_order") {
-      if (!["Admin", "Doctor", "Nurse", "Receptionist"].includes(session.profile.role)) return forbidden();
+      if (!["Admin", "Doctor", "Nurse", "Receptionist"].includes(currentSession.profile.role)) return forbidden();
       const patientId = String(args.patient_id || "");
       const encounterId = String(args.encounter_id || "");
       const testIds = [...new Set((Array.isArray(args.test_ids) ? args.test_ids : []).map(String).filter(Boolean))];
@@ -306,7 +311,7 @@ export async function POST(request: Request) {
         ].filter(Boolean).join(" · ");
         await connection.execute(
           "INSERT INTO orders (id, facility_id, order_number, patient_id, status, priority, notes, ordered_by) VALUES (?, ?, ?, ?, 'Registered', ?, ?, ?)",
-          [orderId, HOSPITAL_ID, orderNumber, patientId, priority, notes || null, session.user.id]
+          [orderId, HOSPITAL_ID, orderNumber, patientId, priority, notes || null, currentSession.user.id]
         );
 
         const orderTests: Array<{ id: string; name: string; price: number }> = [];
@@ -325,7 +330,7 @@ export async function POST(request: Request) {
         const invoiceNumber = `INV-${String(await nextCounter("invoice", connection)).padStart(6, "0")}`;
         await connection.execute(
           "INSERT INTO invoices (id, facility_id, order_id, invoice_number, subtotal, total_amount, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
-          [invoiceId, HOSPITAL_ID, orderId, invoiceNumber, subtotal, subtotal, session.user.id]
+          [invoiceId, HOSPITAL_ID, orderId, invoiceNumber, subtotal, subtotal, currentSession.user.id]
         );
         for (const test of orderTests) await connection.execute(
           "INSERT INTO invoice_items (id, invoice_id, order_test_id, test_name, quantity, unit_price, line_total) VALUES (?, ?, ?, ?, 1, ?, ?)",
@@ -337,7 +342,7 @@ export async function POST(request: Request) {
     }
 
     if (name === "create_clinical_prescription") {
-      if (!["Admin", "Doctor"].includes(session.profile.role)) return forbidden();
+      if (!["Admin", "Doctor"].includes(currentSession.profile.role)) return forbidden();
       const patientId = String(args.patient_id || "");
       const encounterId = String(args.encounter_id || "");
       const items = (Array.isArray(args.items) ? args.items : []) as Array<Record<string, unknown>>;
@@ -366,7 +371,7 @@ export async function POST(request: Request) {
         const prescriptionId = randomUUID();
         await connection.execute(
           "INSERT INTO prescriptions (id, facility_id, patient_id, encounter_id, status, notes, prescribed_by) VALUES (?, ?, ?, ?, 'Pending', ?, ?)",
-          [prescriptionId, HOSPITAL_ID, patientId, encounterId, String(args.notes || "").trim() || null, session.user.id]
+          [prescriptionId, HOSPITAL_ID, patientId, encounterId, String(args.notes || "").trim() || null, currentSession.user.id]
         );
         for (const item of items) {
           const medication = medicationIndex.get(String(item.medication_id || ""));
@@ -388,7 +393,7 @@ export async function POST(request: Request) {
             `INSERT INTO encounter_charges
               (id, facility_id, patient_id, encounter_id, description, category, quantity, unit_price, total_amount, payment_status, charged_by)
              VALUES (?, ?, ?, ?, ?, 'Medication', ?, ?, ?, ?, ?)`,
-            [prescriptionItemId, HOSPITAL_ID, patientId, encounterId, [medication.generic_name, medication.brand_name, medication.strength].filter(Boolean).join(" · "), quantity, Number(medication.unit_price || 0), total, total > 0 ? "Unpaid" : "Paid", session.user.id]
+            [prescriptionItemId, HOSPITAL_ID, patientId, encounterId, [medication.generic_name, medication.brand_name, medication.strength].filter(Boolean).join(" · "), quantity, Number(medication.unit_price || 0), total, total > 0 ? "Unpaid" : "Paid", currentSession.user.id]
           );
         }
         return { prescription_id: prescriptionId };
@@ -397,7 +402,7 @@ export async function POST(request: Request) {
     }
 
     if (name === "dispense_prescription") {
-      if (!["Admin", "Pharmacist"].includes(session.profile.role)) throw new Error("Only pharmacy staff can dispense medication.");
+      if (!["Admin", "Pharmacist"].includes(currentSession.profile.role)) throw new Error("Only pharmacy staff can dispense medication.");
       await withTransaction(async (connection) => {
         const [items] = await connection.query<RowDataPacket[]>("SELECT * FROM prescription_items WHERE prescription_id = ? FOR UPDATE", [String(args.target_prescription_id)]);
         for (const item of items) {
@@ -409,13 +414,13 @@ export async function POST(request: Request) {
           }
           await connection.execute("UPDATE prescription_items SET dispensed_quantity = quantity WHERE id = ?", [item.id]);
         }
-        await connection.execute("UPDATE prescriptions SET status = 'Dispensed', dispensed_by = ?, dispensed_at = UTC_TIMESTAMP(3) WHERE id = ?", [session.user.id, String(args.target_prescription_id)]);
+        await connection.execute("UPDATE prescriptions SET status = 'Dispensed', dispensed_by = ?, dispensed_at = UTC_TIMESTAMP(3) WHERE id = ?", [currentSession.user.id, String(args.target_prescription_id)]);
       });
       return response(null);
     }
 
     if (name === "record_hospital_payment") {
-      if (!["Admin", "Receptionist", "Accountant"].includes(session.profile.role)) return forbidden();
+      if (!["Admin", "Receptionist", "Accountant"].includes(currentSession.profile.role)) return forbidden();
       const data = await withTransaction(async (connection) => {
         const [charges] = await connection.query<RowDataPacket[]>("SELECT * FROM encounter_charges WHERE id = ? AND facility_id = ? FOR UPDATE", [String(args.target_charge_id), HOSPITAL_ID]);
         const charge = charges[0];
@@ -428,7 +433,7 @@ export async function POST(request: Request) {
         await connection.execute(
           `INSERT INTO hospital_payments (id, facility_id, charge_id, patient_id, amount, payment_method, reference_number, notes, received_by)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [id, HOSPITAL_ID, charge.id, charge.patient_id, amount, args.payment_method_value, args.reference_number_value || null, args.notes_value || null, session.user.id]
+          [id, HOSPITAL_ID, charge.id, charge.patient_id, amount, args.payment_method_value, args.reference_number_value || null, args.notes_value || null, currentSession.user.id]
         );
         await connection.execute("UPDATE encounter_charges SET amount_paid = ?, payment_status = ? WHERE id = ?", [paid, moneyStatus(paid, total), charge.id]);
         return id;
@@ -438,6 +443,15 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ data: null, error: { message: "Unknown server operation." } }, { status: 400 });
   } catch (error) {
+    if (previewSession) {
+      if (name === "search_patients") return response([]);
+
+      return NextResponse.json(
+        { data: null, error: { message: "Preview mode is read-only while the database is offline." } },
+        { status: 503 }
+      );
+    }
+
     const databaseError = error as { code?: string };
     console.error("[data-rpc]", error);
     return NextResponse.json({

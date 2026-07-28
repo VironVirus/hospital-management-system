@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
-import { getCurrentSession } from "@/lib/auth-session";
+import { getCurrentSession, isPreviewSession } from "@/lib/auth-session";
 import { getPool, migrateDatabase, nextCounter } from "@/lib/db";
 import { HOSPITAL_ID } from "@/lib/db/schema";
 import type { AppRole } from "@/lib/auth-types";
@@ -386,13 +386,17 @@ async function afterInsert(table: string, records: Record<string, unknown>[], ac
 }
 
 export async function POST(request: Request) {
+  let session: Awaited<ReturnType<typeof getCurrentSession>> = null;
+  let payload: QueryPayload = {};
+  let operation: QueryPayload["operation"] = "select";
+
   try {
-    const session = await getCurrentSession();
+    session = await getCurrentSession();
     if (!session) return NextResponse.json({ error: { message: "Sign in required." } }, { status: 401 });
-    const payload = await request.json() as QueryPayload;
+    payload = await request.json() as QueryPayload;
+    operation = payload.operation || "select";
     await migrateDatabase();
     const table = payload.table || "";
-    const operation = payload.operation || "select";
     if (!tables.has(table)) return NextResponse.json({ error: { message: "Unknown data resource." } }, { status: 400 });
     if (operation === "select" && !(readRoles[table] ?? []).includes(session.profile.role)) {
       return NextResponse.json({ error: { message: "Your staff role cannot view this hospital data." } }, { status: 403 });
@@ -500,6 +504,17 @@ export async function POST(request: Request) {
     const [result] = await pool.execute<ResultSetHeader>(`DELETE FROM ${identifier(table)}${where}`, filters.params as never[]);
     return NextResponse.json({ data: { deleted: result.affectedRows }, error: null });
   } catch (error) {
+    if (isPreviewSession(session)) {
+      if (operation === "select") {
+        return NextResponse.json({ data: payload.single ? null : [], error: null });
+      }
+
+      return NextResponse.json(
+        { data: null, error: { message: "Preview mode is read-only while the database is offline." } },
+        { status: 503 }
+      );
+    }
+
     const databaseError = error as { code?: string };
     console.error("[data-api]", error);
     const message = databaseError.code === "ER_DUP_ENTRY"

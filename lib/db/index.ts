@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import mysql, { type Pool, type PoolConnection, type RowDataPacket } from "mysql2/promise";
 import { hashPassword } from "@/lib/security";
 import { HOSPITAL_ID, schemaStatements } from "@/lib/db/schema";
+import { loadServerEnv } from "@/lib/server-env";
 
 declare global {
   var __stGiannaMySqlPool: Pool | undefined;
@@ -9,6 +10,7 @@ declare global {
 }
 
 function databaseOptions() {
+  loadServerEnv();
   const configuredHost = process.env.DB_HOST;
   const database = process.env.DB_NAME?.trim();
   const user = process.env.DB_USER?.trim();
