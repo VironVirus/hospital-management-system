@@ -4,7 +4,6 @@ import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Activity, Loader2, Search, ShieldAlert } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -261,19 +260,10 @@ export function AuditLogsViewer() {
                       <p className="font-semibold text-slate-950 dark:text-slate-50">
                         {log.action}
                       </p>
-                      <Badge variant="outline">{log.entity_table}</Badge>
-                      <Badge variant="secondary">{log.entity_id.slice(0, 8)}</Badge>
                     </div>
-                    <p className="text-sm text-slate-600 dark:text-slate-300">
-                      Actor: {log.actor_id ? log.actor_id.slice(0, 8) : "System"} ·{" "}
-                      {formatDateTime(log.created_at)}
-                    </p>
+                    <p className="text-sm text-slate-600 dark:text-slate-300">{formatDateTime(log.created_at)}</p>
                   </div>
-                  <Badge variant="outline">Facility scoped</Badge>
                 </div>
-                <pre className="mt-4 overflow-x-auto rounded-2xl bg-slate-50 p-4 text-xs text-slate-700 dark:bg-slate-900 dark:text-slate-200">
-                  {JSON.stringify(log.payload, null, 2)}
-                </pre>
               </div>
             ))}
           </div>

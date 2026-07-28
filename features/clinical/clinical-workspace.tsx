@@ -520,7 +520,6 @@ export function ClinicalWorkspace() {
         <Card className="xl:sticky xl:top-20 xl:self-start">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><ClipboardList className="h-5 w-5 text-teal-700" />Recent patients</CardTitle>
-            <CardDescription>Newest registrations first</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="relative"><Search className="pointer-events-none absolute left-3 top-3.5 h-4 w-4 text-slate-400 sm:top-3" /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or Hospital ID" /></div>
@@ -586,7 +585,7 @@ export function ClinicalWorkspace() {
                     <div className="max-h-80 divide-y overflow-y-auto rounded-2xl border">{filteredTests.map((test) => <label key={test.id} className="flex cursor-pointer items-center justify-between gap-3 p-3 hover:bg-slate-50"><span className="flex items-center gap-3"><input type="checkbox" className="h-4 w-4" checked={selectedTestIds.includes(test.id)} onChange={(event) => setSelectedTestIds((current) => event.target.checked ? [...current, test.id] : current.filter((id) => id !== test.id))} /><span><span className="block text-sm font-medium">{test.name}</span><span className="text-xs text-slate-500">{test.test_code} · {test.category || "Laboratory"}</span></span></span><span className="text-sm font-medium">N{Number(test.price).toLocaleString()}</span></label>)}</div>
                     <Textarea value={labNotes} onChange={(event) => setLabNotes(event.target.value)} placeholder="Laboratory notes" />
                     <Button disabled={saving || !selectedTestIds.length}><Send className="h-4 w-4" />Send {selectedTestIds.length || ""} test{selectedTestIds.length === 1 ? "" : "s"} to laboratory</Button>
-                  </form> : <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">View laboratory requests from the Laboratory tab.</div>
+                  </form> : null
                 ) : null}
 
                 {panel === "treatment" ? (
@@ -596,7 +595,7 @@ export function ClinicalWorkspace() {
                       {treatmentItems.length ? <div className="space-y-2">{treatmentItems.map((item) => <div key={item.client_id} className="flex items-start justify-between gap-3 rounded-xl border p-3"><div><p className="font-semibold">{item.medication_name}</p><p className="mt-1 text-sm text-slate-600">{item.dose} · {item.frequency} · {item.duration} · {item.route || "Route not set"}</p>{item.instructions ? <p className="mt-1 text-xs text-slate-500">{item.instructions}</p> : null}</div><Button type="button" size="icon" variant="ghost" aria-label={`Remove ${item.medication_name}`} onClick={() => setTreatmentItems((current) => current.filter((row) => row.client_id !== item.client_id))}><Trash2 className="h-4 w-4" /></Button></div>)}</div> : null}
                       <Textarea value={treatmentNotes} onChange={(event) => setTreatmentNotes(event.target.value)} placeholder="Treatment plan and nursing instructions" />
                       <Button disabled={saving || !treatmentItems.length}><Pill className="h-4 w-4" />Save treatment and send to pharmacy</Button>
-                    </form> : <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">Doctors create treatment plans. Existing prescriptions are shown below.</div>}
+                    </form> : null}
                     <div className="space-y-3">{(chart?.prescriptions ?? []).map((prescription) => <div key={prescription.id} className="rounded-2xl border p-4"><div className="flex items-center justify-between gap-3"><p className="font-semibold">Prescription · {formatDateTime(prescription.prescribed_at)}</p><Badge>{prescription.status}</Badge></div><div className="mt-3 space-y-2">{(prescription.prescription_items ?? []).map((item) => <div key={item.id} className="rounded-xl bg-slate-50 p-3"><p className="font-medium">{item.medication_name}</p><p className="mt-1 text-sm text-slate-600">{item.dose} · {item.frequency} · {item.duration} · {item.route || "-"}</p>{item.instructions ? <p className="mt-1 text-xs text-slate-500">{item.instructions}</p> : null}</div>)}</div></div>)}{!chart?.prescriptions.length ? <p className="rounded-xl border border-dashed p-6 text-center text-sm text-slate-500">No treatment plan recorded.</p> : null}</div>
                   </div>
                 ) : null}
@@ -610,7 +609,7 @@ export function ClinicalWorkspace() {
                 ) : null}
               </CardContent>
             </Card>
-          ) : selectedPatient ? <Card><CardContent className="flex min-h-64 flex-col items-center justify-center gap-3 p-8 text-center"><UserRound className="h-10 w-10 text-slate-300" /><p className="font-medium">No visit yet for {selectedPatient.name}</p><p className="text-sm text-slate-500">Start a new visit above to record clinical care.</p></CardContent></Card> : <Card><CardContent className="flex min-h-64 items-center justify-center p-8 text-sm text-slate-500">No patients available.</CardContent></Card>}
+          ) : selectedPatient ? <Card><CardContent className="flex min-h-64 flex-col items-center justify-center gap-3 p-8 text-center"><UserRound className="h-10 w-10 text-slate-300" /><p className="font-medium">No visit for {selectedPatient.name}</p></CardContent></Card> : <Card><CardContent className="flex min-h-64 items-center justify-center p-8 text-sm text-slate-500">No patients.</CardContent></Card>}
         </div>
       </div>
     </div>

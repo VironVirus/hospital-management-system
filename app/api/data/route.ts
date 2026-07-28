@@ -5,7 +5,6 @@ import { getCurrentSession } from "@/lib/auth-session";
 import { getPool, migrateDatabase, nextCounter } from "@/lib/db";
 import { HOSPITAL_ID } from "@/lib/db/schema";
 import type { AppRole } from "@/lib/auth-types";
-import { handlePreviewData, isPreviewMode } from "@/lib/preview-mode";
 
 type Filter = { column: string; operator: "eq" | "neq" | "in" | "is" | "gte" | "lte" | "like" | "ilike"; value: unknown };
 type QueryPayload = {
@@ -391,7 +390,6 @@ export async function POST(request: Request) {
     const session = await getCurrentSession();
     if (!session) return NextResponse.json({ error: { message: "Sign in required." } }, { status: 401 });
     const payload = await request.json() as QueryPayload;
-    if (isPreviewMode()) return NextResponse.json(handlePreviewData(payload));
     await migrateDatabase();
     const table = payload.table || "";
     const operation = payload.operation || "select";

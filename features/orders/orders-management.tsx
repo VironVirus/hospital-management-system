@@ -1351,19 +1351,8 @@ export function OrdersManagement() {
                   <ClipboardPlus className="h-5 w-5 text-blue-700" />
                   {editingOrder ? `Edit test order ${editingOrder.order_number}` : "Create lab test"}
                 </CardTitle>
-                {!frontDeskMode ? (
-                  <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                    <Badge variant="outline">/ patient</Badge>
-                    <Badge variant="outline">Alt+T test</Badge>
-                    <Badge variant="outline">Ctrl+Enter create</Badge>
-                    <Badge variant="outline">Alt+R recent</Badge>
-                  </div>
-                ) : null}
               </div>
               <div className="flex items-center gap-2">
-                <Badge variant="outline">
-                  {canCreateOrders ? "Reception/Admin" : "View only"}
-                </Badge>
                 <Button
                   type="button"
                   variant={frontDeskMode ? "default" : "outline"}
@@ -1461,7 +1450,7 @@ export function OrdersManagement() {
                               selectPatient(highlightedPatient);
                             }
                           }}
-                          placeholder="Search patient name, phone, or lab ID"
+                          placeholder="Name, phone or Hospital ID"
                         />
 
                         {patientPickerOpen ? (
@@ -1582,7 +1571,7 @@ export function OrdersManagement() {
                       <Input
                         value={bundleDescription}
                         onChange={(event) => setBundleDescription(event.target.value)}
-                        placeholder="Optional note, e.g. walk-in malaria package"
+                        placeholder="Note"
                         className={cn(frontDeskMode && "h-12 text-base", frontDeskMode && "hidden")}
                       />
                     </div>
@@ -1836,7 +1825,7 @@ export function OrdersManagement() {
                         notes: event.target.value
                       }))
                     }
-                    placeholder="Clinical note, payment note, or collection instruction"
+                    placeholder="Notes"
                   />
                   {errors.notes ? (
                     <p className="text-xs text-red-700">{errors.notes}</p>
@@ -1943,22 +1932,6 @@ export function OrdersManagement() {
                           )}
                       </div>
 
-                      <div
-                        className={cn(
-                          "rounded-2xl border border-dashed border-blue-200 bg-blue-50 p-4",
-                          frontDeskMode && "hidden"
-                        )}
-                      >
-                        <div className="flex items-start gap-3">
-                          <Keyboard className="mt-0.5 h-4 w-4 text-blue-700" />
-                          <div className="space-y-2 text-sm text-blue-900">
-                            <p className="font-medium">Reception shortcuts</p>
-                            <p>/ jumps to patient search.</p>
-                            <p>Alt+T jumps to test search.</p>
-                            <p>Ctrl+Enter submits the request.</p>
-                          </div>
-                        </div>
-                      </div>
                     </CardContent>
                   </Card>
                 </div>
@@ -2076,7 +2049,7 @@ export function OrdersManagement() {
                     </div>
                     <p className="text-sm text-slate-600">
                       {order.patients?.name || "Unknown patient"} •{" "}
-                      {order.patients?.lab_id || "No lab ID"}
+                      {order.patients?.lab_id || "No Hospital ID"}
                     </p>
                     <p className="text-xs text-slate-500">
                       {formatDateTime(order.created_at)}

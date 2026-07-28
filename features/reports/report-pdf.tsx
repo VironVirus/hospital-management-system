@@ -245,7 +245,7 @@ function ReportPage({
         <View style={styles.panel}>
           <Text style={styles.eyebrow}>Patient</Text>
           <Text style={styles.panelLine}>Name: {patient?.name || "Unknown patient"}</Text>
-          <Text style={styles.panelLine}>Lab ID: {patient?.lab_id || "-"}</Text>
+          <Text style={styles.panelLine}>Hospital ID: {patient?.lab_id || "-"}</Text>
           <Text style={styles.panelLine}>Phone: {patient?.phone || "-"}</Text>
           <Text style={styles.panelLine}>Sex: {patient?.sex || "-"}</Text>
           <Text style={styles.panelLine}>DOB: {formatDate(patient?.dob || null)}</Text>

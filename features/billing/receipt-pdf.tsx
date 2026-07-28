@@ -205,7 +205,7 @@ export function ReceiptDocument({
             <Text style={styles.lineValue}>{patient?.name || "Unknown patient"}</Text>
           </View>
           <View style={styles.line}>
-            <Text style={styles.lineLabel}>Lab ID</Text>
+            <Text style={styles.lineLabel}>Hospital ID</Text>
             <Text style={styles.lineValue}>{patient?.lab_id || "-"}</Text>
           </View>
           <View style={styles.line}>

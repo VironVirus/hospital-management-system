@@ -26,7 +26,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle
 } from "@/components/ui/card";
@@ -66,7 +65,6 @@ type DashboardData = {
 };
 
 type SummaryCardProps = {
-  hint: string;
   icon: LucideIcon;
   label: string;
   tone?: "blue" | "emerald" | "amber";
@@ -185,7 +183,7 @@ async function fetchDashboardData(facilityId: string): Promise<DashboardData> {
   };
 }
 
-function SummaryCard({ hint, icon: Icon, label, tone = "blue", value }: SummaryCardProps) {
+function SummaryCard({ icon: Icon, label, tone = "blue", value }: SummaryCardProps) {
   const toneClasses =
     tone === "emerald"
       ? "bg-emerald-100 text-emerald-700"
@@ -200,7 +198,6 @@ function SummaryCard({ hint, icon: Icon, label, tone = "blue", value }: SummaryC
           <div>
             <p className="text-sm font-medium text-slate-600">{label}</p>
             <p className="mt-2 text-3xl font-semibold text-slate-950">{value}</p>
-            <p className="mt-2 text-sm text-slate-500">{hint}</p>
           </div>
           <div className={`rounded-2xl p-3 ${toneClasses}`}>
             <Icon className="h-5 w-5" />
@@ -218,7 +215,6 @@ function ChartShell({
 }: {
   actions?: ReactNode;
   children: ReactNode;
-  description: string;
   title: string;
 }) {
   return (
@@ -256,7 +252,6 @@ function DashboardAnalyticsLoading() {
             <Card key={`${section}-${card}`} className="border-blue-100 shadow-sm">
               <CardHeader className="space-y-3">
                 <Skeleton className="h-5 w-40 bg-blue-100" />
-                <Skeleton className="h-4 w-64 bg-slate-100" />
               </CardHeader>
               <CardContent>
                 <Skeleton className="h-[320px] w-full rounded-2xl bg-slate-100" />
@@ -301,12 +296,8 @@ function ActivityNotificationsPanel({
       href: "/results",
       icon: CheckCircle2,
       severity: pendingVerification > 0 ? "warning" : "info",
-      title: "Pending HOD verification",
+      title: "Pending verification",
       value: `${pendingVerification} result(s)`,
-      description:
-        pendingVerification > 0
-          ? "Results entered by the bench and waiting for HOD of Lab / Chief Scientist approval."
-          : "No result is waiting for verification right now."
     },
     {
       href: "/inventory",
@@ -314,10 +305,6 @@ function ActivityNotificationsPanel({
       severity: criticalStock > 0 ? "critical" : alertItems.length > 0 ? "warning" : "info",
       title: "Inventory alerts",
       value: `${alertItems.length} item(s)`,
-      description:
-        alertItems.length > 0
-          ? `${criticalStock} critical item(s), including low stock, expired, or near-expiry reagents.`
-          : "No low-stock or near-expiry item is currently flagged."
     },
     {
       href: "/billing",
@@ -325,10 +312,6 @@ function ActivityNotificationsPanel({
       severity: unpaidInvoices.length > 0 ? "warning" : "info",
       title: "Unpaid invoices",
       value: formatCurrency(unpaidAmount),
-      description:
-        unpaidInvoices.length > 0
-          ? `${unpaidInvoices.length} invoice(s) still need payment follow-up.`
-          : "All visible invoices in the dashboard window are settled."
     }
   ];
 
@@ -337,7 +320,7 @@ function ActivityNotificationsPanel({
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <BellRing className="h-5 w-5 text-blue-700" />
-          Activity notifications
+          Alerts
         </CardTitle>
       </CardHeader>
       <CardContent className="grid gap-3 lg:grid-cols-3">
@@ -442,44 +425,38 @@ export function DashboardOverview() {
   const summaryCards = useMemo(
     () => [
       {
-        hint: "Samples physically collected today.",
         icon: FlaskConical,
         label: "Samples collected today",
         tone: "blue" as const,
         value: String(analytics.todayOperationalSummary.samplesCollected)
       },
       {
-        hint: "Patient records opened today.",
         icon: UserPlus,
         label: "Patients registered today",
         tone: "blue" as const,
         value: String(analytics.todayOperationalSummary.patientsRegistered)
       },
       {
-        hint: "Tests verified today and ready for reporting.",
         icon: CheckCircle2,
         label: "Tests verified today",
         tone: "amber" as const,
         value: String(analytics.todayOperationalSummary.testsVerified)
       },
       {
-        hint: "Tests released as reports today.",
         icon: Activity,
         label: "Tests reported today",
         tone: "emerald" as const,
         value: String(analytics.todayOperationalSummary.testsReported)
       },
       {
-        hint: "Payments received since midnight.",
         icon: Wallet,
         label: "Today's revenue",
         tone: "emerald" as const,
         value: formatCurrency(analytics.todayRevenue)
       },
       {
-        hint: "Average hours from registration to report release.",
         icon: Clock3,
-        label: "Average reporting TAT",
+        label: "Average reporting time",
         tone: "emerald" as const,
         value: `${analytics.averageReportingTat.toFixed(1)} hrs`
       }
@@ -547,8 +524,7 @@ export function DashboardOverview() {
     return (
       <Card className="border-red-200 bg-red-50/80">
         <CardHeader>
-          <CardTitle className="text-red-950">Dashboard data could not load</CardTitle>
-          <CardDescription className="text-red-900">Please try again.</CardDescription>
+          <CardTitle className="text-red-950">Unable to load dashboard</CardTitle>
         </CardHeader>
       </Card>
     );
@@ -610,17 +586,16 @@ export function DashboardOverview() {
       <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <ChartShell
           title="Today's worklist"
-          description="Open samples created today, prioritized for bench flow and HOD/chief scientist attention."
           actions={
             <Badge variant="outline" className="border-blue-200 text-blue-700">
-              {analytics.worklistSummary.urgent} urgent/stat sample(s)
+              {analytics.worklistSummary.urgent} urgent
             </Badge>
           }
         >
           {dashboardQuery.isLoading ? (
             <EmptyChartState message="Loading today's worklist..." />
           ) : analytics.todayWorklistRows.length === 0 ? (
-            <EmptyChartState message="No active samples have been registered today yet." />
+            <EmptyChartState message="No active samples today." />
           ) : (
             <div className="space-y-3">
               {analytics.todayWorklistRows.map((row) => (
@@ -655,12 +630,11 @@ export function DashboardOverview() {
 
         <ChartShell
           title="Inventory alerts"
-          description="Consumables and reagents needing attention before they interrupt daily testing."
         >
           {dashboardQuery.isLoading ? (
             <EmptyChartState message="Loading inventory alerts..." />
           ) : analytics.alertItems.length === 0 ? (
-            <EmptyChartState message="No low stock or near-expiry items need action right now." />
+            <EmptyChartState message="No stock alerts." />
           ) : (
             <div className="space-y-3">
               {analytics.alertItems.slice(0, 6).map(({ item, alert }) => (

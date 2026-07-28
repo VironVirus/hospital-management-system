@@ -464,7 +464,7 @@ export function buildPrintHtml(
             <div class="panel">
               <p class="eyebrow">Patient</p>
               <p><strong>Name:</strong> ${escapeHtml(patient?.name || "Unknown patient")}</p>
-              <p><strong>Lab ID:</strong> ${escapeHtml(patient?.lab_id || "-")}</p>
+              <p><strong>Hospital ID:</strong> ${escapeHtml(patient?.lab_id || "-")}</p>
               <p><strong>Phone:</strong> ${escapeHtml(patient?.phone || "-")}</p>
               <p><strong>Sex:</strong> ${escapeHtml(patient?.sex || "-")}</p>
               <p><strong>DOB:</strong> ${escapeHtml(formatDate(patient?.dob || null))}</p>

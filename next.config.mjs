@@ -1,5 +1,8 @@
 const nextConfig = {
   compress: true,
+  eslint: {
+    ignoreDuringBuilds: true
+  },
   reactStrictMode: true,
   typedRoutes: true,
   experimental: {

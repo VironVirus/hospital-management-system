@@ -922,7 +922,7 @@ export function TestCatalogueAdmin() {
                     </div>
                   ) : (
                     <div className="flex min-h-64 items-center justify-center rounded-xl border border-dashed p-8 text-center text-sm text-slate-500">
-                      Select a test to view its details.
+                      Select a test.
                     </div>
                   )}
                 </div>
@@ -948,7 +948,6 @@ export function TestCatalogueAdmin() {
                   onChange={(event) => setField("test_code", event.target.value.toUpperCase())}
                   placeholder={`${getTestCodePrefix(formState.category)}00001`}
                 />
-                <p className="text-xs text-slate-500">Optional</p>
                 {errors.test_code ? (
                   <p className="text-sm text-red-700">{errors.test_code}</p>
                 ) : null}

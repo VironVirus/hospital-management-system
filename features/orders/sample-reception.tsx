@@ -258,10 +258,10 @@ export function SampleReception() {
     }
 
     if (!canTransitionToStatus(sampleQuery.data.status, nextStatus)) {
-      setStatusError("Status changes must move forward through the workflow.");
+      setStatusError("Status can only move forward.");
       toast({
         title: "Invalid status change",
-        description: "Sample workflow updates must move forward only.",
+        description: "Status can only move forward.",
         variant: "error"
       });
       return;
@@ -400,7 +400,7 @@ export function SampleReception() {
                       {foundSample.orders?.patients?.name || "Unknown patient"}
                     </p>
                     <p className="text-sm text-slate-600">
-                      {foundSample.orders?.patients?.lab_id || "No lab ID"}
+                      {foundSample.orders?.patients?.lab_id || "No Hospital ID"}
                     </p>
                   </div>
                   <div className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-3">
@@ -420,7 +420,7 @@ export function SampleReception() {
                   <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                     <div>
                       <p className="text-sm font-medium text-slate-900">
-                        Current workflow status
+                        Status
                       </p>
                       <p className="text-lg font-semibold text-blue-700">
                         {formatSampleStatus(foundSample.status)}

@@ -348,7 +348,7 @@ export function LabBrandingSettingsPanel({
             id="report-footer"
             value={form.report_footer ?? ""}
             onChange={(event) => updateField("report_footer", event.target.value)}
-            placeholder="Results should be interpreted alongside clinical findings and patient history."
+            placeholder="Report footer"
           />
         </div>
 

@@ -66,7 +66,6 @@ function ChartShell({
 }: {
   actions?: ReactNode;
   children: ReactNode;
-  description: string;
   title: string;
 }) {
   return (
@@ -106,13 +105,12 @@ export function DashboardAnalyticsPanels({
     <>
       <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
         <ChartShell
-          title="Turnaround Time"
-          description="Average hours spent in key workflow stages and day-by-day reporting speed."
+          title="Reporting time"
         >
           {loading ? (
-            <EmptyChartState message="Loading turnaround analytics..." />
+            <EmptyChartState message="Loading reporting time..." />
           ) : tatStageMetrics.every((metric) => metric.sampleCount === 0) ? (
-            <EmptyChartState message="TAT metrics will appear once samples begin moving through the workflow." />
+            <EmptyChartState message="No reporting time data." />
           ) : (
             <div className="space-y-6">
               <div className="grid gap-3 md:grid-cols-4">
@@ -147,7 +145,7 @@ export function DashboardAnalyticsPanels({
                     <Tooltip
                       formatter={(value) => [
                         `${getNumericValue(value).toFixed(1)} hrs`,
-                        "Average TAT"
+                        "Average time"
                       ]}
                     />
                     <Bar dataKey="averageHours" radius={[12, 12, 0, 0]} fill="#1d4ed8" />
@@ -160,12 +158,11 @@ export function DashboardAnalyticsPanels({
 
         <ChartShell
           title="Reporting trend"
-          description="Daily average time to verified or reported completion over the last 14 days."
         >
           {loading ? (
             <EmptyChartState message="Loading reporting trend..." />
           ) : tatTrend.every((entry) => entry.reports === 0) ? (
-            <EmptyChartState message="No completed reports in the last 14 days yet." />
+            <EmptyChartState message="No completed reports." />
           ) : (
             <div className="h-[380px]">
               <ResponsiveContainer width="100%" height="100%">
@@ -187,7 +184,7 @@ export function DashboardAnalyticsPanels({
                   <Tooltip
                     formatter={(value, name) =>
                       name === "averageHours"
-                        ? [`${getNumericValue(value).toFixed(1)} hrs`, "Average TAT"]
+                        ? [`${getNumericValue(value).toFixed(1)} hrs`, "Average time"]
                         : [getNumericValue(value), "Completed reports"]
                     }
                   />
@@ -203,7 +200,7 @@ export function DashboardAnalyticsPanels({
                     yAxisId="left"
                     type="monotone"
                     dataKey="averageHours"
-                    name="Average TAT"
+                    name="Average time"
                     stroke="#0f766e"
                     strokeWidth={3}
                     dot={{ fill: "#0f766e", r: 3 }}
@@ -219,12 +216,11 @@ export function DashboardAnalyticsPanels({
       <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
         <ChartShell
           title="Test volume trends"
-          description="Routine versus urgent/stat demand over the last 14 days."
         >
           {loading ? (
             <EmptyChartState message="Loading test volume trends..." />
           ) : volumeTrend.every((entry) => entry.total === 0) ? (
-            <EmptyChartState message="No recent test volume to chart yet." />
+            <EmptyChartState message="No test data." />
           ) : (
             <div className="h-[360px]">
               <ResponsiveContainer width="100%" height="100%">
@@ -255,7 +251,7 @@ export function DashboardAnalyticsPanels({
                   <Area
                     type="monotone"
                     dataKey="urgent"
-                    name="Urgent/stat"
+                    name="Urgent"
                     stroke="#f59e0b"
                     fill="url(#volumeUrgent)"
                     strokeWidth={2}
@@ -268,12 +264,11 @@ export function DashboardAnalyticsPanels({
 
         <ChartShell
           title="Most requested tests"
-          description="Highest-volume assays in the current dashboard window."
         >
           {loading ? (
             <EmptyChartState message="Loading top requested tests..." />
           ) : topTests.length === 0 ? (
-            <EmptyChartState message="Top requested tests will appear after orders are created." />
+            <EmptyChartState message="No test orders." />
           ) : (
             <div className="h-[360px]">
               <ResponsiveContainer width="100%" height="100%">
@@ -298,11 +293,10 @@ export function DashboardAnalyticsPanels({
 
       <section className="grid gap-6 xl:grid-cols-[1.05fr_0.95fr]">
         <ChartShell
-          title="Revenue analytics"
-          description="Collected payments and outstanding balance across the current reporting window."
+          title="Revenue"
           actions={
             <Badge variant="outline" className="border-emerald-200 text-emerald-700">
-              {revenueSummary.paidInvoices} fully paid invoice(s)
+              {revenueSummary.paidInvoices} paid
             </Badge>
           }
         >
@@ -333,7 +327,7 @@ export function DashboardAnalyticsPanels({
             </div>
           ) : revenueTrend.every((entry) => entry.amount === 0) ? (
             <div className="mt-6">
-              <EmptyChartState message="No payments have been receipted in the last 14 days yet." />
+              <EmptyChartState message="No payments." />
             </div>
           ) : (
             <div className="mt-6 h-[320px]">
@@ -376,12 +370,11 @@ export function DashboardAnalyticsPanels({
 
         <ChartShell
           title="Payment mix"
-          description="How cash collection is distributed across payment methods."
         >
           {loading ? (
             <EmptyChartState message="Loading payment method mix..." />
           ) : paymentMethodBreakdown.length === 0 ? (
-            <EmptyChartState message="Payment method breakdown will appear once receipts are posted." />
+            <EmptyChartState message="No receipts." />
           ) : (
             <div className="grid gap-6 lg:grid-cols-[0.95fr_1.05fr]">
               <div className="h-[320px]">

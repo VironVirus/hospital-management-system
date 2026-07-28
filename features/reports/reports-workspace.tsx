@@ -415,7 +415,7 @@ export function ReportsWorkspace() {
               <Input
                 className="pl-9"
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search order, patient, lab ID, phone"
+                placeholder="Order, patient, Hospital ID or phone"
                 value={search}
               />
             </div>
@@ -540,7 +540,7 @@ export function ReportsWorkspace() {
                               {order.patients?.name || "Unknown patient"}
                             </p>
                             <p className="text-xs text-slate-500">
-                              {order.order_number} · {order.patients?.lab_id || "No lab ID"}
+                              {order.order_number} · {order.patients?.lab_id || "No Hospital ID"}
                             </p>
                           </div>
                           <input
@@ -670,7 +670,7 @@ export function ReportsWorkspace() {
                                 {selectedOrder.patients?.name || "Unknown patient"}
                               </p>
                               <p>
-                                <span className="font-medium text-slate-900">Lab ID:</span>{" "}
+                                <span className="font-medium text-slate-900">Hospital ID:</span>{" "}
                                 {selectedOrder.patients?.lab_id || "-"}
                               </p>
                               <p>

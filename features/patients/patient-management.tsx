@@ -18,7 +18,6 @@ import {
   ChevronRight,
   FileSearch,
   FlaskConical,
-  Keyboard,
   Loader2,
   PencilLine,
   Pill,
@@ -50,7 +49,6 @@ import {
 } from "@/features/patients/schema";
 import { formatPatientAge } from "@/features/patients/patient-utils";
 import { NigeriaLocationFields } from "@/features/patients/nigeria-location-fields";
-import { useFrontDeskMode } from "@/hooks/use-front-desk-mode";
 import { useToast } from "@/hooks/use-toast";
 import {
   canAccessPatientsRole,
@@ -59,7 +57,6 @@ import {
 } from "@/lib/guards";
 import { resolveOnlineQuery } from "@/lib/online-core";
 import { getAppClient } from "@/lib/app-client";
-import { cn } from "@/lib/utils";
 import type { Database } from "@/types/database";
 
 type SearchPatientRow =
@@ -167,7 +164,6 @@ export function PatientManagement() {
   const queryClient = useQueryClient();
   const { role, loading, facilityId } = useAuth();
   const { toast } = useToast();
-  const { frontDeskMode, toggleFrontDeskMode } = useFrontDeskMode();
   const [searchTerm, setSearchTerm] = useState("");
   const deferredSearchTerm = useDeferredValue(searchTerm);
   const [page, setPage] = useState(1);
@@ -451,19 +447,12 @@ export function PatientManagement() {
     <div className="space-y-6">
       <section>
         <Card className="overflow-hidden border-blue-100 bg-[linear-gradient(135deg,rgba(10,92,163,0.98),rgba(56,189,248,0.92))] text-white shadow-soft">
-          <CardContent
-            className={cn(
-              "grid grid-cols-2 gap-3 p-4 md:grid-cols-[minmax(0,1fr)_repeat(3,minmax(120px,0.34fr))] md:items-center",
-              frontDeskMode && "gap-3 p-3 md:grid-cols-[minmax(0,1fr)_repeat(3,minmax(110px,0.32fr))]"
-            )}
-          >
+          <CardContent className="grid grid-cols-2 gap-3 p-4 md:grid-cols-[minmax(0,1fr)_repeat(3,minmax(120px,0.34fr))] md:items-center">
             <div className="col-span-2 space-y-2 md:col-span-1">
               <Badge className="w-fit border-white/20 bg-white/10 text-white">
                 Patient directory
               </Badge>
-              <h2 className={cn("text-xl font-semibold", frontDeskMode && "text-lg")}>
-                Patient lookup
-              </h2>
+              <h2 className="text-xl font-semibold">Patient lookup</h2>
             </div>
             <div className="rounded-2xl border border-white/15 bg-white/10 p-3 backdrop-blur">
               <p className="text-xs uppercase tracking-[0.22em] text-blue-50">Patients</p>
@@ -474,7 +463,7 @@ export function PatientManagement() {
               <p className="mt-1 text-2xl font-semibold">{summary.withOrders}</p>
             </div>
             <div className="rounded-2xl border border-white/15 bg-white/10 p-3 backdrop-blur">
-              <p className="text-xs uppercase tracking-[0.22em] text-blue-50">NDPR ready</p>
+              <p className="text-xs uppercase tracking-[0.22em] text-blue-50">Consent</p>
               <p className="mt-1 text-2xl font-semibold">{summary.consented}</p>
             </div>
           </CardContent>
@@ -484,40 +473,24 @@ export function PatientManagement() {
       <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <Card className="border-blue-100">
           <CardHeader>
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <FileSearch className="h-5 w-5 text-blue-700" />
-                  Patient directory
-                </CardTitle>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">Hospital record</Badge>
-                <Button
-                  type="button"
-                  variant={frontDeskMode ? "default" : "outline"}
-                  size="sm"
-                  onClick={toggleFrontDeskMode}
-                >
-                  <Keyboard className="h-4 w-4" />
-                  {frontDeskMode ? "Front desk mode on" : "Front desk mode"}
-                </Button>
-              </div>
-            </div>
+            <CardTitle className="flex items-center gap-2">
+              <FileSearch className="h-5 w-5 text-blue-700" />
+              Patient directory
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_150px_170px_170px]">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
                 <Input
-                  className={cn("pl-9", frontDeskMode && "h-11")}
+                  className="pl-9"
                   value={searchTerm}
                   onBlur={() => {
                     window.setTimeout(() => setSearchFocused(false), 120);
                   }}
                   onChange={(event) => setSearchTerm(event.target.value)}
                   onFocus={() => setSearchFocused(true)}
-                  placeholder="Start typing a patient name, phone, or Hospital ID"
+                  placeholder="Name, phone or Hospital ID"
                 />
                 {suggestedPatients.length > 0 ? (
                   <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-20 rounded-2xl border border-blue-100 bg-white p-2 shadow-2xl">
@@ -547,10 +520,7 @@ export function PatientManagement() {
                 ) : null}
               </div>
               <select
-                className={cn(
-                  "h-10 rounded-lg border border-border bg-background px-3 text-sm",
-                  frontDeskMode && "h-11"
-                )}
+                className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
                 value={sexFilter}
                 onChange={(event) =>
                   setSexFilter(event.target.value as PatientFormValues["sex"] | "all")
@@ -564,10 +534,7 @@ export function PatientManagement() {
                 ))}
               </select>
               <select
-                className={cn(
-                  "h-10 rounded-lg border border-border bg-background px-3 text-sm",
-                  frontDeskMode && "h-11"
-                )}
+                className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
                 value={historyFilter}
                 onChange={(event) => setHistoryFilter(event.target.value as HistoryFilter)}
               >
@@ -576,10 +543,7 @@ export function PatientManagement() {
                 <option value="new">New patients</option>
               </select>
               <select
-                className={cn(
-                  "h-10 rounded-lg border border-border bg-background px-3 text-sm",
-                  frontDeskMode && "h-11"
-                )}
+                className="h-10 rounded-lg border border-border bg-background px-3 text-sm"
                 value={consentFilter}
                 onChange={(event) => setConsentFilter(event.target.value as ConsentFilter)}
               >
@@ -621,10 +585,7 @@ export function PatientManagement() {
               {patients.map((patient: SearchPatientRow) => (
                 <div
                   key={patient.id}
-                  className={cn(
-                    "grid gap-2 px-3 py-2.5 transition hover:bg-blue-50/50 lg:grid-cols-[minmax(260px,1.5fr)_minmax(220px,0.75fr)_auto] lg:items-center",
-                    frontDeskMode && "gap-1 py-2"
-                  )}
+                  className="grid gap-2 px-3 py-2.5 transition hover:bg-blue-50/50 lg:grid-cols-[minmax(260px,1.5fr)_minmax(220px,0.75fr)_auto] lg:items-center"
                 >
                   <div className="min-w-0">
                     <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
@@ -658,7 +619,7 @@ export function PatientManagement() {
                   </div>
 
                   <div className="flex items-center gap-2 lg:justify-end">
-                    <Button asChild size="sm" className={cn("h-8 px-2 text-xs", frontDeskMode && "h-7")}>
+                    <Button asChild size="sm" className="h-8 px-2 text-xs">
                       <Link href={`/patients/${patient.id}` as Route}>
                         Open
                         <ArrowRight className="h-3.5 w-3.5" />
@@ -669,7 +630,7 @@ export function PatientManagement() {
                         asChild
                         variant="outline"
                         size="sm"
-                        className={cn("h-8 px-2 text-xs", frontDeskMode && "h-7")}
+                        className="h-8 px-2 text-xs"
                       >
                         <Link
                           href={{
@@ -712,17 +673,10 @@ export function PatientManagement() {
 
         <Card className="border-blue-100">
           <CardHeader>
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  <UserPlus className="h-5 w-5 text-blue-700" />
-                  Register patient
-                </CardTitle>
-              </div>
-              <Badge variant="outline">
-                {canRegisterPatients ? "Reception/Admin" : "View only"}
-              </Badge>
-            </div>
+            <CardTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5 text-blue-700" />
+              Register patient
+            </CardTitle>
           </CardHeader>
           <CardContent>
             {!canRegisterPatients ? (
@@ -738,7 +692,7 @@ export function PatientManagement() {
                       onChange={(event) =>
                         handleFieldChange("lab_id", event.target.value)
                       }
-                      placeholder="Optional — generated automatically"
+                      placeholder="Auto-generated"
                     />
                     {errors.lab_id ? (
                       <p className="text-xs text-red-700">{errors.lab_id}</p>
@@ -839,7 +793,7 @@ export function PatientManagement() {
                       onChange={(event) =>
                         handleFieldChange("emergency_contact", event.target.value)
                       }
-                      placeholder="Next of kin or alternate number"
+                      placeholder="Emergency contact"
                     />
                     {errors.emergency_contact ? (
                       <p className="text-xs text-red-700">
@@ -898,7 +852,7 @@ export function PatientManagement() {
                     onChange={(event) =>
                       handleFieldChange("notes", event.target.value)
                     }
-                    placeholder="Symptoms, clinical signs, or extra context for the lab team"
+                    placeholder="Notes"
                   />
                   {errors.notes ? (
                     <p className="text-xs text-red-700">{errors.notes}</p>
@@ -906,10 +860,7 @@ export function PatientManagement() {
                 </div>
 
                 <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                  <div>
-                    <p className="font-semibold text-slate-950">Billing and next service</p>
-                    <p className="mt-1 text-xs text-slate-500">Choose only what the patient needs now.</p>
-                  </div>
+                  <p className="font-semibold text-slate-950">Billing and services</p>
 
                   <div className="grid gap-3 sm:grid-cols-2">
                     <label className="rounded-xl border border-slate-200 bg-white p-3">
@@ -1084,7 +1035,7 @@ export function PatientManagement() {
                         <Textarea
                           value={registrationServices.radiologyIndication}
                           onChange={(event) => setRegistrationServices((current) => ({ ...current, radiologyIndication: event.target.value }))}
-                          placeholder="Reason for the radiology request"
+                          placeholder="Reason"
                         />
                       </div>
                     ) : null}
@@ -1107,11 +1058,7 @@ export function PatientManagement() {
                       handleFieldChange("ndpr_consent", event.target.checked)
                     }
                   />
-                  <span>
-                    I confirm the patient has given consent for their personal health data to
-                    be stored and processed under the Nigeria Data Protection Regulation
-                    (NDPR).
-                  </span>
+                  <span>Patient consent confirmed.</span>
                 </label>
                 {errors.ndpr_consent ? (
                   <p className="text-xs text-red-700">{errors.ndpr_consent}</p>

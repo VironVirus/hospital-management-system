@@ -228,7 +228,7 @@ export function DynamicResultInput({
         onChange={(event) =>
           onChange({ ...formValues, rawValue: event.target.value })
         }
-        placeholder="Enter narrative or descriptive result"
+        placeholder="Result"
       />
     </div>
   );

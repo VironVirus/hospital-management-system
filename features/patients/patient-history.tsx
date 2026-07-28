@@ -470,7 +470,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
                 <p className="mt-2 text-xl font-semibold">{totalTests}</p>
               </div>
               <div className="rounded-2xl border border-white/15 bg-white/10 p-4 backdrop-blur">
-                <p className="text-xs uppercase tracking-[0.2em] text-blue-50">NDPR</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-blue-50">Consent</p>
                 <p className="mt-2 text-xl font-semibold">
                   {patient.ndpr_consent ? "Consented" : "Pending"}
                 </p>
@@ -557,7 +557,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
                 </p>
               </div>
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">NDPR status</p>
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Consent</p>
                 <p className="mt-2 flex items-center gap-2 text-sm font-medium text-slate-950">
                   <ShieldCheck className="h-4 w-4 text-blue-700" />
                   {patient.ndpr_consent ? "Consented" : "Not captured"}
@@ -904,10 +904,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
                           handleFieldChange("ndpr_consent", event.target.checked)
                         }
                       />
-                      <span>
-                        I confirm the patient has given consent for their personal health
-                        data to be stored and processed under NDPR.
-                      </span>
+                      <span>Patient consent confirmed.</span>
                     </label>
                     {errors.ndpr_consent ? (
                       <p className="text-xs text-red-700">{errors.ndpr_consent}</p>

@@ -1,7 +1,8 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
+import type { RowDataPacket } from "mysql2/promise";
 import { z } from "zod";
-import { getCurrentSession } from "@/lib/auth-session";
+import { createSession, getCurrentSession } from "@/lib/auth-session";
 import { getPool, migrateDatabase } from "@/lib/db";
 import { HOSPITAL_ID } from "@/lib/db/schema";
 import { hashPassword } from "@/lib/security";
@@ -13,6 +14,12 @@ const allowedRoles = ["Admin", "Receptionist", "Doctor", "Nurse", "Pharmacist", 
 const requestSchema = z.object({
   display_name: z.string().trim().min(2),
   email: z.string().trim().email(),
+  password: z.string().trim().min(12).max(72).optional().or(z.literal("")),
+  role: z.enum(allowedRoles)
+});
+const updateSchema = z.object({
+  id: z.string().uuid(),
+  display_name: z.string().trim().min(2),
   password: z.string().trim().min(12).max(72).optional().or(z.literal("")),
   role: z.enum(allowedRoles)
 });
@@ -41,5 +48,56 @@ export async function POST(request: Request) {
     const databaseError = error as { code?: string };
     console.error("[staff-create]", error);
     return NextResponse.json({ error: databaseError.code === "ER_DUP_ENTRY" ? "A staff account already uses that email." : "Account could not be created." }, { status: 400 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const session = await getCurrentSession();
+    if (!session || session.profile.role !== "Admin") {
+      return NextResponse.json({ error: "Only the hospital Admin can update staff accounts." }, { status: 403 });
+    }
+
+    const parsed = updateSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0]?.message || "Invalid staff account." }, { status: 400 });
+    }
+
+    await migrateDatabase();
+    const [rows] = await getPool().query<RowDataPacket[]>(
+      "SELECT id FROM profiles WHERE id = ? AND facility_id = ? LIMIT 1",
+      [parsed.data.id, HOSPITAL_ID]
+    );
+
+    if (!rows[0]) {
+      return NextResponse.json({ error: "Staff account not found." }, { status: 404 });
+    }
+
+    const password = parsed.data.password?.trim() || "";
+    if (password) {
+      await getPool().execute(
+        `UPDATE profiles
+         SET display_name = ?, role = ?, password_hash = ?, password_changed_at = UTC_TIMESTAMP(3)
+         WHERE id = ? AND facility_id = ?`,
+        [parsed.data.display_name, parsed.data.role, await hashPassword(password), parsed.data.id, HOSPITAL_ID]
+      );
+      await getPool().execute("DELETE FROM user_sessions WHERE user_id = ?", [parsed.data.id]);
+      if (parsed.data.id === session.user.id) {
+        await createSession(session.user.id);
+      }
+    } else {
+      await getPool().execute(
+        `UPDATE profiles
+         SET display_name = ?, role = ?
+         WHERE id = ? AND facility_id = ?`,
+        [parsed.data.display_name, parsed.data.role, parsed.data.id, HOSPITAL_ID]
+      );
+    }
+
+    return NextResponse.json({ ok: true, password_changed: Boolean(password) });
+  } catch (error) {
+    const databaseError = error as { code?: string };
+    console.error("[staff-update]", error);
+    return NextResponse.json({ error: databaseError.code === "ER_DUP_ENTRY" ? "A staff account already uses that email." : "Account could not be updated." }, { status: 400 });
   }
 }

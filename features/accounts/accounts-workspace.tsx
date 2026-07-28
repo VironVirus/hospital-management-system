@@ -935,7 +935,7 @@ export function AccountsWorkspace() {
                   id="expense-notes"
                   value={expenseForm.notes}
                   onChange={(event) => handleExpenseFieldChange("notes", event.target.value)}
-                  placeholder="Optional note about why the cost was recorded"
+                  placeholder="Note"
                   rows={3}
                 />
                 {expenseErrors.notes ? (

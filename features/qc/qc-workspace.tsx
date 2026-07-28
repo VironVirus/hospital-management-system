@@ -779,7 +779,6 @@ export function QcWorkspace() {
                     onChange={(event) =>
                       setRunForm((current) => ({ ...current, notes: event.target.value }))
                     }
-                    placeholder="Optional"
                   />
                 </Field>
                 <Button

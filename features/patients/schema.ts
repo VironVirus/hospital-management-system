@@ -37,7 +37,7 @@ export const patientFormSchema = z.object({
   state: z.string().trim().min(1, "Select a state").max(120, "State is too long"),
   notes: z.string().trim().max(400, "Notes are too long"),
   ndpr_consent: z.boolean().refine((value) => value, {
-    message: "NDPR consent is required before registration"
+    message: "Patient consent is required before registration"
   })
 }).superRefine((value, context) => {
   const lgas = getNigeriaLgas(value.state);

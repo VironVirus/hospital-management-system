@@ -472,7 +472,7 @@ export function BillingWorkspace() {
               <Input
                 className={cn("pl-9", frontDeskMode && "h-11")}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search invoice, order, patient, lab ID"
+                placeholder="Invoice, order, patient or Hospital ID"
                 value={search}
               />
             </div>
@@ -721,7 +721,7 @@ export function BillingWorkspace() {
                           <Textarea
                             id="invoice-notes"
                             onChange={(event) => setInvoiceNotes(event.target.value)}
-                            placeholder="Optional billing note or credit instruction"
+                            placeholder="Note"
                             rows={4}
                             value={invoiceNotes}
                           />

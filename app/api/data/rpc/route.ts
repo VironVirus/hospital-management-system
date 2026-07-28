@@ -4,7 +4,6 @@ import type { RowDataPacket } from "mysql2/promise";
 import { getCurrentSession } from "@/lib/auth-session";
 import { getPool, nextCounter, withTransaction } from "@/lib/db";
 import { HOSPITAL_ID } from "@/lib/db/schema";
-import { handlePreviewRpc, isPreviewMode } from "@/lib/preview-mode";
 
 function response(data: unknown = null) {
   return NextResponse.json({ data, error: null });
@@ -25,7 +24,6 @@ export async function POST(request: Request) {
     const payload = await request.json().catch(() => null) as { name?: string; args?: Record<string, unknown> } | null;
     const name = payload?.name || "";
     const args = payload?.args || {};
-    if (isPreviewMode()) return NextResponse.json(handlePreviewRpc(name, args));
     const pool = getPool();
 
     if (name === "search_patients") {

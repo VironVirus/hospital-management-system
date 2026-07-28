@@ -199,7 +199,7 @@ export function buildInvoicePrintHtml(invoice: BillingInvoiceRow) {
             <div class="panel">
               <p class="eyebrow">Patient</p>
               <p><strong>Name:</strong> ${escapeHtml(patientName)}</p>
-              <p><strong>Lab ID:</strong> ${escapeHtml(patientLabId)}</p>
+              <p><strong>Hospital ID:</strong> ${escapeHtml(patientLabId)}</p>
               <p><strong>Phone:</strong> ${escapeHtml(patientPhone)}</p>
             </div>
             <div class="panel">

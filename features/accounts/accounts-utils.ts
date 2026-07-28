@@ -382,7 +382,7 @@ export function buildInvoiceExportRows(invoices: AccountInvoiceRow[]) {
     "Issued At": invoice.issued_at,
     "Order Number": invoice.orders?.order_number || "-",
     "Patient": invoice.orders?.patients?.name || "Unknown patient",
-    "Lab ID": invoice.orders?.patients?.lab_id || "-",
+    "Hospital ID": invoice.orders?.patients?.lab_id || "-",
     "Billed Tests": (invoice.invoice_items ?? []).map((item) => item.test_name).join(", "),
     "Payment Status": invoice.payment_status,
     "Total Amount": Number(invoice.total_amount),

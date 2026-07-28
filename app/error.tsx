@@ -2,12 +2,9 @@
 
 import { AlertTriangle, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-export default function Error({
-  error,
-  reset
-}: {
+export default function Error({ reset }: {
   error: Error & { digest?: string };
   reset: () => void;
 }) {
@@ -19,14 +16,8 @@ export default function Error({
             <AlertTriangle className="h-5 w-5" />
             Something went wrong
           </CardTitle>
-          <CardDescription className="text-red-800">Please try again.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {error.digest ? (
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              Reference: {error.digest}
-            </p>
-          ) : null}
           <Button onClick={reset} type="button">
             <RotateCcw className="h-4 w-4" />
             Try again

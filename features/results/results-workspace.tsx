@@ -434,7 +434,7 @@ export function ResultsWorkspace() {
       toast({
         title: evaluation.payload.abnormal_flag ? "Out-of-range result saved" : "Result saved",
         description: evaluation.payload.abnormal_flag
-          ? evaluation.payload.abnormal_reason ?? "This result was marked for HOD/chief scientist review."
+          ? evaluation.payload.abnormal_reason ?? "This result needs review."
           : `${selectedSample.sample_code} is ready for verification.`,
         variant: evaluation.payload.abnormal_flag ? "info" : "success"
       });
@@ -629,7 +629,7 @@ export function ResultsWorkspace() {
                       {selectedSample.orders?.patients?.name || "Unknown patient"}
                     </p>
                     <p className="text-sm text-slate-600">
-                      {selectedSample.orders?.patients?.lab_id || "No lab ID"} •{" "}
+                      {selectedSample.orders?.patients?.lab_id || "No Hospital ID"} •{" "}
                       {selectedSample.orders?.order_number || "Unknown order"}
                     </p>
                   </div>
@@ -658,7 +658,7 @@ export function ResultsWorkspace() {
                           ? `Dropdown options: ${referenceRange.options.join(", ")}`
                           : referenceRange?.mode === "boolean"
                             ? `${referenceRange.positive_label} / ${referenceRange.negative_label}`
-                            : "No reference guidance configured"}
+                            : "Not set"}
                   </p>
                 </div>
 
@@ -702,7 +702,7 @@ export function ResultsWorkspace() {
                           interpretation: event.target.value
                         }))
                       }
-                      placeholder="Optional interpretation, methodology note, or comment"
+                      placeholder="Comment"
                     />
                   </div>
 
@@ -784,11 +784,11 @@ export function ResultsWorkspace() {
                 <div className="space-y-3">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4 text-blue-700" />
-                    <p className="text-sm font-medium text-slate-900">Audit trail</p>
+                    <p className="text-sm font-medium text-slate-900">Activity</p>
                   </div>
                   {(auditQuery.data ?? []).length === 0 ? (
                     <div className="rounded-xl border border-dashed border-blue-200 bg-blue-50/60 px-4 py-6 text-sm text-slate-600">
-                      No audit entries yet for this result.
+                      No activity.
                     </div>
                   ) : (
                     (auditQuery.data ?? []).map((log) => (
@@ -802,9 +802,6 @@ export function ResultsWorkspace() {
                             {formatDateTime(log.created_at)}
                           </p>
                         </div>
-                        <pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-xs text-slate-600">
-                          {JSON.stringify(log.payload, null, 2)}
-                        </pre>
                       </div>
                     ))
                   )}

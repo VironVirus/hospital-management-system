@@ -814,7 +814,7 @@ export function InventoryManagement() {
                   onChange={(event) =>
                     handleItemFieldChange("description", event.target.value)
                   }
-                  placeholder="Additional handling or storage notes"
+                  placeholder="Notes"
                   rows={3}
                   value={itemFormState.description}
                 />
@@ -1295,7 +1295,7 @@ export function InventoryManagement() {
                               onChange={(event) =>
                                 handleTransactionFieldChange("notes", event.target.value)
                               }
-                              placeholder="Optional usage or adjustment note"
+                              placeholder="Note"
                               value={transactionFormState.notes}
                             />
                           </div>
