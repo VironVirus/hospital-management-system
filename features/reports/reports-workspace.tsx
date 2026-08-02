@@ -59,7 +59,7 @@ async function fetchReportsQueue() {
       const { data, error } = await database
         .from("orders")
         .select(
-          "id, facility_id, patient_id, order_number, priority, status, notes, reported_at, ordered_at, ordered_by, created_at, updated_at, facilities(id, name, code), patients(id, lab_id, name, phone, dob, sex, address), order_tests(id, order_id, test_id, sample_code, specimen_label, barcode_value, qr_value, status, collected_at, collected_by, in_progress_at, results_entered_at, verified_at, reported_at, created_at, updated_at, tests(*), order_test_results(*))"
+          "id, facility_id, patient_id, order_number, priority, status, notes, reported_at, ordered_at, ordered_by, created_at, updated_at, facilities(id, name, code), patients(id, hospital_id, lab_id, name, phone, dob, sex, address), order_tests(id, order_id, test_id, sample_code, specimen_label, barcode_value, qr_value, status, collected_at, collected_by, in_progress_at, results_entered_at, verified_at, reported_at, created_at, updated_at, tests(*), order_test_results(*))"
         )
         .order("ordered_at", { ascending: false })
         .limit(60);

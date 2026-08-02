@@ -55,6 +55,14 @@ export async function migrateDatabase() {
     global.__stGiannaMigration = (async () => {
       const pool = getPool();
       for (const statement of schemaStatements) await pool.query(statement);
+      const [medicationWarningColumns] = await pool.query<RowDataPacket[]>(
+        "SHOW COLUMNS FROM medications LIKE 'expiry_warning_days'"
+      );
+      if (!medicationWarningColumns.length) {
+        await pool.query(
+          "ALTER TABLE medications ADD COLUMN expiry_warning_days INT NOT NULL DEFAULT 90 AFTER expiry_date"
+        );
+      }
       await pool.execute("DELETE FROM user_sessions WHERE expires_at <= UTC_TIMESTAMP(3)");
       await pool.execute(
         `INSERT INTO facilities (id, name, code, address, is_active)

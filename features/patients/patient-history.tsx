@@ -8,9 +8,11 @@ import {
   ArrowLeft,
   CalendarRange,
   ClipboardPlus,
+  Download,
   FileText,
   Loader2,
   PencilLine,
+  Printer,
   ShieldAlert,
   ShieldCheck,
   TestTube2,
@@ -42,6 +44,14 @@ import {
 } from "@/features/patients/patient-utils";
 import { PatientClinicalRecord } from "@/features/patients/patient-clinical-record";
 import { NigeriaLocationFields } from "@/features/patients/nigeria-location-fields";
+import { fetchLabBrandingSettings } from "@/features/admin/lab-branding-settings";
+import {
+  buildPrintHtml,
+  buildReportBranding,
+  buildResultRows,
+  isReportableOrder,
+  type ReportOrderRow
+} from "@/features/reports/report-utils";
 import { useToast } from "@/hooks/use-toast";
 import {
   canAccessPatientsRole,
@@ -49,28 +59,10 @@ import {
 } from "@/lib/guards";
 import { commitOnlineMutation, resolveOnlineQuery } from "@/lib/online-core";
 import { getAppClient } from "@/lib/app-client";
+import { printHtmlDocument } from "@/lib/print";
 import type { Tables, TablesUpdate } from "@/types/database";
 
 type PatientRow = Tables<"patients">;
-type OrderHistoryRow = {
-  id: string;
-  order_number: string;
-  status: Tables<"orders">["status"];
-  priority: string;
-  notes: string | null;
-  created_at: string;
-  updated_at: string;
-  order_tests: Array<{
-    id: string;
-    sample_code: string;
-    status: Tables<"order_tests">["status"];
-    tests: {
-      id: string;
-      name: string;
-      result_type: Tables<"tests">["result_type"];
-    } | null;
-  }> | null;
-};
 
 type FormErrors = Partial<Record<keyof PatientFormValues | "form", string>>;
 
@@ -136,7 +128,7 @@ async function fetchPatient(patientId: string) {
 
 async function fetchPatientOrders(patientId: string) {
   const database = getAppClient();
-  return resolveOnlineQuery<OrderHistoryRow[]>({
+  return resolveOnlineQuery<ReportOrderRow[]>({
     online: async () => {
       if (!database) {
         throw new Error("Service unavailable.");
@@ -145,7 +137,7 @@ async function fetchPatientOrders(patientId: string) {
       const { data, error } = await database
         .from("orders")
         .select(
-          "id, order_number, status, priority, notes, created_at, updated_at, patient_id, facility_id, ordered_at, ordered_by, reported_at, order_tests(id, order_id, test_id, sample_code, status, specimen_label, barcode_value, qr_value, created_at, updated_at, collected_at, collected_by, in_progress_at, results_entered_at, verified_at, reported_at, tests(id, name, result_type))"
+          "id, facility_id, patient_id, order_number, priority, status, notes, reported_at, ordered_at, ordered_by, created_at, updated_at, facilities(id, name, code), patients(id, hospital_id, lab_id, name, phone, dob, sex, address), order_tests(id, order_id, test_id, sample_code, specimen_label, barcode_value, qr_value, status, collected_at, collected_by, in_progress_at, results_entered_at, verified_at, reported_at, created_at, updated_at, tests(*), order_test_results(*))"
         )
         .eq("patient_id", patientId)
         .order("created_at", { ascending: false });
@@ -154,7 +146,7 @@ async function fetchPatientOrders(patientId: string) {
         throw new Error(error.message);
       }
 
-      return (data ?? []) as OrderHistoryRow[];
+      return (data ?? []) as ReportOrderRow[];
     }
   });
 }
@@ -171,6 +163,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [testsOpen, setTestsOpen] = useState(false);
+  const [reportBusy, setReportBusy] = useState<string | null>(null);
 
   const canViewPatients = canAccessPatientsRole(role);
   const canManagePatients = canManagePatientsRole(role);
@@ -184,6 +177,12 @@ export function PatientHistory({ patientId }: { patientId: string }) {
   const ordersQuery = useQuery({
     queryKey: ["patient-orders", patientId],
     queryFn: () => fetchPatientOrders(patientId),
+    enabled: canViewPatients && Boolean(facilityId)
+  });
+
+  const brandingQuery = useQuery({
+    queryKey: ["lab-branding", facilityId],
+    queryFn: () => fetchLabBrandingSettings(facilityId as string),
     enabled: canViewPatients && Boolean(facilityId)
   });
 
@@ -201,12 +200,66 @@ export function PatientHistory({ patientId }: { patientId: string }) {
 
   const patient = patientQuery.data;
   const orders = useMemo(() => ordersQuery.data ?? [], [ordersQuery.data]);
+  const allResultsDownloadKey = `${patient?.hospital_id ?? patient?.lab_id ?? "patient"}-all-lab-results.pdf`;
   const totalTests = useMemo(
     () => orders.reduce((sum, order) => sum + (order.order_tests?.length ?? 0), 0),
     [orders]
   );
+  const reportableOrders = useMemo(() => orders.filter(isReportableOrder), [orders]);
+  const branding = useMemo(
+    () =>
+      buildReportBranding(
+        orders[0]?.facilities?.name ?? "St Gianna Specialist Hospital",
+        brandingQuery.data
+      ),
+    [brandingQuery.data, orders]
+  );
 
   const formatTestStatus = (status: string) => status.replaceAll("_", " ");
+
+  const printLabResults = (targetOrders: ReportOrderRow[]) => {
+    if (targetOrders.length === 0) {
+      toast({ title: "No verified results to print", variant: "error" });
+      return;
+    }
+
+    printHtmlDocument(buildPrintHtml(targetOrders, branding));
+  };
+
+  const downloadLabResults = async (targetOrders: ReportOrderRow[], filename: string) => {
+    if (targetOrders.length === 0) {
+      toast({ title: "No verified results to download", variant: "error" });
+      return;
+    }
+
+    try {
+      setReportBusy(filename);
+      const [{ pdf }, { LaboratoryReportDocument }] = await Promise.all([
+        import("@react-pdf/renderer"),
+        import("@/features/reports/report-pdf")
+      ]);
+      const blob = await pdf(
+        <LaboratoryReportDocument branding={branding} orders={targetOrders} />
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast({ title: "Lab results downloaded", variant: "success" });
+    } catch (error) {
+      toast({
+        title: "Lab results not downloaded",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "error"
+      });
+    } finally {
+      setReportBusy(null);
+    }
+  };
 
   const handleFieldChange = <K extends keyof PatientFormValues>(
     field: K,
@@ -594,18 +647,62 @@ export function PatientHistory({ patientId }: { patientId: string }) {
               </button>
             </CardHeader>
             {testsOpen ? <CardContent className="space-y-4">
+              {orders.length > 0 ? (
+                <div className="flex flex-col gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="font-semibold text-slate-950">All lab results</p>
+                    <p className="text-sm text-slate-600">
+                      {reportableOrders.length} request{reportableOrders.length === 1 ? "" : "s"} with verified results
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={reportableOrders.length === 0}
+                      onClick={() => printLabResults(reportableOrders)}
+                    >
+                      <Printer className="h-4 w-4" />
+                      Print all test results
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={reportableOrders.length === 0 || reportBusy === allResultsDownloadKey}
+                      onClick={() =>
+                        void downloadLabResults(
+                          reportableOrders,
+                          allResultsDownloadKey
+                        )
+                      }
+                    >
+                      {reportBusy === allResultsDownloadKey ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4" />
+                      )}
+                      Download all
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+
               {orders.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-blue-200 bg-blue-50/60 px-5 py-8 text-center text-sm text-slate-600">
                   No previous tests found for this patient yet.
                 </div>
               ) : null}
 
-              {orders.map((order) => (
+              {orders.map((order) => {
+                const reportRows = buildResultRows(order);
+                const reportReady = reportRows.length > 0;
+                const downloadKey = `${order.order_number}-lab-results.pdf`;
+
+                return (
                 <div key={order.id} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-semibold text-slate-950">{order.order_number}</p>
+                        <p className="font-semibold text-slate-950">Request {order.order_number}</p>
                         <Badge variant="secondary">{formatTestStatus(order.status)}</Badge>
                         <Badge variant="outline">{order.priority}</Badge>
                       </div>
@@ -636,10 +733,27 @@ export function PatientHistory({ patientId }: { patientId: string }) {
                           Edit results
                         </Link>
                       </Button>
-                      <Button asChild size="sm" variant="outline">
-                        <Link href={{ pathname: "/reports", query: { orderId: order.id } }}>
-                          Print result
-                        </Link>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!reportReady}
+                        onClick={() => printLabResults([order])}
+                      >
+                        <Printer className="h-4 w-4" />
+                        Print results
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!reportReady || reportBusy === downloadKey}
+                        onClick={() => void downloadLabResults([order], downloadKey)}
+                      >
+                        {reportBusy === downloadKey ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Download className="h-4 w-4" />
+                        )}
+                        Download
                       </Button>
                       <Button asChild size="sm">
                         <Link
@@ -675,18 +789,18 @@ export function PatientHistory({ patientId }: { patientId: string }) {
                             </Badge>
                           </div>
                           <p className="mt-2 text-sm text-slate-700">
-                            Sample {result.sample_code} is currently in{" "}
-                            {formatTestStatus(result.status)}.
+                            Lab test no. {order.order_number} · {formatTestStatus(result.status)}
                           </p>
+                          {reportRows.find((row) => row.orderTestId === result.id) ? (
+                            <div className="mt-2 grid gap-1 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm sm:grid-cols-2">
+                              <p><span className="text-slate-500">Result:</span> {reportRows.find((row) => row.orderTestId === result.id)?.result}</p>
+                              <p><span className="text-slate-500">Reference:</span> {reportRows.find((row) => row.orderTestId === result.id)?.referenceRange}</p>
+                            </div>
+                          ) : null}
                           <div className="mt-3 flex flex-wrap gap-2">
                             <Button asChild size="sm" variant="ghost">
                               <Link href={{ pathname: "/results", query: { sampleId: result.id } }}>
                                 Edit result
-                              </Link>
-                            </Button>
-                            <Button asChild size="sm" variant="ghost">
-                              <Link href={{ pathname: "/reports", query: { orderId: order.id } }}>
-                                Print/download group
                               </Link>
                             </Button>
                           </div>
@@ -699,7 +813,8 @@ export function PatientHistory({ patientId }: { patientId: string }) {
                     )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </CardContent> : null}
           </Card>
         </div>

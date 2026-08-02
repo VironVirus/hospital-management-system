@@ -230,8 +230,8 @@ function ReportPage({
           <Text style={styles.title}>Verified laboratory findings</Text>
         </View>
         <View style={styles.metaCard}>
-          <Text style={styles.metaLine}>Sample ID: {bundle.sampleCode}</Text>
-          <Text style={styles.metaLine}>Orders: {orderLabel}</Text>
+          <Text style={styles.metaLine}>Lab test no.: {bundle.sampleCode}</Text>
+          <Text style={styles.metaLine}>Request: {orderLabel}</Text>
           <Text style={styles.metaLine}>
             Collected: {formatDate(bundle.orderedAt)}
           </Text>
@@ -245,12 +245,14 @@ function ReportPage({
         <View style={styles.panel}>
           <Text style={styles.eyebrow}>Patient</Text>
           <Text style={styles.panelLine}>Name: {patient?.name || "Unknown patient"}</Text>
-          <Text style={styles.panelLine}>Hospital ID: {patient?.lab_id || "-"}</Text>
+          <Text style={styles.panelLine}>
+            Hospital ID: {patient?.hospital_id || patient?.lab_id || "-"}
+          </Text>
           <Text style={styles.panelLine}>Phone: {patient?.phone || "-"}</Text>
           <Text style={styles.panelLine}>Sex: {patient?.sex || "-"}</Text>
           <Text style={styles.panelLine}>DOB: {formatDate(patient?.dob || null)}</Text>
           <Text style={styles.panelLine}>Address: {patient?.address || "-"}</Text>
-          <Text style={styles.panelLine}>Sample ID: {bundle.sampleCode}</Text>
+          <Text style={styles.panelLine}>Lab test no.: {bundle.sampleCode}</Text>
         </View>
 
         <View style={styles.panel}>

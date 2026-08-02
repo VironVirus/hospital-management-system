@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { LabBrandingSettingsPanel } from "@/features/admin/lab-branding-settings";
 import { UserManagementPanel } from "@/features/admin/user-management";
 import { WardManagementPanel } from "@/features/admin/ward-management";
+import { HospitalActivityReportPanel } from "@/features/admin/hospital-activity-report-panel";
 import { canAccessAdministrationRole } from "@/lib/guards";
 
 export default function AdminPage() {
@@ -23,6 +24,7 @@ export default function AdminPage() {
       <Card><CardHeader><CardTitle className="flex items-center gap-2"><Activity className="h-5 w-5 text-blue-700" />Audit trail</CardTitle></CardHeader><CardContent><Button asChild variant="outline"><Link href="/admin/audit">Open audit logs</Link></Button></CardContent></Card>
       <Card><CardHeader><CardTitle className="flex items-center gap-2"><BedDouble className="h-5 w-5 text-indigo-700" />Wards & beds</CardTitle></CardHeader></Card>
     </div>
+    <HospitalActivityReportPanel />
     <UserManagementPanel />
     <WardManagementPanel />
     <LabBrandingSettingsPanel facilityName={facilityName} />

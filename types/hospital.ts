@@ -122,6 +122,7 @@ export type Medication = {
   reorder_level: number;
   batch_number: string | null;
   expiry_date: string | null;
+  expiry_warning_days: number;
   storage_location: string | null;
   is_controlled: boolean;
   is_active: boolean;

@@ -468,6 +468,7 @@ export function OrdersManagement() {
   const [recentPriorityFilter, setRecentPriorityFilter] =
     useState<(typeof priorityOptions)[number] | "all">("all");
   const [showRecentPanel, setShowRecentPanel] = useState(true);
+  const [testSubnav, setTestSubnav] = useState<"catalogue" | "recent">("catalogue");
   const [selectedCategory, setSelectedCategory] = useState<TestCategoryOption | "">("");
   const [selectedCatalogueTestId, setSelectedCatalogueTestId] = useState("");
   const [testSearch, setTestSearch] = useState("");
@@ -1657,132 +1658,97 @@ export function OrdersManagement() {
                     </div>
                   </div>
                   <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-                    <div className="grid gap-3 lg:grid-cols-[220px_minmax(0,1fr)_auto]">
-                    <div className="space-y-2">
-                      <Label htmlFor="test-category-select">Category</Label>
-                      <select
-                        id="test-category-select"
-                        className={cn(
-                          "h-10 w-full rounded-lg border border-border bg-background px-3 text-sm",
-                          frontDeskMode && "h-12 text-base"
-                        )}
-                          value={selectedCategory}
-                          onChange={(event) => {
-                            setSelectedCategory(event.target.value as TestCategoryOption | "");
-                            setTestSearch("");
-                            setTestPickerOpen(true);
-                          }}
-                        >
-                          {availableCategories.length === 0 ? (
-                            <option value="">No categories available</option>
-                          ) : null}
-                          {availableCategories.map((category) => (
-                            <option key={category} value={category}>
-                              {category} ({groupedTests.get(category)?.length ?? 0})
-                            </option>
-                          ))}
-                        </select>
+                    <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-white p-1">
+                      <button type="button" onClick={() => setTestSubnav("catalogue")} className={cn("rounded-lg px-3 py-2 text-sm font-medium", testSubnav === "catalogue" ? "bg-blue-700 text-white" : "text-slate-600 hover:bg-slate-50")}>Test catalogue</button>
+                      <button type="button" onClick={() => setTestSubnav("recent")} className={cn("rounded-lg px-3 py-2 text-sm font-medium", testSubnav === "recent" ? "bg-blue-700 text-white" : "text-slate-600 hover:bg-slate-50")}>Recent requests · {recentOrdersQuery.data?.length ?? 0}</button>
+                    </div>
+
+                    {testSubnav === "catalogue" ? <>
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                        {availableCategories.map((category) => (
+                          <button
+                            key={category}
+                            type="button"
+                            onClick={() => {
+                              setSelectedCategory(category);
+                              setTestSearch("");
+                              setTestPickerOpen(false);
+                            }}
+                            className={cn(
+                              "min-w-0 rounded-xl border px-3 py-3 text-left transition",
+                              selectedCategory === category
+                                ? "border-blue-500 bg-blue-50 text-blue-950"
+                                : "border-slate-200 bg-white text-slate-700 hover:border-blue-200"
+                            )}
+                          >
+                            <span className="block truncate text-sm font-medium">{category}</span>
+                            <span className="mt-1 block text-xs text-slate-500">{groupedTests.get(category)?.length ?? 0} tests</span>
+                          </button>
+                        ))}
                       </div>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="test-search-input">Search test</Label>
-                        <div className="relative">
-                          <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                          <Input
-                            ref={testInputRef}
-                            id="test-search-input"
-                            className={cn("pl-9", frontDeskMode && "h-12 text-base")}
-                            value={testSearch}
-                            onFocus={() => setTestPickerOpen(true)}
-                            onBlur={() => {
-                              window.setTimeout(() => setTestPickerOpen(false), 120);
-                            }}
-                            onChange={(event) => {
-                              setTestSearch(event.target.value);
-                              setTestPickerOpen(true);
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key === "ArrowDown") {
-                                event.preventDefault();
+                      <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+                        <div className="space-y-2">
+                          <Label htmlFor="test-search-input">{selectedCategory || "Tests"}</Label>
+                          <div className="relative">
+                            <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                            <Input
+                              ref={testInputRef}
+                              id="test-search-input"
+                              className={cn("pl-9", frontDeskMode && "h-12 text-base")}
+                              value={testSearch}
+                              onFocus={() => setTestPickerOpen(true)}
+                              onBlur={() => window.setTimeout(() => setTestPickerOpen(false), 120)}
+                              onChange={(event) => {
+                                setTestSearch(event.target.value);
                                 setTestPickerOpen(true);
-                                setHighlightedTestIndex((current) =>
-                                  Math.min(
-                                    current + 1,
-                                    Math.max(filteredTestsInSelectedCategory.length - 1, 0)
-                                  )
-                                );
-                              }
-
-                              if (event.key === "ArrowUp") {
-                                event.preventDefault();
-                                setHighlightedTestIndex((current) => Math.max(current - 1, 0));
-                              }
-
-                              if (event.key === "Enter" && highlightedCatalogueTest) {
-                                event.preventDefault();
-                                selectCatalogueTest(highlightedCatalogueTest);
-                                handleAddSelectedTest(highlightedCatalogueTest.id);
-                              }
-                            }}
-                            placeholder="Search test code or name"
-                          />
-
-                          {testPickerOpen ? (
-                            <div className="absolute inset-x-0 top-full z-20 mt-2 max-h-80 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
-                              {testsQuery.isLoading ? (
-                                <div className="flex items-center gap-2 px-3 py-6 text-sm text-slate-600">
-                                  <Loader2 className="h-4 w-4 animate-spin text-blue-700" />
-                                  Loading test catalogue...
-                                </div>
-                              ) : filteredTestsInSelectedCategory.length === 0 ? (
-                                <div className="px-3 py-6 text-sm text-slate-500">
-                                  No test matches this category and search.
-                                </div>
-                              ) : (
-                                filteredTestsInSelectedCategory.map((test, index) => (
-                                  <button
-                                    key={test.id}
-                                    type="button"
-                                    className={cn(
-                                      "flex w-full items-start justify-between rounded-xl px-3 py-3 text-left transition",
-                                  index === highlightedTestIndex
-                                        ? "bg-blue-50 text-blue-900"
-                                        : "hover:bg-slate-50"
-                                    )}
-                                    onMouseDown={(event) => event.preventDefault()}
-                                    onClick={() => selectCatalogueTest(test)}
-                                  >
-                                  <div className="min-w-0">
-                                     <p className="font-medium">
-                                       {renderHighlightedText(test.test_code, testSearch)} -{" "}
-                                       {renderHighlightedText(test.name, testSearch)}
-                                     </p>
-                                      <p className="text-xs text-slate-500">
-                                        {getTestCategoryLabel(test.category)} / N
-                                        {Number(test.price).toLocaleString("en-NG")}
-                                       </p>
-                                     </div>
-                                     <ArrowRight className="mt-0.5 h-4 w-4 text-slate-400" />
-                                   </button>
-                                ))
-                              )}
-                            </div>
-                          ) : null}
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "ArrowDown") {
+                                  event.preventDefault();
+                                  setTestPickerOpen(true);
+                                  setHighlightedTestIndex((current) => Math.min(current + 1, Math.max(filteredTestsInSelectedCategory.length - 1, 0)));
+                                }
+                                if (event.key === "ArrowUp") {
+                                  event.preventDefault();
+                                  setHighlightedTestIndex((current) => Math.max(current - 1, 0));
+                                }
+                                if (event.key === "Enter" && highlightedCatalogueTest) {
+                                  event.preventDefault();
+                                  selectCatalogueTest(highlightedCatalogueTest);
+                                  handleAddSelectedTest(highlightedCatalogueTest.id);
+                                }
+                              }}
+                              placeholder="Search test code or name"
+                            />
+                            {testPickerOpen ? (
+                              <div className="absolute inset-x-0 top-full z-20 mt-2 max-h-80 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+                                {testsQuery.isLoading ? <div className="flex items-center gap-2 px-3 py-6 text-sm text-slate-600"><Loader2 className="h-4 w-4 animate-spin text-blue-700" />Loading tests...</div> : null}
+                                {!testsQuery.isLoading && filteredTestsInSelectedCategory.length === 0 ? <div className="px-3 py-6 text-sm text-slate-500">No matching test.</div> : null}
+                                {filteredTestsInSelectedCategory.map((test, index) => (
+                                  <button key={test.id} type="button" className={cn("flex w-full items-start justify-between rounded-xl px-3 py-3 text-left transition", index === highlightedTestIndex ? "bg-blue-50 text-blue-900" : "hover:bg-slate-50")} onMouseDown={(event) => event.preventDefault()} onClick={() => selectCatalogueTest(test)}>
+                                    <div className="min-w-0"><p className="font-medium">{renderHighlightedText(test.test_code, testSearch)} - {renderHighlightedText(test.name, testSearch)}</p><p className="text-xs text-slate-500">{getTestCategoryLabel(test.category)} · N{Number(test.price).toLocaleString("en-NG")}</p></div>
+                                    <ArrowRight className="mt-0.5 h-4 w-4 text-slate-400" />
+                                  </button>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="flex items-end">
+                          <Button type="button" variant="outline" disabled={!selectedCatalogueTestId} className={cn("w-full lg:w-auto", frontDeskMode && "h-12 px-5 text-base")} onClick={() => handleAddSelectedTest()}>Add test</Button>
                         </div>
                       </div>
-
-                      <div className="flex items-end">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          disabled={!selectedCatalogueTestId}
-                          className={cn(frontDeskMode && "h-12 px-5 text-base")}
-                          onClick={() => handleAddSelectedTest()}
-                        >
-                          Add test
-                        </Button>
+                    </> : (
+                      <div className="space-y-3">
+                        <div className="relative"><Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" /><Input className="pl-9" value={recentSearch} onChange={(event) => setRecentSearch(event.target.value)} placeholder="Search request, patient, or test number" /></div>
+                        {filteredRecentOrders.map((order) => {
+                          const reusableTestIds = (order.order_tests ?? []).map((item) => item.tests?.id).filter((id): id is string => Boolean(id && testsById.has(id)));
+                          return <div key={order.id} className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-semibold text-slate-950">{order.order_number}</p><p className="text-sm text-slate-600">{order.patients?.name} · {order.patients?.lab_id}</p><p className="mt-1 text-xs text-slate-500">{(order.order_tests ?? []).map((item) => item.tests?.name).filter(Boolean).join(", ")}</p></div><Button type="button" size="sm" variant="outline" disabled={reusableTestIds.length === 0} onClick={() => { setFormState((current) => ({ ...current, selected_test_ids: Array.from(new Set([...current.selected_test_ids, ...reusableTestIds])) })); setTestSubnav("catalogue"); }}>Use tests</Button></div>;
+                        })}
+                        {!recentOrdersQuery.isLoading && filteredRecentOrders.length === 0 ? <p className="rounded-xl border border-dashed bg-white p-6 text-center text-sm text-slate-500">No recent requests.</p> : null}
                       </div>
-                    </div>
+                    )}
 
                     <div className="rounded-2xl border border-white bg-white p-3">
                       {selectedTests.length === 0 ? (

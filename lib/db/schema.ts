@@ -423,6 +423,7 @@ export const schemaStatements = [
     reorder_level DECIMAL(12,2) NOT NULL DEFAULT 0,
     batch_number VARCHAR(100) NULL,
     expiry_date DATE NULL,
+    expiry_warning_days INT NOT NULL DEFAULT 90,
     storage_location VARCHAR(190) NULL,
     is_controlled TINYINT(1) NOT NULL DEFAULT 0,
     is_active TINYINT(1) NOT NULL DEFAULT 1,

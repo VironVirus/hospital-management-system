@@ -15,7 +15,7 @@ export type ReportOrderRow = Tables<"orders"> & {
   facilities: Pick<Tables<"facilities">, "id" | "name" | "code"> | null;
   patients: Pick<
     Tables<"patients">,
-    "id" | "lab_id" | "name" | "phone" | "dob" | "sex" | "address"
+    "id" | "hospital_id" | "lab_id" | "name" | "phone" | "dob" | "sex" | "address"
   > | null;
   order_tests: ReportOrderTest[];
 };
@@ -453,8 +453,8 @@ export function buildPrintHtml(
               <h2>Verified laboratory findings</h2>
             </div>
             <div class="meta-card">
-              <p><strong>Sample ID:</strong> ${escapeHtml(bundle.sampleCode)}</p>
-              <p><strong>Orders:</strong> ${escapeHtml(orderLabel)}</p>
+              <p><strong>Lab test no.:</strong> ${escapeHtml(bundle.sampleCode)}</p>
+              <p><strong>Request:</strong> ${escapeHtml(orderLabel)}</p>
               <p><strong>Collected:</strong> ${escapeHtml(formatDate(bundle.orderedAt))}</p>
               <p><strong>Reported:</strong> ${escapeHtml(formatDate(bundle.reportedAt || new Date().toISOString()))}</p>
             </div>
@@ -464,11 +464,11 @@ export function buildPrintHtml(
             <div class="panel">
               <p class="eyebrow">Patient</p>
               <p><strong>Name:</strong> ${escapeHtml(patient?.name || "Unknown patient")}</p>
-              <p><strong>Hospital ID:</strong> ${escapeHtml(patient?.lab_id || "-")}</p>
+              <p><strong>Hospital ID:</strong> ${escapeHtml(patient?.hospital_id || patient?.lab_id || "-")}</p>
               <p><strong>Phone:</strong> ${escapeHtml(patient?.phone || "-")}</p>
               <p><strong>Sex:</strong> ${escapeHtml(patient?.sex || "-")}</p>
               <p><strong>DOB:</strong> ${escapeHtml(formatDate(patient?.dob || null))}</p>
-              <p><strong>Sample ID:</strong> ${escapeHtml(bundle.sampleCode)}</p>
+              <p><strong>Lab test no.:</strong> ${escapeHtml(bundle.sampleCode)}</p>
             </div>
             <div class="panel">
               <p class="eyebrow">Clinical context</p>
