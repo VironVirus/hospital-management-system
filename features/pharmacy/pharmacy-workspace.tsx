@@ -28,16 +28,26 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-NG", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }
 
-function formatExpiryDate(value: string) {
-  return new Intl.DateTimeFormat("en-NG", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(`${value}T00:00:00`));
+function parseExpiryDate(value: string | null | undefined) {
+  if (!value) return null;
+  const datePart = String(value).slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return null;
+  const parsed = new Date(`${datePart}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatExpiryDate(value: string | null | undefined) {
+  const parsed = parseExpiryDate(value);
+  if (!parsed) return "Not recorded";
+  return new Intl.DateTimeFormat("en-NG", { day: "2-digit", month: "short", year: "numeric" }).format(parsed);
 }
 
 function daysUntilExpiry(value: string | null | undefined) {
-  if (!value) return null;
+  const parsed = parseExpiryDate(value);
+  if (!parsed) return null;
   const today = new Date();
   const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  const expiry = new Date(`${value}T00:00:00`).getTime();
-  return Math.ceil((expiry - startOfToday) / 86_400_000);
+  return Math.ceil((parsed.getTime() - startOfToday) / 86_400_000);
 }
 
 async function fetchPharmacyWorkspace() {
@@ -226,6 +236,7 @@ export function PharmacyWorkspace() {
   };
 
   if (loading || workspaceQuery.isLoading) return <Card><CardContent className="flex items-center gap-3 p-8 text-sm text-slate-600"><Loader2 className="h-4 w-4 animate-spin" />Loading pharmacy...</CardContent></Card>;
+  if (workspaceQuery.isError) return <Card><CardHeader><CardTitle>Pharmacy unavailable</CardTitle></CardHeader><CardContent><Button variant="outline" onClick={() => void workspaceQuery.refetch()}>Try again</Button></CardContent></Card>;
   if (!canAccess || !facilityId) return <Card><CardHeader><CardTitle>Pharmacy access unavailable</CardTitle></CardHeader></Card>;
 
   return <div className="space-y-6">
