@@ -11,7 +11,9 @@ import { canAccessAdministrationRole } from "@/lib/guards";
 import { getAppClient } from "@/lib/app-client";
 import type { Tables } from "@/types/database";
 
-type AuditLogRow = Tables<"audit_logs">;
+type AuditLogRow = Tables<"audit_logs"> & {
+  profiles?: { display_name: string | null; email: string; role: string } | null;
+};
 
 type EntityFilter =
   | "all"
@@ -20,7 +22,8 @@ type EntityFilter =
   | "order_tests"
   | "order_test_results"
   | "inventory_items"
-  | "invoices";
+  | "invoices"
+  | "encounter_charges";
 
 type DateFilter = "24h" | "7d" | "30d" | "all";
 
@@ -31,7 +34,8 @@ const entityOptions: Array<{ label: string; value: EntityFilter }> = [
   { label: "Samples", value: "order_tests" },
   { label: "Results", value: "order_test_results" },
   { label: "Inventory", value: "inventory_items" },
-  { label: "Billing", value: "invoices" }
+  { label: "Laboratory bills", value: "invoices" },
+  { label: "Hospital bills", value: "encounter_charges" }
 ];
 
 function formatDateTime(value: string) {
@@ -63,7 +67,7 @@ async function fetchAuditLogs() {
 
   const { data, error } = await database
     .from("audit_logs")
-    .select("*")
+    .select("*, profiles(display_name, email, role)")
     .order("created_at", { ascending: false })
     .limit(250);
 
@@ -116,7 +120,8 @@ export function AuditLogsViewer() {
         actor_id: log.actor_id,
         entity_id: log.entity_id,
         entity_table: log.entity_table,
-        payload: log.payload
+        payload: log.payload,
+        staff: log.profiles
       })
         .toLowerCase()
         .includes(needle);
@@ -257,11 +262,14 @@ export function AuditLogsViewer() {
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-semibold text-slate-950 dark:text-slate-50">
-                        {log.action}
-                      </p>
+                      <p className="font-semibold text-slate-950 dark:text-slate-50">{log.action.replaceAll("_", " ")}</p>
                     </div>
-                    <p className="text-sm text-slate-600 dark:text-slate-300">{formatDateTime(log.created_at)}</p>
+                    <p className="text-sm text-slate-600 dark:text-slate-300">
+                      {log.profiles?.display_name || log.profiles?.email || "System"}
+                      {log.profiles?.role ? ` · ${log.profiles.role}` : ""}
+                    </p>
+                    <p className="text-xs text-slate-500">{log.entity_table.replaceAll("_", " ")} · {log.entity_id} · {formatDateTime(log.created_at)}</p>
+                    {log.payload && typeof log.payload === "object" && "reason" in log.payload ? <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700"><strong>Reason:</strong> {String((log.payload as { reason?: unknown }).reason || "Not stated")}</p> : null}
                   </div>
                 </div>
               </div>

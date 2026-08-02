@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Activity, CircleDollarSign, FileCheck2, Loader2, Plus, ScanSearch, Search, UserRound } from "lucide-react";
+import { Activity, CircleDollarSign, Download, FileCheck2, Loader2, Plus, Printer, ScanSearch, Search, UserRound } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,9 +11,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { buildRadiologyReportHtml } from "@/features/radiology/radiology-report-document";
 import { canAccessRadiologyRole, canManageRadiologyRole, canRequestRadiologyRole } from "@/lib/guards";
 import { getHospitalClient, throwIfHospitalError } from "@/lib/hospital-client";
 import { generateId } from "@/lib/online-core";
+import { printHtmlDocument } from "@/lib/print";
 import type { Encounter, PatientOption, RadiologyRequest, RadiologyService } from "@/types/hospital";
 
 type WorkspaceData = {
@@ -65,19 +67,57 @@ export function RadiologyWorkspace() {
   const [reportForm, setReportForm] = useState(reportInitial);
   const [selectedId, setSelectedId] = useState("");
   const [search, setSearch] = useState("");
+  const [requestGroup, setRequestGroup] = useState<RadiologyRequest["status"] | "All">("Requested");
   const [saving, setSaving] = useState(false);
   const workspace = useQuery({ queryKey: ["hospital", "radiology"], queryFn: fetchWorkspace, enabled: Boolean(facilityId && canAccess) });
   const requests = useMemo(() => workspace.data?.requests ?? [], [workspace.data]);
-  const selected = requests.find((request) => request.id === selectedId) ?? requests[0] ?? null;
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     if (!term) return requests;
     return requests.filter((request) => [request.request_number, request.patients?.name, request.patients?.hospital_id, request.radiology_services?.name, request.status].filter(Boolean).join(" ").toLowerCase().includes(term));
   }, [requests, search]);
+  const visibleRequests = useMemo(
+    () => filtered.filter((request) => requestGroup === "All" || request.status === requestGroup),
+    [filtered, requestGroup]
+  );
+  const selected = visibleRequests.find((request) => request.id === selectedId) ?? visibleRequests[0] ?? null;
+  const requestGroups = (["Requested", "Scheduled", "In Progress", "Completed", "Cancelled"] as RadiologyRequest["status"][]).map((status) => ({
+    count: requests.filter((request) => request.status === status).length,
+    status
+  }));
+
+  const printReport = (request: RadiologyRequest) => {
+    try {
+      printHtmlDocument(buildRadiologyReportHtml(request));
+    } catch (error) {
+      toast({ title: "Report not ready", description: error instanceof Error ? error.message : "Please try again.", variant: "error" });
+    }
+  };
+
+  const downloadReport = async (request: RadiologyRequest) => {
+    try {
+      const [{ pdf }, { RadiologyReportDocument }] = await Promise.all([
+        import("@react-pdf/renderer"),
+        import("@/features/radiology/radiology-report-pdf")
+      ]);
+      const blob = await pdf(<RadiologyReportDocument request={request} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${request.request_number}-radiology-report.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      toast({ title: "Report not downloaded", description: error instanceof Error ? error.message : "Please try again.", variant: "error" });
+    }
+  };
 
   const refresh = async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ["hospital", "radiology"] }),
+      queryClient.invalidateQueries({ queryKey: ["hospital", "patient-record"] }),
       queryClient.invalidateQueries({ queryKey: ["hospital", "billing"] }),
       queryClient.invalidateQueries({ queryKey: ["accounts-workspace"] })
     ]);
@@ -175,8 +215,8 @@ export function RadiologyWorkspace() {
       {canManage ? <Card><CardHeader><CardTitle className="flex items-center gap-2"><CircleDollarSign className="h-5 w-5 text-violet-700" />Imaging service catalogue</CardTitle></CardHeader><CardContent><form className="grid gap-3 sm:grid-cols-2" onSubmit={createService}><Input value={serviceForm.name} onChange={(event) => setServiceForm((current) => ({ ...current, name: event.target.value }))} placeholder="Service name" required /><select className="h-10 rounded-lg border bg-background px-3 text-sm" value={serviceForm.modality} onChange={(event) => setServiceForm((current) => ({ ...current, modality: event.target.value as RadiologyService["modality"] }))}>{["X-Ray", "Ultrasound", "CT", "MRI", "Mammography", "Fluoroscopy", "Other"].map((item) => <option key={item}>{item}</option>)}</select><Input value={serviceForm.body_part} onChange={(event) => setServiceForm((current) => ({ ...current, body_part: event.target.value }))} placeholder="Body part" /><Input type="number" min="0" value={serviceForm.unit_price} onChange={(event) => setServiceForm((current) => ({ ...current, unit_price: event.target.value }))} placeholder="Price (NGN)" /><Textarea className="sm:col-span-2" value={serviceForm.preparation_instructions} onChange={(event) => setServiceForm((current) => ({ ...current, preparation_instructions: event.target.value }))} placeholder="Preparation" /><Button className="sm:col-span-2" disabled={saving}>Add imaging service</Button></form></CardContent></Card> : null}
     </div>
 
-    <div className="grid gap-6 xl:grid-cols-[0.75fr_1.25fr]"><Card><CardHeader><CardTitle className="flex items-center gap-2"><Activity className="h-5 w-5 text-violet-700" />Imaging worklist</CardTitle></CardHeader><CardContent className="space-y-3"><div className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search patient, ID, request, or service" /></div><div className="max-h-[720px] space-y-2 overflow-y-auto">{filtered.map((request) => <button key={request.id} type="button" onClick={() => setSelectedId(request.id)} className={`w-full rounded-2xl border p-4 text-left ${selected?.id === request.id ? "border-violet-300 bg-violet-50" : "hover:bg-slate-50"}`}><div className="flex justify-between gap-3"><div><p className="font-semibold">{request.patients?.name}</p><p className="text-xs font-medium text-violet-700">{request.patients?.hospital_id ?? request.patients?.lab_id}</p></div><Badge variant={request.priority === "Emergency" ? "destructive" : "outline"}>{request.priority}</Badge></div><p className="mt-3 text-sm">{request.radiology_services?.name} · {request.radiology_services?.modality}</p><div className="mt-2 flex justify-between text-xs text-slate-500"><span>{request.request_number}</span><span>{request.status}</span></div></button>)}{!filtered.length ? <p className="rounded-xl border border-dashed p-8 text-center text-sm text-slate-500">No radiology requests.</p> : null}</div></CardContent></Card>
+    <div className="grid gap-6 xl:grid-cols-[0.75fr_1.25fr]"><Card><CardHeader><CardTitle className="flex items-center gap-2"><Activity className="h-5 w-5 text-violet-700" />Imaging worklist</CardTitle></CardHeader><CardContent className="space-y-3"><div className="grid grid-cols-2 gap-2 sm:grid-cols-3">{requestGroups.map((group) => <button key={group.status} type="button" onClick={() => { setRequestGroup(group.status); setSelectedId(""); }} className={`rounded-xl border px-3 py-2 text-left ${requestGroup === group.status ? "border-violet-400 bg-violet-50" : "border-slate-200"}`}><span className="block text-xs text-slate-500">{group.status}</span><strong className="text-lg text-slate-950">{group.count}</strong></button>)}</div><div className="relative"><Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" /><Input className="pl-9" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search patient, ID, request, or service" /></div><div className="max-h-[620px] space-y-2 overflow-y-auto">{visibleRequests.map((request) => <button key={request.id} type="button" onClick={() => setSelectedId(request.id)} className={`w-full rounded-2xl border p-4 text-left ${selected?.id === request.id ? "border-violet-300 bg-violet-50" : "hover:bg-slate-50"}`}><div className="flex justify-between gap-3"><div><p className="font-semibold">{request.patients?.name}</p><p className="text-xs font-medium text-violet-700">{request.patients?.hospital_id ?? request.patients?.lab_id}</p></div><Badge variant={request.priority === "Emergency" ? "destructive" : "outline"}>{request.priority}</Badge></div><p className="mt-3 text-sm">{request.radiology_services?.name} · {request.radiology_services?.modality}</p><div className="mt-2 flex justify-between text-xs text-slate-500"><span>{request.request_number}</span><span>{request.status}</span></div></button>)}{!visibleRequests.length ? <p className="rounded-xl border border-dashed p-8 text-center text-sm text-slate-500">No requests in this group.</p> : null}</div></CardContent></Card>
 
-    <Card>{selected ? <><CardHeader><div className="flex flex-wrap items-start justify-between gap-4"><div><CardTitle className="flex items-center gap-2"><UserRound className="h-5 w-5 text-violet-700" />{selected.patients?.name}</CardTitle><CardDescription>{selected.patients?.hospital_id ?? selected.patients?.lab_id} · {selected.request_number} · {formatDate(selected.requested_at)}</CardDescription></div><Badge>{selected.status}</Badge></div></CardHeader><CardContent className="space-y-5"><div className="rounded-2xl border bg-slate-50 p-4"><p className="font-semibold">{selected.radiology_services?.name} · {selected.radiology_services?.modality}</p><p className="mt-2 text-sm text-slate-700"><strong>Reason:</strong> {selected.clinical_indication}</p><p className="mt-2 text-xs text-slate-500">Encounter: {selected.clinical_encounters?.encounter_number ?? "Not linked"} · Scheduled: {formatDate(selected.scheduled_at)}</p></div>{canManage ? <div className="flex flex-wrap gap-2">{(["Scheduled", "In Progress", "Completed", "Cancelled"] as RadiologyRequest["status"][]).map((status) => <Button key={status} type="button" size="sm" variant={selected.status === status ? "default" : "outline"} disabled={saving} onClick={() => updateStatus(status)}>{status}</Button>)}</div> : null}{selected.radiology_reports?.[0] ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5"><div className="flex items-center gap-2 font-semibold text-emerald-950"><FileCheck2 className="h-5 w-5" />Completed report</div><p className="mt-4 text-sm"><strong>Findings:</strong> {selected.radiology_reports[0].findings}</p><p className="mt-3 text-sm"><strong>Impression:</strong> {selected.radiology_reports[0].impression}</p>{selected.radiology_reports[0].recommendation ? <p className="mt-3 text-sm"><strong>Recommendation:</strong> {selected.radiology_reports[0].recommendation}</p> : null}</div> : null}{canManage ? <form className="space-y-3 rounded-2xl border p-4" onSubmit={saveReport}><Label>Radiology report</Label><Textarea value={reportForm.findings} onChange={(event) => setReportForm((current) => ({ ...current, findings: event.target.value }))} placeholder="Findings" required /><Textarea value={reportForm.impression} onChange={(event) => setReportForm((current) => ({ ...current, impression: event.target.value }))} placeholder="Impression" required /><Textarea value={reportForm.recommendation} onChange={(event) => setReportForm((current) => ({ ...current, recommendation: event.target.value }))} placeholder="Recommendation" /><Input value={reportForm.pacs_reference} onChange={(event) => setReportForm((current) => ({ ...current, pacs_reference: event.target.value }))} placeholder="Study reference" /><Button disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileCheck2 className="h-4 w-4" />}Save and complete report</Button></form> : null}</CardContent></> : <CardContent className="p-12 text-center text-sm text-slate-500">Select an imaging request.</CardContent>}</Card></div>
+    <Card>{selected ? <><CardHeader><div className="flex flex-wrap items-start justify-between gap-4"><div><CardTitle className="flex items-center gap-2"><UserRound className="h-5 w-5 text-violet-700" />{selected.patients?.name}</CardTitle><CardDescription>{selected.patients?.hospital_id ?? selected.patients?.lab_id} · {selected.request_number} · {formatDate(selected.requested_at)}</CardDescription></div><Badge>{selected.status}</Badge></div></CardHeader><CardContent className="space-y-5"><div className="rounded-2xl border bg-slate-50 p-4"><p className="font-semibold">{selected.radiology_services?.name} · {selected.radiology_services?.modality}</p><p className="mt-2 text-sm text-slate-700"><strong>Reason:</strong> {selected.clinical_indication}</p><p className="mt-2 text-xs text-slate-500">Encounter: {selected.clinical_encounters?.encounter_number ?? "Not linked"} · Scheduled: {formatDate(selected.scheduled_at)}</p></div>{canManage ? <div className="flex flex-wrap gap-2">{(["Scheduled", "In Progress", "Completed", "Cancelled"] as RadiologyRequest["status"][]).map((status) => <Button key={status} type="button" size="sm" variant={selected.status === status ? "default" : "outline"} disabled={saving} onClick={() => updateStatus(status)}>{status}</Button>)}</div> : null}{selected.radiology_reports?.[0] ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-2 font-semibold text-emerald-950"><FileCheck2 className="h-5 w-5" />Completed report</div><div className="flex gap-2"><Button type="button" size="sm" variant="outline" onClick={() => printReport(selected)}><Printer className="h-4 w-4" />Print</Button><Button type="button" size="sm" variant="outline" onClick={() => void downloadReport(selected)}><Download className="h-4 w-4" />Download PDF</Button></div></div><p className="mt-4 text-sm"><strong>Findings:</strong> {selected.radiology_reports[0].findings}</p><p className="mt-3 text-sm"><strong>Impression:</strong> {selected.radiology_reports[0].impression}</p>{selected.radiology_reports[0].recommendation ? <p className="mt-3 text-sm"><strong>Recommendation:</strong> {selected.radiology_reports[0].recommendation}</p> : null}</div> : null}{canManage ? <form className="space-y-3 rounded-2xl border p-4" onSubmit={saveReport}><Label>Radiology report</Label><Textarea value={reportForm.findings} onChange={(event) => setReportForm((current) => ({ ...current, findings: event.target.value }))} placeholder="Findings" required /><Textarea value={reportForm.impression} onChange={(event) => setReportForm((current) => ({ ...current, impression: event.target.value }))} placeholder="Impression" required /><Textarea value={reportForm.recommendation} onChange={(event) => setReportForm((current) => ({ ...current, recommendation: event.target.value }))} placeholder="Recommendation" /><Input value={reportForm.pacs_reference} onChange={(event) => setReportForm((current) => ({ ...current, pacs_reference: event.target.value }))} placeholder="Study reference" /><Button disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileCheck2 className="h-4 w-4" />}Save and complete report</Button></form> : null}</CardContent></> : <CardContent className="p-12 text-center text-sm text-slate-500">Select a request group and request.</CardContent>}</Card></div>
   </div>;
 }

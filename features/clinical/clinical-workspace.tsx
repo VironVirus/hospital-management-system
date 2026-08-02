@@ -39,6 +39,11 @@ import {
 } from "@/lib/guards";
 import { getAppClient } from "@/lib/app-client";
 import { getHospitalClient, throwIfHospitalError } from "@/lib/hospital-client";
+import {
+  calculateMedicationQuantity,
+  getMedicationFrequency,
+  medicationFrequencies
+} from "@/lib/medication-schedule";
 import { generateId } from "@/lib/online-core";
 import { printHtmlDocument } from "@/lib/print";
 import type { Tables } from "@/types/database";
@@ -61,8 +66,9 @@ type TreatmentItem = {
   medication_id: string;
   medication_name: string;
   dose: string;
-  frequency: string;
-  duration: string;
+  frequency_code: string;
+  duration_days: string;
+  units_per_dose: string;
   route: string;
   quantity: string;
   instructions: string;
@@ -94,10 +100,11 @@ const initialNote = {
 const initialTreatmentItem = {
   medication_id: "",
   dose: "",
-  frequency: "",
-  duration: "",
+  frequency_code: "",
+  duration_days: "",
+  units_per_dose: "1",
   route: "",
-  quantity: "1",
+  quantity: "0",
   instructions: ""
 };
 
@@ -239,6 +246,11 @@ export function ClinicalWorkspace() {
     enabled: Boolean(effectiveEncounterId && canAccess)
   });
   const chart = chartQuery.data;
+  const treatmentQuantity = calculateMedicationQuantity(
+    Number(treatmentItem.units_per_dose),
+    treatmentItem.frequency_code,
+    Number(treatmentItem.duration_days)
+  );
 
   const filteredPatients = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -410,13 +422,19 @@ export function ClinicalWorkspace() {
 
   const addTreatmentItem = () => {
     const medication = (workspaceQuery.data?.medications ?? []).find((item) => item.id === treatmentItem.medication_id);
-    if (!medication || !treatmentItem.dose.trim() || !treatmentItem.frequency.trim() || !treatmentItem.duration.trim()) {
-      toast({ title: "Complete the drug, dose, frequency, and duration", variant: "error" });
+    const quantity = calculateMedicationQuantity(
+      Number(treatmentItem.units_per_dose),
+      treatmentItem.frequency_code,
+      Number(treatmentItem.duration_days)
+    );
+    if (!medication || !treatmentItem.dose.trim() || !treatmentItem.frequency_code || quantity <= 0) {
+      toast({ title: "Complete the drug, dose, frequency, units, and days", variant: "error" });
       return;
     }
     setTreatmentItems((current) => [...current, {
       client_id: generateId(),
       ...treatmentItem,
+      quantity: String(quantity),
       medication_name: [medication.generic_name, medication.brand_name, medication.strength].filter(Boolean).join(" · ")
     }]);
     setTreatmentItem(initialTreatmentItem);
@@ -434,10 +452,10 @@ export function ClinicalWorkspace() {
         items: treatmentItems.map((item) => ({
           medication_id: item.medication_id,
           dose: item.dose,
-          frequency: item.frequency,
-          duration: item.duration,
+          frequency_code: item.frequency_code,
+          duration_days: Number(item.duration_days),
+          units_per_dose: Number(item.units_per_dose),
           route: item.route,
-          quantity: item.quantity,
           instructions: item.instructions
         }))
       });
@@ -591,8 +609,19 @@ export function ClinicalWorkspace() {
                 {panel === "treatment" ? (
                   <div className="space-y-5">
                     {selectedAdmission ? <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900"><strong>Inpatient:</strong> {selectedAdmission.wards?.name ?? "Ward"} · Bed {selectedAdmission.beds?.bed_number ?? "unassigned"}</div> : null}
-                    {canPrescribe ? <form className="space-y-4" onSubmit={saveTreatment}><div className="grid gap-3 rounded-2xl border bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-3"><div className="sm:col-span-2 lg:col-span-3"><Label>Drug</Label><select className={`mt-1 ${selectClassName}`} value={treatmentItem.medication_id} onChange={(event) => { const medication = (workspaceQuery.data?.medications ?? []).find((item) => item.id === event.target.value); setTreatmentItem((current) => ({ ...current, medication_id: event.target.value, route: medication?.route ?? current.route })); }}><option value="">Select medication</option>{(workspaceQuery.data?.medications ?? []).map((medication) => <option key={medication.id} value={medication.id}>{medication.generic_name}{medication.brand_name ? ` · ${medication.brand_name}` : ""} · {medication.strength} · Stock {medication.quantity_on_hand}</option>)}</select></div><div><Label>Dose</Label><Input className="mt-1" value={treatmentItem.dose} onChange={(event) => setTreatmentItem((current) => ({ ...current, dose: event.target.value }))} placeholder="e.g. 500 mg" /></div><div><Label>Frequency</Label><Input className="mt-1" value={treatmentItem.frequency} onChange={(event) => setTreatmentItem((current) => ({ ...current, frequency: event.target.value }))} placeholder="e.g. Twice daily" /></div><div><Label>Duration</Label><Input className="mt-1" value={treatmentItem.duration} onChange={(event) => setTreatmentItem((current) => ({ ...current, duration: event.target.value }))} placeholder="e.g. 5 days" /></div><div><Label>Route</Label><Input className="mt-1" value={treatmentItem.route} onChange={(event) => setTreatmentItem((current) => ({ ...current, route: event.target.value }))} placeholder="Oral / IV / IM" /></div><div><Label>Quantity</Label><Input className="mt-1" type="number" min="1" step="1" value={treatmentItem.quantity} onChange={(event) => setTreatmentItem((current) => ({ ...current, quantity: event.target.value }))} /></div><div><Label>Administration instructions</Label><Input className="mt-1" value={treatmentItem.instructions} onChange={(event) => setTreatmentItem((current) => ({ ...current, instructions: event.target.value }))} placeholder={selectedAdmission ? "Ward administration instructions" : "Before/after food, time, etc."} /></div><Button type="button" variant="outline" className="sm:col-span-2 lg:col-span-3" onClick={addTreatmentItem}><Plus className="h-4 w-4" />Add drug</Button></div>
-                      {treatmentItems.length ? <div className="space-y-2">{treatmentItems.map((item) => <div key={item.client_id} className="flex items-start justify-between gap-3 rounded-xl border p-3"><div><p className="font-semibold">{item.medication_name}</p><p className="mt-1 text-sm text-slate-600">{item.dose} · {item.frequency} · {item.duration} · {item.route || "Route not set"}</p>{item.instructions ? <p className="mt-1 text-xs text-slate-500">{item.instructions}</p> : null}</div><Button type="button" size="icon" variant="ghost" aria-label={`Remove ${item.medication_name}`} onClick={() => setTreatmentItems((current) => current.filter((row) => row.client_id !== item.client_id))}><Trash2 className="h-4 w-4" /></Button></div>)}</div> : null}
+                    {canPrescribe ? <form className="space-y-4" onSubmit={saveTreatment}>
+                      <div className="grid gap-3 rounded-2xl border bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-3">
+                        <div className="sm:col-span-2 lg:col-span-3"><Label>Drug</Label><select className={`mt-1 ${selectClassName}`} value={treatmentItem.medication_id} onChange={(event) => { const medication = (workspaceQuery.data?.medications ?? []).find((item) => item.id === event.target.value); setTreatmentItem((current) => ({ ...current, medication_id: event.target.value, route: medication?.route ?? current.route })); }}><option value="">Select medication</option>{(workspaceQuery.data?.medications ?? []).map((medication) => <option key={medication.id} value={medication.id}>{medication.generic_name}{medication.brand_name ? ` · ${medication.brand_name}` : ""} · {medication.strength} · Stock {medication.quantity_on_hand}</option>)}</select></div>
+                        <div><Label>Dose</Label><Input className="mt-1" value={treatmentItem.dose} onChange={(event) => setTreatmentItem((current) => ({ ...current, dose: event.target.value }))} placeholder="e.g. 500 mg" /></div>
+                        <div><Label>Frequency</Label><select className={`mt-1 ${selectClassName}`} value={treatmentItem.frequency_code} onChange={(event) => setTreatmentItem((current) => ({ ...current, frequency_code: event.target.value }))}><option value="">Select frequency</option>{medicationFrequencies.map((frequency) => <option key={frequency.code} value={frequency.code}>{frequency.label}</option>)}</select></div>
+                        <div><Label>Number of days</Label><Input className="mt-1" type="number" min="1" max="90" step="1" value={treatmentItem.duration_days} onChange={(event) => setTreatmentItem((current) => ({ ...current, duration_days: event.target.value }))} placeholder="e.g. 5" /></div>
+                        <div><Label>Units per dose</Label><Input className="mt-1" type="number" min="0.25" max="100" step="0.25" value={treatmentItem.units_per_dose} onChange={(event) => setTreatmentItem((current) => ({ ...current, units_per_dose: event.target.value }))} /></div>
+                        <div><Label>Total quantity</Label><Input className="mt-1 bg-white font-semibold" value={treatmentQuantity || ""} readOnly placeholder="Calculated automatically" /></div>
+                        <div><Label>Route</Label><Input className="mt-1" value={treatmentItem.route} onChange={(event) => setTreatmentItem((current) => ({ ...current, route: event.target.value }))} placeholder="Oral / IV / IM" /></div>
+                        <div className="sm:col-span-2 lg:col-span-3"><Label>Administration instructions</Label><Input className="mt-1" value={treatmentItem.instructions} onChange={(event) => setTreatmentItem((current) => ({ ...current, instructions: event.target.value }))} placeholder={selectedAdmission ? "Ward administration instructions" : "Before/after food, time, etc."} /></div>
+                        <Button type="button" variant="outline" className="sm:col-span-2 lg:col-span-3" onClick={addTreatmentItem}><Plus className="h-4 w-4" />Add drug</Button>
+                      </div>
+                      {treatmentItems.length ? <div className="space-y-2">{treatmentItems.map((item) => { const frequency = getMedicationFrequency(item.frequency_code); return <div key={item.client_id} className="flex items-start justify-between gap-3 rounded-xl border p-3"><div><p className="font-semibold">{item.medication_name}</p><p className="mt-1 text-sm text-slate-600">{item.dose} · {frequency?.label ?? item.frequency_code} · {item.duration_days} day{Number(item.duration_days) === 1 ? "" : "s"} · Qty {item.quantity} · {item.route || "Route not set"}</p>{item.instructions ? <p className="mt-1 text-xs text-slate-500">{item.instructions}</p> : null}</div><Button type="button" size="icon" variant="ghost" aria-label={`Remove ${item.medication_name}`} onClick={() => setTreatmentItems((current) => current.filter((row) => row.client_id !== item.client_id))}><Trash2 className="h-4 w-4" /></Button></div>; })}</div> : null}
                       <Textarea value={treatmentNotes} onChange={(event) => setTreatmentNotes(event.target.value)} placeholder="Treatment plan and nursing instructions" />
                       <Button disabled={saving || !treatmentItems.length}><Pill className="h-4 w-4" />Save treatment and send to pharmacy</Button>
                     </form> : null}

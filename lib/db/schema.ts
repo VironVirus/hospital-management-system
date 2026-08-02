@@ -463,6 +463,26 @@ export const schemaStatements = [
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     INDEX prescription_items_parent_idx (prescription_id)
   ) ENGINE=InnoDB`,
+  `CREATE TABLE IF NOT EXISTS medication_administrations (
+    id CHAR(36) PRIMARY KEY,
+    facility_id CHAR(36) NOT NULL,
+    patient_id CHAR(36) NOT NULL,
+    encounter_id CHAR(36) NOT NULL,
+    admission_id CHAR(36) NOT NULL,
+    prescription_id CHAR(36) NOT NULL,
+    prescription_item_id CHAR(36) NOT NULL,
+    scheduled_at DATETIME(3) NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'Scheduled',
+    administered_at DATETIME(3) NULL,
+    administered_by CHAR(36) NULL,
+    notes TEXT NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    UNIQUE KEY medication_administration_slot_key (prescription_item_id, scheduled_at),
+    INDEX medication_administration_due_idx (facility_id, status, scheduled_at),
+    INDEX medication_administration_patient_idx (patient_id, scheduled_at),
+    INDEX medication_administration_admission_idx (admission_id, scheduled_at)
+  ) ENGINE=InnoDB`,
   `CREATE TABLE IF NOT EXISTS encounter_charges (
     id CHAR(36) PRIMARY KEY,
     facility_id CHAR(36) NOT NULL,

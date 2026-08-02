@@ -170,6 +170,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
   const [isEditing, setIsEditing] = useState(searchParams.get("mode") === "edit");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [testsOpen, setTestsOpen] = useState(false);
 
   const canViewPatients = canAccessPatientsRole(role);
   const canManagePatients = canManagePatientsRole(role);
@@ -587,12 +588,12 @@ export function PatientHistory({ patientId }: { patientId: string }) {
 
           <Card className="border-blue-100">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5 text-blue-700" />
-                Previous tests
-              </CardTitle>
+              <button type="button" className="flex w-full items-center justify-between gap-3 text-left" onClick={() => setTestsOpen((current) => !current)}>
+                <CardTitle className="flex items-center gap-2"><FileText className="h-5 w-5 text-blue-700" />Tests</CardTitle>
+                <Badge variant="outline">{totalTests} test{totalTests === 1 ? "" : "s"} · {testsOpen ? "Hide" : "Open"}</Badge>
+              </button>
             </CardHeader>
-            <CardContent className="space-y-4">
+            {testsOpen ? <CardContent className="space-y-4">
               {orders.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-blue-200 bg-blue-50/60 px-5 py-8 text-center text-sm text-slate-600">
                   No previous tests found for this patient yet.
@@ -699,7 +700,7 @@ export function PatientHistory({ patientId }: { patientId: string }) {
                   </div>
                 </div>
               ))}
-            </CardContent>
+            </CardContent> : null}
           </Card>
         </div>
 
@@ -726,6 +727,12 @@ export function PatientHistory({ patientId }: { patientId: string }) {
                   <FileText className="h-4 w-4" />
                 </Link>
               </Button>
+              <div className="grid grid-cols-2 gap-2">
+                <Button asChild size="sm" variant="outline"><Link href={{ pathname: "/clinical", query: { patientId: patient.id } }}>Clinical</Link></Button>
+                <Button asChild size="sm" variant="outline"><Link href={{ pathname: "/wards", query: { patientId: patient.id } }}>Ward</Link></Button>
+                <Button asChild size="sm" variant="outline"><Link href={{ pathname: "/pharmacy", query: { patientId: patient.id } }}>Pharmacy</Link></Button>
+                <Button asChild size="sm" variant="outline"><Link href={{ pathname: "/radiology", query: { patientId: patient.id } }}>Radiology</Link></Button>
+              </div>
             </CardContent>
           </Card>
 
@@ -934,7 +941,14 @@ export function PatientHistory({ patientId }: { patientId: string }) {
           ) : null}
         </div>
       </section>
-      <PatientClinicalRecord patientId={patient.id} />
+      <PatientClinicalRecord
+        patient={{
+          hospitalId: patient.hospital_id ?? patient.lab_id,
+          name: patient.name,
+          phone: patient.phone
+        }}
+        patientId={patient.id}
+      />
     </div>
   );
 }

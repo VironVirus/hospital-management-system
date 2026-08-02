@@ -154,6 +154,47 @@ export type Prescription = {
   prescription_items: PrescriptionItem[] | null;
 };
 
+export type NursingMedicationPatient = {
+  admission_id: string;
+  patient_id: string;
+  encounter_id: string;
+  name: string;
+  hospital_id: string;
+  phone: string | null;
+  ward_name: string;
+  ward_code: string;
+  bed_number: string | null;
+  admitted_at: string;
+};
+
+export type MedicationAdministration = {
+  id: string;
+  patient_id: string;
+  encounter_id: string;
+  admission_id: string;
+  prescription_id: string;
+  prescription_item_id: string;
+  scheduled_at: string;
+  status: "Scheduled" | "Administered";
+  administered_at: string | null;
+  administered_by: string | null;
+  administered_by_name: string | null;
+  notes: string | null;
+  medication_name: string;
+  dose: string;
+  frequency: string;
+  duration: string;
+  route: string | null;
+  instructions: string | null;
+  prescription_status: Prescription["status"];
+};
+
+export type NursingMedicationDashboard = {
+  server_time: string;
+  patients: NursingMedicationPatient[];
+  doses: MedicationAdministration[];
+};
+
 export type EncounterCharge = {
   id: string;
   patient_id: string;

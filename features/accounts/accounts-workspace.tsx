@@ -5,6 +5,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Download,
   Loader2,
+  PencilLine,
+  Printer,
   ReceiptText,
   Search,
   ShieldAlert,
@@ -45,10 +47,12 @@ import {
   type AccountInvoiceRow
 } from "@/features/accounts/accounts-utils";
 import { useToast } from "@/hooks/use-toast";
+import { buildBillingDocumentHtml, type BillingDocumentRecord } from "@/features/billing/billing-document";
 import { canAccessAccountsRole, canManageAccountsRole } from "@/lib/guards";
 import { commitOnlineMutation, generateId } from "@/lib/online-core";
 import { recordAuditLog } from "@/lib/online-mutations";
 import { getAppClient } from "@/lib/app-client";
+import { downloadHtmlDocument, printHtmlDocument } from "@/lib/print";
 import type { Json, Tables, TablesInsert } from "@/types/database";
 
 type AccountsData = {
@@ -67,6 +71,34 @@ type ExpenseFormState = {
   notes: string;
   source: "manual" | "other";
   title: string;
+};
+
+type BillingLedgerRecord = {
+  category: string;
+  charge?: AccountHospitalCharge;
+  date: string;
+  description: string;
+  document: BillingDocumentRecord;
+  hospitalId: string;
+  id: string;
+  invoice?: AccountInvoiceRow;
+  paid: number;
+  patientName: string;
+  reference: string;
+  source: "charge" | "invoice";
+  sourceId: string;
+  status: string;
+  total: number;
+};
+
+type BillEditDraft = {
+  category: string;
+  description: string;
+  discountAmount: string;
+  notes: string;
+  quantity: string;
+  reason: string;
+  unitPrice: string;
 };
 
 const expenseFormSchema = z.object({
@@ -106,9 +138,8 @@ async function fetchAccountsData(facilityId: string): Promise<AccountsData> {
           "id, facility_id, order_id, invoice_number, subtotal, discount_amount, total_amount, amount_paid, payment_status, notes, issued_at, due_at, created_at, created_by, updated_at, orders(id, order_number, ordered_at, patients(id, name, hospital_id, lab_id, phone)), invoice_items(id, invoice_id, order_test_id, test_name, quantity, unit_price, line_total, created_at, order_tests(test_id, tests(id, name, category))), invoice_payments(id, facility_id, invoice_id, receipt_number, amount, payment_method, reference_number, notes, received_at, received_by, created_at)"
         )
         .eq("facility_id", facilityId)
-        .gte("issued_at", startIso)
         .order("issued_at", { ascending: false })
-        .limit(220),
+        .limit(5000),
       database
         .from("expenses")
         .select("*, inventory_items(id, name, category, unit)")
@@ -133,16 +164,14 @@ async function fetchAccountsData(facilityId: string): Promise<AccountsData> {
         .from("encounter_charges")
         .select("id, patient_id, encounter_id, description, category, quantity, unit_price, total_amount, amount_paid, payment_status, charged_at, patients(id, name, hospital_id, lab_id, phone), clinical_encounters(id, encounter_number)")
         .eq("facility_id", facilityId)
-        .gte("charged_at", startIso)
         .order("charged_at", { ascending: false })
-        .limit(600),
+        .limit(5000),
       database
         .from("hospital_payments")
         .select("id, charge_id, patient_id, amount, payment_method, reference_number, notes, received_at")
         .eq("facility_id", facilityId)
-        .gte("received_at", startIso)
         .order("received_at", { ascending: false })
-        .limit(600)
+        .limit(5000)
     ]);
 
   if (invoicesResponse.error) {
@@ -213,6 +242,10 @@ export function AccountsWorkspace() {
   const [savingExpense, setSavingExpense] = useState(false);
   const [deletingExpenseId, setDeletingExpenseId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [editingBillId, setEditingBillId] = useState<string | null>(null);
+  const [billEdit, setBillEdit] = useState<BillEditDraft | null>(null);
+  const [savingBillId, setSavingBillId] = useState<string | null>(null);
+  const [billingGroup, setBillingGroup] = useState<"All" | "Outstanding" | "Paid">("Outstanding");
 
   const canAccessAccounts = canAccessAccountsRole(role);
   const canManageAccounts = canManageAccountsRole(role);
@@ -276,7 +309,7 @@ export function AccountsWorkspace() {
     });
   }, [accountsQuery.data?.hospitalCharges, deferredSearch, monthKey]);
 
-  const billingLedger = useMemo(() => [
+  const billingLedger = useMemo<BillingLedgerRecord[]>(() => [
     ...filteredInvoices.map((invoice) => ({
       id: `invoice-${invoice.id}`,
       reference: invoice.invoice_number,
@@ -287,7 +320,22 @@ export function AccountsWorkspace() {
       description: (invoice.invoice_items ?? []).map((item) => item.test_name).join(", ") || "Laboratory tests",
       status: invoice.payment_status,
       total: Number(invoice.total_amount),
-      paid: Number(invoice.amount_paid)
+      paid: Number(invoice.amount_paid),
+      source: "invoice" as const,
+      sourceId: invoice.id,
+      invoice,
+      document: {
+        amountPaid: Number(invoice.amount_paid),
+        date: invoice.issued_at,
+        items: (invoice.invoice_items ?? []).map((item) => ({ description: item.test_name, quantity: Number(item.quantity), total: Number(item.line_total), unitPrice: Number(item.unit_price) })),
+        payments: (invoice.invoice_payments ?? []).map((payment) => ({ amount: Number(payment.amount), date: payment.received_at, method: payment.payment_method, reference: payment.reference_number })),
+        patientHospitalId: invoice.orders?.patients?.hospital_id || invoice.orders?.patients?.lab_id || "-",
+        patientName: invoice.orders?.patients?.name || "Unknown patient",
+        patientPhone: invoice.orders?.patients?.phone,
+        reference: invoice.invoice_number,
+        status: invoice.payment_status,
+        total: Number(invoice.total_amount)
+      }
     })),
     ...filteredHospitalCharges.map((charge) => ({
       id: `charge-${charge.id}`,
@@ -299,9 +347,29 @@ export function AccountsWorkspace() {
       description: charge.description,
       status: charge.payment_status,
       total: Number(charge.total_amount),
-      paid: Number(charge.amount_paid)
+      paid: Number(charge.amount_paid),
+      source: "charge" as const,
+      sourceId: charge.id,
+      charge,
+      document: {
+        amountPaid: Number(charge.amount_paid),
+        date: charge.charged_at,
+        items: [{ description: charge.description, quantity: Number(charge.quantity), total: Number(charge.total_amount), unitPrice: Number(charge.unit_price) }],
+        payments: (accountsQuery.data?.hospitalPayments ?? []).filter((payment) => payment.charge_id === charge.id).map((payment) => ({ amount: Number(payment.amount), date: payment.received_at, method: payment.payment_method, reference: payment.reference_number })),
+        patientHospitalId: charge.patients?.hospital_id || charge.patients?.lab_id || "-",
+        patientName: charge.patients?.name || "Unknown patient",
+        patientPhone: charge.patients?.phone,
+        reference: charge.clinical_encounters?.encounter_number || `Charge ${charge.id.slice(0, 8)}`,
+        status: charge.payment_status,
+        total: Number(charge.total_amount)
+      }
     }))
-  ].sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime()), [filteredHospitalCharges, filteredInvoices]);
+  ].sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime()), [accountsQuery.data?.hospitalPayments, filteredHospitalCharges, filteredInvoices]);
+
+  const visibleBillingLedger = useMemo(
+    () => billingLedger.filter((record) => billingGroup === "All" || (billingGroup === "Paid" ? record.total - record.paid <= 0 : record.total - record.paid > 0)),
+    [billingGroup, billingLedger]
+  );
 
   const filteredExpenses = useMemo(() => {
     const needle = deferredSearch.trim().toLowerCase();
@@ -550,6 +618,77 @@ export function AccountsWorkspace() {
     }
   };
 
+  const openBillDocument = (record: BillingLedgerRecord, download: boolean) => {
+    const html = buildBillingDocumentHtml({
+      records: [record.document],
+      title: record.paid > 0 ? "Bill and payment receipt" : "Patient bill"
+    });
+    if (download) {
+      downloadHtmlDocument(html, `${record.reference.replace(/[^a-z0-9-]+/gi, "-")}.html`);
+    } else {
+      printHtmlDocument(html);
+    }
+  };
+
+  const startBillEdit = (record: BillingLedgerRecord) => {
+    setEditingBillId(record.id);
+    setBillEdit({
+      category: record.charge?.category ?? "",
+      description: record.charge?.description ?? "",
+      discountAmount: String(record.invoice?.discount_amount ?? 0),
+      notes: record.invoice?.notes ?? "",
+      quantity: String(record.charge?.quantity ?? 1),
+      reason: "",
+      unitPrice: String(record.charge?.unit_price ?? 0)
+    });
+  };
+
+  const saveBillEdit = async (record: BillingLedgerRecord) => {
+    if (!billEdit) return;
+    try {
+      setSavingBillId(record.id);
+      const { error } = await getAppClient().rpc("manage_account_bill", {
+        bill_id: record.sourceId,
+        source: record.source,
+        operation: "update",
+        reason: billEdit.reason,
+        ...(record.source === "invoice"
+          ? { discount_amount: Number(billEdit.discountAmount), notes: billEdit.notes }
+          : { category: billEdit.category, description: billEdit.description, quantity: Number(billEdit.quantity), unit_price: Number(billEdit.unitPrice) })
+      });
+      if (error) throw new Error(error.message);
+      setEditingBillId(null);
+      setBillEdit(null);
+      await queryClient.invalidateQueries({ queryKey: ["accounts-workspace", activeFacilityId] });
+      toast({ title: "Bill updated", description: "The change was sent to the admin audit log.", variant: "success" });
+    } catch (error) {
+      toast({ title: "Bill not updated", description: error instanceof Error ? error.message : "Please try again.", variant: "error" });
+    } finally {
+      setSavingBillId(null);
+    }
+  };
+
+  const deleteBill = async (record: BillingLedgerRecord) => {
+    const reason = window.prompt(`Reason for deleting ${record.reference}`)?.trim();
+    if (!reason || !window.confirm(`Delete ${record.reference}? The admin will receive the audit record.`)) return;
+    try {
+      setSavingBillId(record.id);
+      const { error } = await getAppClient().rpc("manage_account_bill", {
+        bill_id: record.sourceId,
+        source: record.source,
+        operation: "delete",
+        reason
+      });
+      if (error) throw new Error(error.message);
+      await queryClient.invalidateQueries({ queryKey: ["accounts-workspace", activeFacilityId] });
+      toast({ title: "Bill deleted", description: "The bill and staff details were sent to the admin audit log.", variant: "success" });
+    } catch (error) {
+      toast({ title: "Bill not deleted", description: error instanceof Error ? error.message : "Please try again.", variant: "error" });
+    } finally {
+      setSavingBillId(null);
+    }
+  };
+
   const handleExportWorkbook = async () => {
     setExporting(true);
     try {
@@ -793,17 +932,18 @@ export function AccountsWorkspace() {
           <CardHeader>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <CardTitle className="text-slate-950">Billing register</CardTitle>
-              <Badge variant="outline">{billingLedger.length} records</Badge>
+              <Badge variant="outline">{visibleBillingLedger.length} records</Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            {billingLedger.length === 0 ? (
+            <div className="grid grid-cols-3 gap-2">{(["Outstanding", "Paid", "All"] as const).map((group) => { const count = group === "All" ? billingLedger.length : billingLedger.filter((record) => group === "Paid" ? record.total - record.paid <= 0 : record.total - record.paid > 0).length; return <button key={group} type="button" onClick={() => setBillingGroup(group)} className={`rounded-xl border p-3 text-left ${billingGroup === group ? "border-blue-400 bg-blue-50" : "border-slate-200"}`}><span className="block text-xs text-slate-500">{group}</span><strong>{count}</strong></button>; })}</div>
+            {visibleBillingLedger.length === 0 ? (
               <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600">
                 No billing records found.
               </div>
             ) : null}
 
-            {billingLedger.map((record) => (
+            {visibleBillingLedger.map((record) => (
               <div key={record.id} className="rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="min-w-0">
@@ -826,8 +966,33 @@ export function AccountsWorkspace() {
                     <p className="mt-1 text-xs text-slate-500">
                       Paid {formatCurrency(record.paid)} • Due {formatCurrency(Math.max(record.total - record.paid, 0))}
                     </p>
+                    <div className="mt-3 flex flex-wrap gap-2 lg:justify-end">
+                      <Button type="button" size="sm" variant="outline" onClick={() => openBillDocument(record, false)}><Printer className="h-4 w-4" />Print</Button>
+                      <Button type="button" size="sm" variant="outline" onClick={() => openBillDocument(record, true)}><Download className="h-4 w-4" />Download</Button>
+                      {canManageAccounts ? <Button type="button" size="sm" variant="outline" onClick={() => startBillEdit(record)}><PencilLine className="h-4 w-4" />Edit</Button> : null}
+                      {canManageAccounts ? <Button type="button" size="sm" variant="destructive" disabled={savingBillId === record.id} onClick={() => void deleteBill(record)}>{savingBillId === record.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}Delete</Button> : null}
+                    </div>
                   </div>
                 </div>
+                {editingBillId === record.id && billEdit ? (
+                  <div className="mt-4 space-y-3 border-t border-slate-200 pt-4">
+                    {record.source === "invoice" ? (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div><Label>Discount</Label><Input className="mt-1" type="number" min="0" step="0.01" value={billEdit.discountAmount} onChange={(event) => setBillEdit((current) => current ? { ...current, discountAmount: event.target.value } : current)} /></div>
+                        <div><Label>Notes</Label><Input className="mt-1" value={billEdit.notes} onChange={(event) => setBillEdit((current) => current ? { ...current, notes: event.target.value } : current)} /></div>
+                      </div>
+                    ) : (
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div><Label>Description</Label><Input className="mt-1" value={billEdit.description} onChange={(event) => setBillEdit((current) => current ? { ...current, description: event.target.value } : current)} /></div>
+                        <div><Label>Category</Label><Input className="mt-1" value={billEdit.category} onChange={(event) => setBillEdit((current) => current ? { ...current, category: event.target.value } : current)} /></div>
+                        <div><Label>Quantity</Label><Input className="mt-1" type="number" min="0.01" step="0.01" value={billEdit.quantity} onChange={(event) => setBillEdit((current) => current ? { ...current, quantity: event.target.value } : current)} /></div>
+                        <div><Label>Unit price</Label><Input className="mt-1" type="number" min="0" step="0.01" value={billEdit.unitPrice} onChange={(event) => setBillEdit((current) => current ? { ...current, unitPrice: event.target.value } : current)} /></div>
+                      </div>
+                    )}
+                    <div><Label>Reason for change</Label><Input className="mt-1" value={billEdit.reason} onChange={(event) => setBillEdit((current) => current ? { ...current, reason: event.target.value } : current)} required /></div>
+                    <div className="flex flex-wrap gap-2"><Button type="button" size="sm" disabled={savingBillId === record.id || billEdit.reason.trim().length < 3} onClick={() => void saveBillEdit(record)}>{savingBillId === record.id ? <Loader2 className="h-4 w-4 animate-spin" /> : null}Save change</Button><Button type="button" size="sm" variant="outline" onClick={() => { setEditingBillId(null); setBillEdit(null); }}>Cancel</Button></div>
+                  </div>
+                ) : null}
               </div>
             ))}
           </CardContent>

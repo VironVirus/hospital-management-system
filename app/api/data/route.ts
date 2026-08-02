@@ -5,6 +5,7 @@ import { getCurrentSession, isPreviewSession } from "@/lib/auth-session";
 import { getPool, migrateDatabase, nextCounter } from "@/lib/db";
 import { HOSPITAL_ID } from "@/lib/db/schema";
 import type { AppRole } from "@/lib/auth-types";
+import { getMedicationFrequency, medicationDoseCount } from "@/lib/medication-schedule";
 
 type Filter = { column: string; operator: "eq" | "neq" | "in" | "is" | "gte" | "lte" | "like" | "ilike"; value: unknown };
 type QueryPayload = {
@@ -43,7 +44,7 @@ const readRoles: Partial<Record<string, AppRole[]>> = {
   order_tests: ["Admin", "Receptionist", "LabScientist", "Verifier", "Accountant", "Doctor", "Nurse"],
   sample_custody_logs: ["Admin", "Receptionist", "LabScientist", "Verifier"],
   order_test_results: ["Admin", "Receptionist", "LabScientist", "Verifier", "Doctor", "Nurse"],
-  invoices: ["Admin", "Receptionist", "Accountant"], invoice_items: ["Admin", "Receptionist", "Accountant"], invoice_payments: ["Admin", "Accountant"],
+  invoices: ["Admin", "Receptionist", "LabScientist", "Verifier", "Accountant", "Doctor", "Nurse", "Pharmacist", "Radiologist"], invoice_items: ["Admin", "Receptionist", "LabScientist", "Verifier", "Accountant", "Doctor", "Nurse", "Pharmacist", "Radiologist"], invoice_payments: ["Admin", "Receptionist", "LabScientist", "Verifier", "Accountant", "Doctor", "Nurse", "Pharmacist", "Radiologist"],
   inventory_items: ["Admin", "LabScientist", "Accountant", "Storekeeper", "Pharmacist"],
   inventory_transactions: ["Admin", "LabScientist", "Accountant", "Storekeeper", "Pharmacist"],
   expenses: ["Admin", "Accountant"], audit_logs: ["Admin"],
@@ -54,7 +55,7 @@ const readRoles: Partial<Record<string, AppRole[]>> = {
   clinical_notes: ["Admin", "Receptionist", "LabScientist", "Doctor", "Nurse", "Pharmacist", "Radiologist"],
   diagnoses: ["Admin", "Receptionist", "LabScientist", "Doctor", "Nurse", "Pharmacist", "Radiologist"],
   medications: ["Admin", "Receptionist", "Doctor", "Nurse", "Pharmacist", "Storekeeper"], prescriptions: ["Admin", "Receptionist", "LabScientist", "Doctor", "Nurse", "Pharmacist", "Storekeeper", "Radiologist"], prescription_items: ["Admin", "Receptionist", "LabScientist", "Doctor", "Nurse", "Pharmacist", "Storekeeper", "Radiologist"],
-  encounter_charges: ["Admin", "Receptionist", "LabScientist", "Accountant", "Doctor", "Nurse", "Pharmacist", "Radiologist"], hospital_payments: ["Admin", "Receptionist", "Accountant"],
+  encounter_charges: ["Admin", "Receptionist", "LabScientist", "Accountant", "Doctor", "Nurse", "Pharmacist", "Radiologist"], hospital_payments: ["Admin", "Receptionist", "LabScientist", "Verifier", "Accountant", "Doctor", "Nurse", "Pharmacist", "Radiologist"],
   radiology_services: ["Admin", "Receptionist", "LabScientist", "Accountant", "Doctor", "Nurse", "Pharmacist", "Radiologist"],
   radiology_requests: ["Admin", "Receptionist", "LabScientist", "Accountant", "Doctor", "Nurse", "Pharmacist", "Radiologist"], radiology_reports: ["Admin", "Receptionist", "LabScientist", "Doctor", "Nurse", "Pharmacist", "Radiologist"],
   qc_controls: ["Admin", "LabScientist", "Verifier"], qc_runs: ["Admin", "LabScientist", "Verifier"],
@@ -235,6 +236,10 @@ async function hydrate(table: string, rows: Record<string, unknown>[]) {
     await attachMany(rows, "invoice_payments", "invoice_payments", "invoice_id");
   }
   if (table === "expenses") await attachBelongs(rows, "inventory_items", "inventory_items", "inventory_item_id");
+  if (table === "audit_logs") {
+    const profiles = await attachBelongs(rows, "profiles", "profiles", "actor_id");
+    profiles.forEach((profile) => delete profile.password_hash);
+  }
   if (table === "qc_runs") await attachBelongs(rows, "qc_controls", "qc_controls", "control_id");
   if (["calibration_logs", "maintenance_logs"].includes(table)) await attachBelongs(rows, "analyzers", "analyzers", "analyzer_id");
   if (table === "wards") await attachMany(rows, "beds", "beds", "ward_id");
@@ -375,7 +380,32 @@ async function afterInsert(table: string, records: Record<string, unknown>[], ac
     }
   }
   if (table === "admissions") {
-    for (const record of records) if (record.bed_id) await getPool().execute("UPDATE beds SET status = 'Occupied' WHERE id = ?", [String(record.bed_id)]);
+    for (const record of records) {
+      if (record.bed_id) await getPool().execute("UPDATE beds SET status = 'Occupied' WHERE id = ?", [String(record.bed_id)]);
+      const [prescriptionItems] = await getPool().query<RowDataPacket[]>(
+        `SELECT pi.id, pi.frequency, pi.duration, p.id AS prescription_id
+         FROM prescription_items pi
+         JOIN prescriptions p ON p.id = pi.prescription_id
+         WHERE p.encounter_id = ? AND p.patient_id = ? AND p.facility_id = ? AND p.status <> 'Cancelled'`,
+        [String(record.encounter_id), String(record.patient_id), HOSPITAL_ID]
+      );
+      const firstDoseAt = new Date();
+      for (const item of prescriptionItems) {
+        const frequency = getMedicationFrequency(String(item.frequency || ""));
+        const durationDays = Math.trunc(Number.parseInt(String(item.duration || ""), 10));
+        if (!frequency || !Number.isFinite(durationDays) || durationDays < 1) continue;
+        const doseCount = medicationDoseCount(frequency.code, durationDays);
+        for (let doseIndex = 0; doseIndex < doseCount; doseIndex += 1) {
+          const scheduledAt = new Date(firstDoseAt.getTime() + doseIndex * frequency.intervalHours * 60 * 60 * 1000);
+          await getPool().execute(
+            `INSERT IGNORE INTO medication_administrations
+              (id, facility_id, patient_id, encounter_id, admission_id, prescription_id, prescription_item_id, scheduled_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [randomUUID(), HOSPITAL_ID, record.patient_id, record.encounter_id, record.id, item.prescription_id, item.id, scheduledAt]
+          );
+        }
+      }
+    }
   }
   if (table === "radiology_reports") {
     for (const record of records) await getPool().execute(

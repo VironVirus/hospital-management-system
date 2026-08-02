@@ -101,6 +101,10 @@ export function canManageWardsRole(role: AppRole | null | undefined) {
   return isAdminRole(role) || role === "Nurse";
 }
 
+export function canAccessNursingRole(role: AppRole | null | undefined) {
+  return isAdminRole(role) || role === "Nurse";
+}
+
 export function canAccessPharmacyRole(role: AppRole | null | undefined) {
   return isAdminRole(role) || ["Doctor", "Nurse", "Pharmacist", "Storekeeper"].includes(role ?? "");
 }

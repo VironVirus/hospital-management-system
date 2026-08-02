@@ -57,6 +57,7 @@ import {
 } from "@/lib/guards";
 import { resolveOnlineQuery } from "@/lib/online-core";
 import { getAppClient } from "@/lib/app-client";
+import { calculateMedicationQuantity, medicationFrequencies } from "@/lib/medication-schedule";
 import type { Database } from "@/types/database";
 
 type SearchPatientRow =
@@ -70,8 +71,9 @@ type RegistrationRadiologyOption = { id: string; name: string; modality: string;
 type MedicationRequest = {
   medication_id: string;
   dose: string;
-  frequency: string;
-  duration: string;
+  frequency_code: string;
+  duration_days: string;
+  units_per_dose: string;
   route: string;
   quantity: string;
   instructions: string;
@@ -80,10 +82,11 @@ type MedicationRequest = {
 const initialMedicationRequest: MedicationRequest = {
   medication_id: "",
   dose: "",
-  frequency: "",
-  duration: "",
+  frequency_code: "",
+  duration_days: "",
+  units_per_dose: "1",
   route: "",
-  quantity: "1",
+  quantity: "0",
   instructions: ""
 };
 
@@ -180,6 +183,11 @@ export function PatientManagement() {
   const [searchFocused, setSearchFocused] = useState(false);
   const [registrationServices, setRegistrationServices] = useState(initialRegistrationServices);
   const [medicationRequest, setMedicationRequest] = useState<MedicationRequest>(initialMedicationRequest);
+  const medicationRequestQuantity = calculateMedicationQuantity(
+    Number(medicationRequest.units_per_dose),
+    medicationRequest.frequency_code,
+    Number(medicationRequest.duration_days)
+  );
 
   const canViewPatients = canAccessPatientsRole(role);
   const canManagePatients = canManagePatientsRole(role);
@@ -382,7 +390,11 @@ export function PatientManagement() {
         book_consultation: registrationServices.bookConsultation,
         consultation_fee: Number(registrationServices.consultationFee || 0),
         lab_test_ids: registrationServices.sendToLab ? registrationServices.labTestIds : [],
-        medication_requests: registrationServices.sendToPharmacy ? registrationServices.medicationRequests.map((item) => ({ ...item, quantity: Number(item.quantity) })) : [],
+        medication_requests: registrationServices.sendToPharmacy ? registrationServices.medicationRequests.map((item) => ({
+          ...item,
+          duration_days: Number(item.duration_days),
+          units_per_dose: Number(item.units_per_dose)
+        })) : [],
         radiology_service_id: registrationServices.sendToRadiology ? registrationServices.radiologyServiceId : null,
         radiology_indication: registrationServices.radiologyIndication.trim() || null
       });
@@ -423,15 +435,15 @@ export function PatientManagement() {
   };
 
   const addMedicationRequest = () => {
-    if (!medicationRequest.medication_id || !medicationRequest.dose.trim() || !medicationRequest.frequency.trim() || !medicationRequest.duration.trim()) {
-      setSubmitError("Complete the medication, dose, frequency, and duration.");
+    if (!medicationRequest.medication_id || !medicationRequest.dose.trim() || !medicationRequest.frequency_code || medicationRequestQuantity <= 0) {
+      setSubmitError("Complete the medication, dose, frequency, units, and days.");
       return;
     }
     setRegistrationServices((current) => ({
       ...current,
       medicationRequests: [
         ...current.medicationRequests.filter((item) => item.medication_id !== medicationRequest.medication_id),
-        medicationRequest
+        { ...medicationRequest, quantity: String(medicationRequestQuantity) }
       ]
     }));
     setMedicationRequest(initialMedicationRequest);
@@ -980,12 +992,13 @@ export function PatientManagement() {
                         </select>
                         <div className="grid gap-2 sm:grid-cols-2">
                           <Input value={medicationRequest.dose} onChange={(event) => setMedicationRequest((current) => ({ ...current, dose: event.target.value }))} placeholder="Dose, e.g. 500 mg" />
-                          <Input value={medicationRequest.frequency} onChange={(event) => setMedicationRequest((current) => ({ ...current, frequency: event.target.value }))} placeholder="Frequency, e.g. twice daily" />
-                          <Input value={medicationRequest.duration} onChange={(event) => setMedicationRequest((current) => ({ ...current, duration: event.target.value }))} placeholder="Duration, e.g. 5 days" />
-                          <Input type="number" min="1" value={medicationRequest.quantity} onChange={(event) => setMedicationRequest((current) => ({ ...current, quantity: event.target.value }))} placeholder="Quantity" />
+                          <select className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm" value={medicationRequest.frequency_code} onChange={(event) => setMedicationRequest((current) => ({ ...current, frequency_code: event.target.value }))}><option value="">Select frequency</option>{medicationFrequencies.map((frequency) => <option key={frequency.code} value={frequency.code}>{frequency.label}</option>)}</select>
+                          <Input type="number" min="1" max="90" step="1" value={medicationRequest.duration_days} onChange={(event) => setMedicationRequest((current) => ({ ...current, duration_days: event.target.value }))} placeholder="Number of days" />
+                          <Input type="number" min="0.25" max="100" step="0.25" value={medicationRequest.units_per_dose} onChange={(event) => setMedicationRequest((current) => ({ ...current, units_per_dose: event.target.value }))} placeholder="Units per dose" />
                           <Input value={medicationRequest.route} onChange={(event) => setMedicationRequest((current) => ({ ...current, route: event.target.value }))} placeholder="Route" />
                           <Input value={medicationRequest.instructions} onChange={(event) => setMedicationRequest((current) => ({ ...current, instructions: event.target.value }))} placeholder="Instructions" />
                         </div>
+                        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-950">Total quantity: <strong>{medicationRequestQuantity || 0}</strong></div>
                         <Button type="button" variant="outline" className="w-full" onClick={addMedicationRequest}>
                           <Plus className="h-4 w-4" />
                           Add medication
@@ -997,7 +1010,7 @@ export function PatientManagement() {
                               <div key={request.medication_id} className="flex items-start justify-between gap-3 rounded-lg bg-emerald-50 p-3 text-sm">
                                 <div>
                                   <p className="font-medium text-slate-950">{medication ? `${medication.generic_name} ${medication.strength}` : "Medication"}</p>
-                                  <p className="mt-1 text-xs text-slate-600">{request.dose} · {request.frequency} · {request.duration} · Qty {request.quantity}</p>
+                                  <p className="mt-1 text-xs text-slate-600">{request.dose} · {medicationFrequencies.find((frequency) => frequency.code === request.frequency_code)?.label ?? request.frequency_code} · {request.duration_days} day{Number(request.duration_days) === 1 ? "" : "s"} · Qty {request.quantity}</p>
                                 </div>
                                 <Button type="button" size="sm" variant="ghost" onClick={() => setRegistrationServices((current) => ({ ...current, medicationRequests: current.medicationRequests.filter((item) => item.medication_id !== request.medication_id) }))}>
                                   <X className="h-4 w-4" />

@@ -1,9 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import type { RowDataPacket } from "mysql2/promise";
+import type { PoolConnection, RowDataPacket } from "mysql2/promise";
 import { getCurrentSession, isPreviewSession } from "@/lib/auth-session";
 import { getPool, nextCounter, withTransaction } from "@/lib/db";
 import { HOSPITAL_ID } from "@/lib/db/schema";
+import {
+  calculateMedicationQuantity,
+  getMedicationFrequency,
+  medicationDoseCount
+} from "@/lib/medication-schedule";
 
 function response(data: unknown = null) {
   return NextResponse.json({ data, error: null });
@@ -15,6 +20,55 @@ function moneyStatus(paid: number, total: number) {
 
 function forbidden() {
   return NextResponse.json({ data: null, error: { message: "Your staff role cannot perform this action." } }, { status: 403 });
+}
+
+function prescriptionSchedule(item: Record<string, unknown>) {
+  const frequency = getMedicationFrequency(String(item.frequency_code || item.frequency || ""));
+  const durationDays = Math.trunc(Number(item.duration_days || Number.parseInt(String(item.duration || ""), 10)));
+  const unitsPerDose = Number(item.units_per_dose || 1);
+  if (!frequency) throw new Error("Select a medication frequency from the list.");
+  if (!Number.isFinite(durationDays) || durationDays < 1 || durationDays > 90) {
+    throw new Error("Treatment duration must be between 1 and 90 days.");
+  }
+  if (!Number.isFinite(unitsPerDose) || unitsPerDose <= 0 || unitsPerDose > 100) {
+    throw new Error("Units per dose must be greater than zero.");
+  }
+  return {
+    frequency,
+    durationDays,
+    unitsPerDose,
+    duration: `${durationDays} day${durationDays === 1 ? "" : "s"}`,
+    quantity: calculateMedicationQuantity(unitsPerDose, frequency.code, durationDays),
+    doseCount: medicationDoseCount(frequency.code, durationDays)
+  };
+}
+
+async function createAdministrationSchedule(input: {
+  connection: PoolConnection;
+  admissionId: string | null;
+  patientId: string;
+  encounterId: string;
+  prescriptionId: string;
+  prescriptionItemId: string;
+  frequencyCode: string;
+  durationDays: number;
+  firstDoseAt: Date;
+}) {
+  if (!input.admissionId) return;
+  const frequency = getMedicationFrequency(input.frequencyCode);
+  if (!frequency) return;
+  const doseCount = medicationDoseCount(frequency.code, input.durationDays);
+  for (let doseIndex = 0; doseIndex < doseCount; doseIndex += 1) {
+    const scheduledAt = new Date(
+      input.firstDoseAt.getTime() + doseIndex * frequency.intervalHours * 60 * 60 * 1000
+    );
+    await input.connection.execute(
+      `INSERT IGNORE INTO medication_administrations
+        (id, facility_id, patient_id, encounter_id, admission_id, prescription_id, prescription_item_id, scheduled_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [randomUUID(), HOSPITAL_ID, input.patientId, input.encounterId, input.admissionId, input.prescriptionId, input.prescriptionItemId, scheduledAt]
+    );
+  }
 }
 
 export async function POST(request: Request) {
@@ -169,19 +223,17 @@ export async function POST(request: Request) {
             const medication = medicationIndex.get(String(item.medication_id || ""));
             if (!medication) throw new Error("Select a medication from the hospital list.");
             const dose = String(item.dose || "").trim();
-            const frequency = String(item.frequency || "").trim();
-            const duration = String(item.duration || "").trim();
-            if (!dose || !frequency || !duration) throw new Error(`Complete the dose, frequency, and duration for ${medication.generic_name}.`);
-            const quantity = Math.max(Number(item.quantity || 1), 1);
+            if (!dose) throw new Error(`Enter the dose for ${medication.generic_name}.`);
+            const schedule = prescriptionSchedule(item);
             const prescriptionItemId = randomUUID();
             const medicationName = [medication.generic_name, medication.brand_name, medication.strength].filter(Boolean).join(" · ");
             await connection.execute(
               `INSERT INTO prescription_items
                 (id, prescription_id, medication_id, medication_name, dose, frequency, duration, route, quantity, instructions, unit_price)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-              [prescriptionItemId, prescriptionId, medication.id, medicationName, dose, frequency, duration, String(item.route || medication.route || "").trim() || null, quantity, String(item.instructions || "").trim() || null, Number(medication.unit_price || 0)]
+              [prescriptionItemId, prescriptionId, medication.id, medicationName, dose, schedule.frequency.label, schedule.duration, String(item.route || medication.route || "").trim() || null, schedule.quantity, String(item.instructions || "").trim() || null, Number(medication.unit_price || 0)]
             );
-            await createCharge({ id: prescriptionItemId, description: medicationName, category: "Medication", quantity, unitPrice: Number(medication.unit_price || 0) });
+            await createCharge({ id: prescriptionItemId, description: medicationName, category: "Medication", quantity: schedule.quantity, unitPrice: Number(medication.unit_price || 0) });
           }
         }
 
@@ -367,6 +419,12 @@ export async function POST(request: Request) {
         }
         const medicationIndex = new Map(medications.map((item) => [String(item.id), item]));
         if (medicationIndex.size !== medicationIds.length) throw new Error("One or more medications are unavailable.");
+        const [admissions] = await connection.query<RowDataPacket[]>(
+          "SELECT id FROM admissions WHERE patient_id = ? AND encounter_id = ? AND facility_id = ? AND status = 'Admitted' ORDER BY admitted_at DESC LIMIT 1",
+          [patientId, encounterId, HOSPITAL_ID]
+        );
+        const admissionId = admissions[0] ? String(admissions[0].id) : null;
+        const firstDoseAt = new Date();
 
         const prescriptionId = randomUUID();
         await connection.execute(
@@ -377,26 +435,36 @@ export async function POST(request: Request) {
           const medication = medicationIndex.get(String(item.medication_id || ""));
           if (!medication) throw new Error("Select a medication from the hospital list.");
           const dose = String(item.dose || "").trim();
-          const frequency = String(item.frequency || "").trim();
-          const duration = String(item.duration || "").trim();
-          if (!dose || !frequency || !duration) throw new Error(`Complete the dose, frequency, and duration for ${medication.generic_name}.`);
-          const quantity = Math.max(Number(item.quantity || 1), 1);
+          if (!dose) throw new Error(`Enter the dose for ${medication.generic_name}.`);
+          const schedule = prescriptionSchedule(item);
           const prescriptionItemId = randomUUID();
+          const medicationName = [medication.generic_name, medication.brand_name, medication.strength].filter(Boolean).join(" · ");
           await connection.execute(
             `INSERT INTO prescription_items
               (id, prescription_id, medication_id, medication_name, dose, frequency, duration, route, quantity, instructions, unit_price)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [prescriptionItemId, prescriptionId, medication.id, [medication.generic_name, medication.brand_name, medication.strength].filter(Boolean).join(" · "), dose, frequency, duration, String(item.route || medication.route || "").trim() || null, quantity, String(item.instructions || "").trim() || null, Number(medication.unit_price || 0)]
+            [prescriptionItemId, prescriptionId, medication.id, medicationName, dose, schedule.frequency.label, schedule.duration, String(item.route || medication.route || "").trim() || null, schedule.quantity, String(item.instructions || "").trim() || null, Number(medication.unit_price || 0)]
           );
-          const total = quantity * Number(medication.unit_price || 0);
+          const total = schedule.quantity * Number(medication.unit_price || 0);
           await connection.execute(
             `INSERT INTO encounter_charges
               (id, facility_id, patient_id, encounter_id, description, category, quantity, unit_price, total_amount, payment_status, charged_by)
              VALUES (?, ?, ?, ?, ?, 'Medication', ?, ?, ?, ?, ?)`,
-            [prescriptionItemId, HOSPITAL_ID, patientId, encounterId, [medication.generic_name, medication.brand_name, medication.strength].filter(Boolean).join(" · "), quantity, Number(medication.unit_price || 0), total, total > 0 ? "Unpaid" : "Paid", currentSession.user.id]
+            [prescriptionItemId, HOSPITAL_ID, patientId, encounterId, medicationName, schedule.quantity, Number(medication.unit_price || 0), total, total > 0 ? "Unpaid" : "Paid", currentSession.user.id]
           );
+          await createAdministrationSchedule({
+            connection,
+            admissionId,
+            patientId,
+            encounterId,
+            prescriptionId,
+            prescriptionItemId,
+            frequencyCode: schedule.frequency.code,
+            durationDays: schedule.durationDays,
+            firstDoseAt
+          });
         }
-        return { prescription_id: prescriptionId };
+        return { prescription_id: prescriptionId, nursing_schedule_created: Boolean(admissionId) };
       });
       return response(data);
     }
@@ -417,6 +485,160 @@ export async function POST(request: Request) {
         await connection.execute("UPDATE prescriptions SET status = 'Dispensed', dispensed_by = ?, dispensed_at = UTC_TIMESTAMP(3) WHERE id = ?", [currentSession.user.id, String(args.target_prescription_id)]);
       });
       return response(null);
+    }
+
+    if (name === "get_nursing_medication_dashboard") {
+      if (!["Admin", "Nurse"].includes(currentSession.profile.role)) return forbidden();
+      const [patients] = await pool.query<RowDataPacket[]>(
+        `SELECT a.id AS admission_id, a.patient_id, a.encounter_id, a.admitted_at,
+          p.name, p.hospital_id, p.phone,
+          w.name AS ward_name, w.code AS ward_code, b.bed_number
+         FROM admissions a
+         JOIN patients p ON p.id = a.patient_id
+         JOIN wards w ON w.id = a.ward_id
+         LEFT JOIN beds b ON b.id = a.bed_id
+         WHERE a.facility_id = ? AND a.status = 'Admitted'
+         ORDER BY w.name, b.bed_number, p.name`,
+        [HOSPITAL_ID]
+      );
+      const [doses] = await pool.query<RowDataPacket[]>(
+        `SELECT ma.id, ma.patient_id, ma.encounter_id, ma.admission_id,
+          ma.prescription_id, ma.prescription_item_id, ma.scheduled_at,
+          ma.status, ma.administered_at, ma.administered_by, ma.notes,
+          pi.medication_name, pi.dose, pi.frequency, pi.duration, pi.route, pi.instructions,
+          p.status AS prescription_status,
+          COALESCE(staff.display_name, staff.email) AS administered_by_name
+         FROM medication_administrations ma
+         JOIN admissions a ON a.id = ma.admission_id AND a.status = 'Admitted'
+         JOIN prescription_items pi ON pi.id = ma.prescription_item_id
+         JOIN prescriptions p ON p.id = ma.prescription_id
+         LEFT JOIN profiles staff ON staff.id = ma.administered_by
+         WHERE ma.facility_id = ?
+           AND ma.scheduled_at <= DATE_ADD(UTC_TIMESTAMP(3), INTERVAL 48 HOUR)
+           AND (ma.status = 'Scheduled' OR ma.administered_at >= DATE_SUB(UTC_TIMESTAMP(3), INTERVAL 24 HOUR))
+         ORDER BY ma.scheduled_at ASC
+         LIMIT 2000`,
+        [HOSPITAL_ID]
+      );
+      return response({ server_time: new Date().toISOString(), patients, doses });
+    }
+
+    if (name === "record_medication_administrations") {
+      if (!["Admin", "Nurse"].includes(currentSession.profile.role)) return forbidden();
+      const administrationIds = [...new Set(
+        (Array.isArray(args.administration_ids) ? args.administration_ids : []).map(String).filter(Boolean)
+      )];
+      if (!administrationIds.length) throw new Error("Select at least one medication to administer.");
+      if (administrationIds.length > 50) throw new Error("Record no more than 50 doses at once.");
+      const notes = String(args.notes || "").trim() || null;
+      const administeredCount = await withTransaction(async (connection) => {
+        const placeholders = administrationIds.map(() => "?").join(",");
+        const [rows] = await connection.query<RowDataPacket[]>(
+          `SELECT ma.id
+           FROM medication_administrations ma
+           JOIN admissions a ON a.id = ma.admission_id
+           WHERE ma.id IN (${placeholders}) AND ma.facility_id = ?
+             AND ma.status = 'Scheduled' AND a.status = 'Admitted'
+           FOR UPDATE`,
+          [...administrationIds, HOSPITAL_ID]
+        );
+        if (rows.length !== administrationIds.length) {
+          throw new Error("One or more selected doses are no longer available.");
+        }
+        await connection.execute(
+          `UPDATE medication_administrations
+           SET status = 'Administered', administered_at = UTC_TIMESTAMP(3), administered_by = ?, notes = ?
+           WHERE id IN (${placeholders})`,
+          [currentSession.user.id, notes, ...administrationIds]
+        );
+        return rows.length;
+      });
+      return response({ administered_count: administeredCount });
+    }
+
+    if (name === "manage_account_bill") {
+      if (!["Admin", "Accountant"].includes(currentSession.profile.role)) return forbidden();
+      const source = String(args.source || "");
+      const billId = String(args.bill_id || "");
+      const operation = String(args.operation || "");
+      const reason = String(args.reason || "").trim();
+      if (!["invoice", "charge"].includes(source) || !billId || !["update", "delete"].includes(operation)) {
+        throw new Error("Invalid billing action.");
+      }
+      if (reason.length < 3) throw new Error("Enter a reason for this change.");
+
+      const result = await withTransaction(async (connection) => {
+        const table = source === "invoice" ? "invoices" : "encounter_charges";
+        const [rows] = await connection.query<RowDataPacket[]>(
+          `SELECT * FROM ${table} WHERE id = ? AND facility_id = ? FOR UPDATE`,
+          [billId, HOSPITAL_ID]
+        );
+        const before = rows[0];
+        if (!before) throw new Error("Bill not found.");
+        const related: Record<string, unknown> = {};
+        if (source === "invoice") {
+          const [items] = await connection.query<RowDataPacket[]>("SELECT * FROM invoice_items WHERE invoice_id = ?", [billId]);
+          const [payments] = await connection.query<RowDataPacket[]>("SELECT * FROM invoice_payments WHERE invoice_id = ?", [billId]);
+          related.items = items;
+          related.payments = payments;
+        } else {
+          const [payments] = await connection.query<RowDataPacket[]>("SELECT * FROM hospital_payments WHERE charge_id = ?", [billId]);
+          related.payments = payments;
+        }
+
+        let after: Record<string, unknown> | null = null;
+        if (operation === "update") {
+          if (source === "invoice") {
+            const discount = Number(args.discount_amount ?? before.discount_amount ?? 0);
+            const subtotal = Number(before.subtotal || 0);
+            const paid = Number(before.amount_paid || 0);
+            const total = subtotal - discount;
+            if (!Number.isFinite(discount) || discount < 0 || total < paid) throw new Error("Discount cannot make the total lower than the amount already paid.");
+            const notes = String(args.notes || "").trim() || null;
+            await connection.execute(
+              "UPDATE invoices SET discount_amount = ?, total_amount = ?, payment_status = ?, notes = ? WHERE id = ?",
+              [discount, total, moneyStatus(paid, total), notes, billId]
+            );
+          } else {
+            const description = String(args.description || "").trim();
+            const category = String(args.category || "").trim();
+            const quantity = Number(args.quantity || 0);
+            const unitPrice = Number(args.unit_price || 0);
+            const total = quantity * unitPrice;
+            const paid = Number(before.amount_paid || 0);
+            if (!description || !category || !Number.isFinite(quantity) || quantity <= 0 || !Number.isFinite(unitPrice) || unitPrice < 0 || total < paid) {
+              throw new Error("Check the bill details. The new total cannot be lower than the amount already paid.");
+            }
+            await connection.execute(
+              "UPDATE encounter_charges SET description = ?, category = ?, quantity = ?, unit_price = ?, total_amount = ?, payment_status = ? WHERE id = ?",
+              [description, category, quantity, unitPrice, total, moneyStatus(paid, total), billId]
+            );
+          }
+          const [updatedRows] = await connection.query<RowDataPacket[]>(`SELECT * FROM ${table} WHERE id = ?`, [billId]);
+          after = updatedRows[0] as Record<string, unknown>;
+        } else if (source === "invoice") {
+          await connection.execute("DELETE FROM invoice_payments WHERE invoice_id = ?", [billId]);
+          await connection.execute("DELETE FROM invoice_items WHERE invoice_id = ?", [billId]);
+          await connection.execute("DELETE FROM invoices WHERE id = ?", [billId]);
+        } else {
+          await connection.execute("DELETE FROM hospital_payments WHERE charge_id = ?", [billId]);
+          await connection.execute("DELETE FROM encounter_charges WHERE id = ?", [billId]);
+        }
+
+        const actor = {
+          id: currentSession.user.id,
+          name: currentSession.profile.display_name || currentSession.user.email,
+          email: currentSession.user.email,
+          role: currentSession.profile.role
+        };
+        const auditPayload = { actor, after, before, reason, related };
+        await connection.execute(
+          "INSERT INTO audit_logs (id, facility_id, entity_table, entity_id, action, payload, actor_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          [randomUUID(), HOSPITAL_ID, table, billId, operation === "update" ? "bill_updated" : "bill_deleted", JSON.stringify(auditPayload), currentSession.user.id]
+        );
+        return { action: operation, id: billId };
+      });
+      return response(result);
     }
 
     if (name === "record_hospital_payment") {

@@ -136,6 +136,7 @@ export function InventoryManagement() {
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search);
   const [filter, setFilter] = useState<ItemFilter>("all");
+  const [categoryGroup, setCategoryGroup] = useState("");
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [itemFormState, setItemFormState] = useState<InventoryItemFormValues>(
@@ -165,8 +166,16 @@ export function InventoryManagement() {
     refetchOnWindowFocus: false
   });
 
+  const categoryGroups = useMemo(() => {
+    const counts = new Map<string, number>();
+    (itemsQuery.data ?? []).forEach((item) => counts.set(item.category || "Uncategorized", (counts.get(item.category || "Uncategorized") ?? 0) + 1));
+    return [...counts.entries()].sort(([left], [right]) => left.localeCompare(right));
+  }, [itemsQuery.data]);
+  const activeCategoryGroup = categoryGroups.some(([category]) => category === categoryGroup) ? categoryGroup : categoryGroups[0]?.[0] ?? "";
+
   const filteredItems = useMemo(() => {
     return (itemsQuery.data ?? []).filter((item) => {
+      if (activeCategoryGroup && (item.category || "Uncategorized") !== activeCategoryGroup) return false;
       if (!matchesInventorySearch(item, deferredSearch)) {
         return false;
       }
@@ -189,7 +198,7 @@ export function InventoryManagement() {
 
       return true;
     });
-  }, [deferredSearch, filter, itemsQuery.data]);
+  }, [activeCategoryGroup, deferredSearch, filter, itemsQuery.data]);
 
   const selectedItem = useMemo(
     () =>
@@ -942,6 +951,7 @@ export function InventoryManagement() {
           </CardHeader>
 
           <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-2">{categoryGroups.map(([category, count]) => <button key={category} type="button" onClick={() => setCategoryGroup(category)} className={`rounded-full border px-3 py-1.5 text-xs font-medium ${activeCategoryGroup === category ? "border-blue-400 bg-blue-50 text-blue-800" : "border-slate-200"}`}>{category} · {count}</button>)}</div>
             {itemsQuery.isLoading ? (
               <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600">
                 <Loader2 className="h-4 w-4 animate-spin text-blue-700" />

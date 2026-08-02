@@ -86,6 +86,7 @@ export function WardManagementPanel() {
   const [wardDrafts, setWardDrafts] = useState<Record<string, WardDraft>>({});
   const [bedDrafts, setBedDrafts] = useState<Record<string, BedDraft>>({});
   const [newBeds, setNewBeds] = useState<Record<string, string>>({});
+  const [selectedWardId, setSelectedWardId] = useState<string | null>(null);
 
   const wardsQuery = useQuery({
     queryKey: ["admin", "wards"],
@@ -94,6 +95,12 @@ export function WardManagementPanel() {
   });
 
   const wards = useMemo(() => wardsQuery.data ?? [], [wardsQuery.data]);
+  const wardGroups = useMemo(() => {
+    const groups = new Map<string, Ward[]>();
+    wards.forEach((ward) => groups.set(ward.ward_type || "General", [...(groups.get(ward.ward_type || "General") ?? []), ward]));
+    return [...groups.entries()].sort(([left], [right]) => left.localeCompare(right));
+  }, [wards]);
+  const selectedWard = wards.find((ward) => ward.id === selectedWardId) ?? wards[0] ?? null;
 
   const refresh = async () => {
     await Promise.all([
@@ -139,6 +146,7 @@ export function WardManagementPanel() {
 
       setCreateForm(initialWard);
       await refresh();
+      setSelectedWardId(wardId);
       toast({ title: "Ward created", variant: "success" });
     } catch (error) {
       toast({
@@ -264,12 +272,30 @@ export function WardManagementPanel() {
             Wards and beds
           </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-5">
           {wardsQuery.isLoading ? <div className="flex items-center gap-2 p-6 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />Loading...</div> : null}
-          {wards.map((ward) => {
+          {!wardsQuery.isLoading && wards.length === 0 ? <div className="rounded-xl border border-dashed p-6 text-center text-sm text-slate-500">No wards.</div> : null}
+          <div className="space-y-4">
+            {wardGroups.map(([type, group]) => (
+              <section key={type} className="space-y-2">
+                <div className="flex items-center justify-between gap-2"><p className="text-sm font-semibold text-slate-800">{type}</p><Badge variant="outline">{group.length} ward{group.length === 1 ? "" : "s"}</Badge></div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {group.map((ward) => (
+                    <button key={ward.id} type="button" onClick={() => setSelectedWardId(ward.id)} className={`rounded-xl border p-3 text-left transition ${selectedWard?.id === ward.id ? "border-indigo-500 bg-indigo-50 ring-1 ring-indigo-200" : "border-slate-200 bg-white hover:border-indigo-200 hover:bg-slate-50"}`}>
+                      <span className="flex items-center justify-between gap-2"><strong className="text-sm text-slate-950">{ward.name}</strong><Badge variant={ward.is_active ? "default" : "secondary"}>{ward.is_active ? "Active" : "Inactive"}</Badge></span>
+                      <span className="mt-1 block text-xs text-slate-500">{ward.code} · {ward.beds?.length ?? 0} beds</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+
+          {selectedWard ? (() => {
+            const ward = selectedWard;
             const draft = wardDrafts[ward.id] ?? wardDraft(ward);
             return (
-              <section key={ward.id} className="space-y-4 rounded-2xl border p-4">
+              <section className="space-y-4 rounded-2xl border border-indigo-100 bg-slate-50/50 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div><p className="font-semibold">{ward.name}</p><p className="text-xs text-slate-500">{ward.code} · {ward.beds?.length ?? 0} beds</p></div>
                   <Badge variant={ward.is_active ? "default" : "secondary"}>{ward.is_active ? "Active" : "Inactive"}</Badge>
@@ -308,7 +334,7 @@ export function WardManagementPanel() {
                 </div>
               </section>
             );
-          })}
+          })() : null}
         </CardContent>
       </Card>
     </div>

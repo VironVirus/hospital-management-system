@@ -25,6 +25,7 @@ import {
   SunMedium,
   Stethoscope,
   Store,
+  Syringe,
   TestTube2,
   X,
   Wallet
@@ -59,6 +60,13 @@ const navigation: NavigationItem[] = [
     label: "Wards",
     icon: BedDouble,
     roles: ["Admin", "Doctor", "Nurse", "Receptionist"] as AppRole[],
+    group: "Care"
+  },
+  {
+    href: "/nursing",
+    label: "Nursing",
+    icon: Syringe,
+    roles: ["Admin", "Nurse"] as AppRole[],
     group: "Care"
   },
   {
@@ -180,6 +188,7 @@ const mobileNavigationPriority: Route[] = [
   "/hospital",
   "/patients",
   "/clinical",
+  "/nursing",
   "/dashboard",
   "/orders",
   "/results",

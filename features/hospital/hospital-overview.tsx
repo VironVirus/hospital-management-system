@@ -4,14 +4,14 @@ import Link from "next/link";
 import type { Route } from "next";
 import { useQuery } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
-import { ArrowRight, BedDouble, ClipboardPlus, HeartPulse, Loader2, Pill, ReceiptText, ScanSearch, Store, UserRound, UsersRound } from "lucide-react";
+import { ArrowRight, BedDouble, ClipboardPlus, HeartPulse, Loader2, Pill, ReceiptText, ScanSearch, Store, Syringe, UserRound, UsersRound } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getHospitalClient, throwIfHospitalError } from "@/lib/hospital-client";
 import { getAppClient } from "@/lib/app-client";
-import type { Admission, Encounter, EncounterCharge, Medication, PatientOption, Prescription } from "@/types/hospital";
+import type { Admission, Encounter, EncounterCharge, Medication, NursingMedicationDashboard, PatientOption, Prescription } from "@/types/hospital";
 
 function money(value: number) {
   return new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(value);
@@ -42,25 +42,48 @@ async function fetchHospitalOverview() {
   };
 }
 
+async function fetchNursingSummary() {
+  const { data, error } = await getAppClient().rpc("get_nursing_medication_dashboard");
+  if (error) throw new Error(error.message);
+  return data as NursingMedicationDashboard;
+}
+
 function Metric({ icon: Icon, label, value, tone }: { icon: LucideIcon; label: string; value: string; tone: string }) {
   return <Card><CardContent className="p-5"><div className="flex items-start justify-between gap-3"><div><p className="text-sm font-medium text-slate-600">{label}</p><p className="mt-2 text-3xl font-semibold text-slate-950">{value}</p></div><div className={`rounded-2xl p-3 ${tone}`}><Icon className="h-5 w-5" /></div></div></CardContent></Card>;
 }
 
 export function HospitalOverview() {
-  const { facilityId, facilityName, loading } = useAuth();
+  const { facilityId, facilityName, loading, role } = useAuth();
   const overviewQuery = useQuery({ queryKey: ["hospital", "overview"], queryFn: fetchHospitalOverview, enabled: Boolean(facilityId) });
+  const nursingSummaryQuery = useQuery({ queryKey: ["hospital", "nursing-medications"], queryFn: fetchNursingSummary, enabled: Boolean(facilityId && ["Admin", "Nurse"].includes(role ?? "")), refetchInterval: 60_000 });
   if (loading || overviewQuery.isLoading) return <Card><CardContent className="flex items-center gap-3 p-8 text-sm text-slate-600"><Loader2 className="h-4 w-4 animate-spin" />Loading...</CardContent></Card>;
   if (!facilityId) return <Card><CardHeader><CardTitle>Access unavailable</CardTitle></CardHeader></Card>;
   const data = overviewQuery.data;
   const openEncounters = data?.encounters.filter((item) => item.status === "Open" || item.status === "Admitted") ?? [];
   const lowStock = data?.medications.filter((item) => Number(item.quantity_on_hand) <= Number(item.reorder_level)) ?? [];
   const outstanding = data?.charges.reduce((sum, charge) => sum + Math.max(Number(charge.total_amount) - Number(charge.amount_paid), 0), 0) ?? 0;
+  const nursingDuePatients = new Set((nursingSummaryQuery.data?.doses ?? []).filter((dose) => dose.status === "Scheduled" && new Date(dose.scheduled_at).getTime() <= Date.now() + 30 * 60 * 1000).map((dose) => dose.patient_id)).size;
+  const operationalAlerts: Array<[LucideIcon, string, number, Route]> = [
+    [Pill, "Prescriptions awaiting dispense", data?.prescriptions.length ?? 0, "/pharmacy"],
+    [Store, "Low medication stock", lowStock.length, "/pharmacy"],
+    [ReceiptText, "Outstanding patient charges", data?.charges.length ?? 0, "/hospital-billing"]
+  ];
+  if (["Admin", "Nurse"].includes(role ?? "")) operationalAlerts.unshift([Syringe, "Patients needing medication", nursingDuePatients, "/nursing"]);
+  const careModules: Array<[string, Route, LucideIcon]> = [
+    ["Wards", "/wards", BedDouble],
+    ["Pharmacy", "/pharmacy", Pill],
+    ["Radiology", "/radiology", ScanSearch],
+    ["Billing", "/hospital-billing", ReceiptText],
+    ["Laboratory", "/dashboard", HeartPulse],
+    ["Store", "/inventory", Store]
+  ];
+  if (["Admin", "Nurse"].includes(role ?? "")) careModules.unshift(["Nursing", "/nursing", Syringe]);
   return <div className="space-y-6">
     <Card className="overflow-hidden border-sky-100 bg-gradient-to-r from-teal-800 to-teal-600 text-white"><CardContent className="flex flex-col gap-5 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-6"><div><h2 className="text-2xl font-semibold">{facilityName || "St Gianna Specialist Hospital"}</h2><p className="mt-1 text-sm text-teal-50">Transekulu, Enugu</p></div><div className="grid grid-cols-2 gap-3 sm:flex"><Button asChild className="bg-white text-teal-800 hover:bg-teal-50"><Link href="/clinical"><ClipboardPlus className="h-4 w-4" />New encounter</Link></Button><Button asChild variant="outline" className="border-white/30 bg-white/10 text-white hover:bg-white/20 hover:text-white"><Link href="/patients"><UserRound className="h-4 w-4" />Find patient</Link></Button></div></CardContent></Card>
     <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><Metric icon={UsersRound} label="Registered patients" value={String(data?.patients.length ?? 0)} tone="bg-sky-100 text-sky-700" /><Metric icon={HeartPulse} label="Active encounters" value={String(openEncounters.length)} tone="bg-teal-100 text-teal-700" /><Metric icon={BedDouble} label="Inpatients" value={String(data?.admissions.length ?? 0)} tone="bg-indigo-100 text-indigo-700" /><Metric icon={ReceiptText} label="Outstanding" value={money(outstanding)} tone="bg-amber-100 text-amber-700" /></section>
     <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
       <Card><CardHeader><div className="flex items-start justify-between"><div><CardTitle>Live patient flow</CardTitle></div><Button asChild variant="outline" size="sm"><Link href="/clinical">Clinical<ArrowRight className="h-4 w-4" /></Link></Button></div></CardHeader><CardContent className="space-y-3">{openEncounters.slice(0, 8).map((encounter) => <div key={encounter.id} className="grid gap-3 rounded-2xl border p-4 sm:grid-cols-[1fr_1fr_auto] sm:items-center"><div><p className="font-semibold">{encounter.patients?.name}</p><p className="text-xs font-medium text-teal-700">{encounter.patients?.hospital_id ?? encounter.patients?.lab_id}</p></div><div><p className="line-clamp-1 text-sm text-slate-600">{encounter.encounter_type}</p><p className="text-xs text-slate-500">{encounter.encounter_number} · {formatDate(encounter.started_at)}</p></div><Badge>{encounter.status}</Badge></div>)}{!openEncounters.length ? <div className="rounded-xl border border-dashed p-10 text-center text-sm text-slate-500">No active encounters.</div> : null}</CardContent></Card>
-      <div className="space-y-6"><Card><CardHeader><CardTitle>Operational alerts</CardTitle></CardHeader><CardContent className="space-y-3">{[[Pill, "Prescriptions awaiting dispense", data?.prescriptions.length ?? 0, "/pharmacy"], [Store, "Low medication stock", lowStock.length, "/pharmacy"], [ReceiptText, "Outstanding patient charges", data?.charges.length ?? 0, "/hospital-billing"]].map(([Icon, label, value, href]) => { const AlertIcon = Icon as LucideIcon; return <Link key={String(label)} href={String(href) as Route} className="flex items-center justify-between rounded-xl border p-4 transition hover:bg-slate-50"><div className="flex items-center gap-3"><div className="rounded-xl bg-slate-100 p-2"><AlertIcon className="h-4 w-4 text-slate-700" /></div><span className="text-sm font-medium">{String(label)}</span></div><Badge variant={Number(value) > 0 ? "default" : "secondary"} className={Number(value) > 0 ? "bg-rose-600 text-white" : undefined}>{String(value)}</Badge></Link>; })}</CardContent></Card><Card><CardHeader><CardTitle>Care modules</CardTitle></CardHeader><CardContent className="grid grid-cols-2 gap-3">{[["Wards", "/wards", BedDouble], ["Pharmacy", "/pharmacy", Pill], ["Radiology", "/radiology", ScanSearch], ["Billing", "/hospital-billing", ReceiptText], ["Laboratory", "/dashboard", HeartPulse], ["Store", "/inventory", Store]].map(([label, href, Icon]) => { const ModuleIcon = Icon as LucideIcon; return <Button key={String(label)} asChild variant="outline" className="h-auto justify-start py-4"><Link href={String(href) as Route}><ModuleIcon className="h-4 w-4" />{String(label)}</Link></Button>; })}</CardContent></Card></div>
+      <div className="space-y-6"><Card><CardHeader><CardTitle>Operational alerts</CardTitle></CardHeader><CardContent className="space-y-3">{operationalAlerts.map(([AlertIcon, label, value, href]) => <Link key={label} href={href} className="flex items-center justify-between rounded-xl border p-4 transition hover:bg-slate-50"><div className="flex items-center gap-3"><div className="rounded-xl bg-slate-100 p-2"><AlertIcon className="h-4 w-4 text-slate-700" /></div><span className="text-sm font-medium">{label}</span></div><Badge variant={value > 0 ? "default" : "secondary"} className={value > 0 ? "bg-rose-600 text-white" : undefined}>{value}</Badge></Link>)}</CardContent></Card><Card><CardHeader><CardTitle>Care modules</CardTitle></CardHeader><CardContent className="grid grid-cols-2 gap-3">{careModules.map(([label, href, ModuleIcon]) => <Button key={label} asChild variant="outline" className="h-auto justify-start py-4"><Link href={href}><ModuleIcon className="h-4 w-4" />{label}</Link></Button>)}</CardContent></Card></div>
     </section>
   </div>;
 }

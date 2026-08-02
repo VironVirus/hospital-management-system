@@ -191,7 +191,7 @@ function renderHighlightedText(value: string, query: string): ReactNode {
 }
 
 function formatPatientOption(patient: PatientSearchRow) {
-  return `${patient.name} / ${patient.lab_id}`;
+  return `${patient.name} / ${patient.hospital_id || patient.lab_id}`;
 }
 
 function sortBundlesByUsage<T extends Pick<TestBundleRow, "last_used_at" | "name" | "usage_count">>(
@@ -473,6 +473,7 @@ export function OrdersManagement() {
   const [testSearch, setTestSearch] = useState("");
   const deferredTestSearch = useDeferredValue(testSearch);
   const [patientPickerOpen, setPatientPickerOpen] = useState(false);
+  const [selectedPatientRecord, setSelectedPatientRecord] = useState<PatientSearchRow | null>(null);
   const [testPickerOpen, setTestPickerOpen] = useState(false);
   const [highlightedPatientIndex, setHighlightedPatientIndex] = useState(0);
   const [highlightedTestIndex, setHighlightedTestIndex] = useState(0);
@@ -522,9 +523,10 @@ export function OrdersManagement() {
 
   const selectedPatient = useMemo(
     () =>
+      (selectedPatientRecord?.id === formState.patient_id ? selectedPatientRecord : null) ??
       (patientsQuery.data ?? []).find((patient) => patient.id === formState.patient_id) ??
       null,
-    [formState.patient_id, patientsQuery.data]
+    [formState.patient_id, patientsQuery.data, selectedPatientRecord]
   );
 
   const effectiveTestFacilityId = selectedPatient?.facility_id ?? facilityId ?? null;
@@ -612,7 +614,14 @@ export function OrdersManagement() {
             patient_id: patientIdFromQuery
           }
     );
+    setSelectedPatientRecord(patient);
   }, [patientIdFromQuery, patientsQuery.data]);
+
+  useEffect(() => {
+    if (!formState.patient_id || selectedPatientRecord?.id === formState.patient_id) return;
+    const patient = (patientsQuery.data ?? []).find((row) => row.id === formState.patient_id);
+    if (patient) setSelectedPatientRecord(patient);
+  }, [formState.patient_id, patientsQuery.data, selectedPatientRecord?.id]);
 
   useEffect(() => {
     if (!editingOrder) {
@@ -900,6 +909,7 @@ export function OrdersManagement() {
   };
 
   const selectPatient = (patient: PatientSearchRow) => {
+    setSelectedPatientRecord(patient);
     setFormState((current) => ({
       ...current,
       patient_id: patient.id
@@ -1236,6 +1246,7 @@ export function OrdersManagement() {
         });
         setEditingOrderId(null);
         setFormState(initialOrderFormState);
+        setSelectedPatientRecord(null);
         setPatientSearch("");
         setTestSearch("");
         setPatientPickerOpen(false);
@@ -1281,6 +1292,7 @@ export function OrdersManagement() {
         variant: "success"
       });
       setFormState(initialOrderFormState);
+      setSelectedPatientRecord(null);
       setPatientSearch("");
       setTestSearch("");
       setPatientPickerOpen(false);
@@ -1415,13 +1427,12 @@ export function OrdersManagement() {
                           className={cn("pl-9", frontDeskMode && "h-12 text-base")}
                           value={patientSearch}
                           onFocus={() => setPatientPickerOpen(true)}
-                          onBlur={() => {
-                            window.setTimeout(() => setPatientPickerOpen(false), 120);
-                          }}
+                          onBlur={() => window.setTimeout(() => setPatientPickerOpen(false), 250)}
                           onChange={(event) => {
                             setPatientSearch(event.target.value);
                             setPatientPickerOpen(true);
                             if (formState.patient_id) {
+                              setSelectedPatientRecord(null);
                               setFormState((current) => ({
                                 ...current,
                                 patient_id: ""
@@ -1475,15 +1486,17 @@ export function OrdersManagement() {
                                       ? "bg-blue-50 text-blue-900"
                                       : "hover:bg-slate-50"
                                   )}
-                                  onMouseDown={(event) => event.preventDefault()}
-                                  onClick={() => selectPatient(patient)}
+                                  onPointerDown={(event) => {
+                                    event.preventDefault();
+                                    selectPatient(patient);
+                                  }}
                                 >
                                   <div>
                                     <p className="font-medium">
                                       {renderHighlightedText(patient.name, patientSearch)}
                                     </p>
                                     <p className="text-xs text-slate-500">
-                                      {renderHighlightedText(patient.lab_id, patientSearch)}
+                                      {renderHighlightedText(patient.hospital_id || patient.lab_id, patientSearch)}
                                       {patient.phone ? (
                                         <>
                                           {" / "}
