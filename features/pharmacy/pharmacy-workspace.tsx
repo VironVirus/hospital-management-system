@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, Download, Loader2, PackagePlus, Pill, Plus, Printer, ReceiptText } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Download, Loader2, PackagePlus, PencilLine, Pill, Plus, Printer, ReceiptText, Save, X } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,8 @@ import { generateId } from "@/lib/online-core";
 import { printHtmlDocument } from "@/lib/print";
 import { buildPrescriptionHistoryHtml, type PrescriptionHistoryReport } from "@/features/pharmacy/prescription-history-report";
 import type { Encounter, Medication, Prescription } from "@/types/hospital";
+
+const emptyMedicationForm = { generic_name: "", brand_name: "", strength: "", dosage_form: "Tablet", route: "Oral", unit_price: "", quantity_on_hand: "", reorder_level: "10", batch_number: "", expiry_date: "", expiry_warning_days: "90", storage_location: "" };
 
 function money(value: number) {
   return new Intl.NumberFormat("en-NG", { style: "currency", currency: "NGN", maximumFractionDigits: 0 }).format(value);
@@ -81,7 +83,8 @@ export function PharmacyWorkspace() {
   const canDispense = canDispenseRole(role);
   const [saving, setSaving] = useState(false);
   const [reportBusy, setReportBusy] = useState<"print" | "download" | null>(null);
-  const [medicationForm, setMedicationForm] = useState({ generic_name: "", brand_name: "", strength: "", dosage_form: "Tablet", route: "Oral", unit_price: "", quantity_on_hand: "", reorder_level: "10", batch_number: "", expiry_date: "", expiry_warning_days: "90", storage_location: "" });
+  const [medicationForm, setMedicationForm] = useState(emptyMedicationForm);
+  const [editingMedicationId, setEditingMedicationId] = useState<string | null>(null);
   const [prescriptionForm, setPrescriptionForm] = useState({ encounter_id: "", medication_id: "", dose: "", frequency_code: "", duration_days: "", units_per_dose: "1", instructions: "" });
   const [stockGroup, setStockGroup] = useState("");
   const [expiryGroup, setExpiryGroup] = useState("");
@@ -132,22 +135,50 @@ export function PharmacyWorkspace() {
     ]);
   };
 
-  const createMedication = async (event: FormEvent) => {
+  const resetMedicationEditor = () => {
+    setEditingMedicationId(null);
+    setMedicationForm(emptyMedicationForm);
+  };
+
+  const startMedicationEdit = (medication: Medication) => {
+    setEditingMedicationId(medication.id);
+    setMedicationForm({
+      generic_name: medication.generic_name,
+      brand_name: medication.brand_name ?? "",
+      strength: medication.strength,
+      dosage_form: medication.dosage_form,
+      route: medication.route ?? "",
+      unit_price: String(medication.unit_price ?? 0),
+      quantity_on_hand: String(medication.quantity_on_hand ?? 0),
+      reorder_level: String(medication.reorder_level ?? 0),
+      batch_number: medication.batch_number ?? "",
+      expiry_date: medication.expiry_date ? String(medication.expiry_date).slice(0, 10) : "",
+      expiry_warning_days: String(medication.expiry_warning_days ?? 90),
+      storage_location: medication.storage_location ?? ""
+    });
+    window.setTimeout(() => document.getElementById("medication-stock-form")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  };
+
+  const saveMedication = async (event: FormEvent) => {
     event.preventDefault();
     if (!facilityId || !medicationForm.generic_name.trim() || !medicationForm.strength.trim()) return;
     try {
       setSaving(true);
-      const { error } = await getHospitalClient().from("medications").insert({
-        id: generateId(), facility_id: facilityId, created_by: user?.id ?? null,
+      const values = {
         generic_name: medicationForm.generic_name.trim(), brand_name: medicationForm.brand_name.trim() || null,
         strength: medicationForm.strength.trim(), dosage_form: medicationForm.dosage_form.trim(), route: medicationForm.route.trim() || null,
         unit_price: Number(medicationForm.unit_price || 0), quantity_on_hand: Number(medicationForm.quantity_on_hand || 0), reorder_level: Number(medicationForm.reorder_level || 0),
         batch_number: medicationForm.batch_number.trim() || null, expiry_date: medicationForm.expiry_date || null, expiry_warning_days: Number(medicationForm.expiry_warning_days || 0), storage_location: medicationForm.storage_location.trim() || null
-      });
+      };
+      const response = editingMedicationId
+        ? await getHospitalClient().from("medications").update(values).eq("id", editingMedicationId)
+        : await getHospitalClient().from("medications").insert({ id: generateId(), facility_id: facilityId, created_by: user?.id ?? null, ...values });
+      const { error } = response;
       throwIfHospitalError(error);
-      setMedicationForm({ generic_name: "", brand_name: "", strength: "", dosage_form: "Tablet", route: "Oral", unit_price: "", quantity_on_hand: "", reorder_level: "10", batch_number: "", expiry_date: "", expiry_warning_days: "90", storage_location: "" });
+      const updated = Boolean(editingMedicationId);
+      resetMedicationEditor();
       await refresh();
-      toast({ title: "Medication added", variant: "success" });
+      toast({ title: updated ? "Medication updated" : "Medication added", variant: "success" });
     } catch (error) {
       toast({ title: "Medication not saved", description: error instanceof Error ? error.message : "Please try again.", variant: "error" });
     } finally { setSaving(false); }
@@ -245,9 +276,9 @@ export function PharmacyWorkspace() {
     {expiringStock.length > 0 ? <Card className="border-amber-200 bg-amber-50/60"><CardHeader><CardTitle className="flex items-center gap-2 text-amber-950"><AlertTriangle className="h-5 w-5 text-amber-600" />Drug expiry notice</CardTitle></CardHeader><CardContent className="space-y-3"><div className="flex flex-wrap gap-2">{expiryGroups.map(([group, medications]) => <button key={group} type="button" onClick={() => setExpiryGroup(group)} className={`rounded-full border px-3 py-1.5 text-xs font-medium ${activeExpiryGroup === group ? "border-amber-500 bg-amber-100 text-amber-950" : "border-amber-200 bg-white text-slate-700"}`}>{group} · {medications.length}</button>)}</div><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{visibleExpiryStock.map((medication) => { const days = daysUntilExpiry(medication.expiry_date); const expired = typeof days === "number" && days < 0; return <div key={medication.id} className={`rounded-xl border bg-white p-3 ${expired ? "border-rose-300" : "border-amber-200"}`}><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-950">{medication.generic_name} {medication.strength}</p><p className="mt-1 text-xs text-slate-500">Batch {medication.batch_number || "Not recorded"}</p></div><Badge className={expired ? "bg-rose-600 text-white" : "bg-amber-500 text-white"}>{expired ? `Expired ${Math.abs(days ?? 0)}d ago` : `${days}d left`}</Badge></div><p className="mt-3 text-sm font-medium text-slate-700">Expires {formatExpiryDate(medication.expiry_date as string)}</p><p className="mt-1 text-xs text-slate-500">Warning starts {medication.expiry_warning_days ?? 90} days before expiry</p><p className="mt-1 text-xs text-slate-500">{medication.quantity_on_hand} {medication.unit} · {medication.storage_location || "No location"}</p></div>})}</div>{visibleExpiryStock.length === 0 ? <p className="rounded-xl border border-dashed border-amber-200 bg-white p-6 text-center text-sm text-slate-500">No drugs in this expiry group.</p> : null}</CardContent></Card> : null}
 
     <div className="grid gap-6 xl:grid-cols-2">
-      {canManageStock ? <Card><CardHeader><CardTitle className="flex items-center gap-2"><PackagePlus className="h-5 w-5 text-emerald-700" />Add medication stock</CardTitle></CardHeader><CardContent><form className="grid gap-3 sm:grid-cols-2" onSubmit={createMedication}>{[
+      {canManageStock ? <Card id="medication-stock-form"><CardHeader><div className="flex items-center justify-between gap-3"><CardTitle className="flex items-center gap-2">{editingMedicationId ? <PencilLine className="h-5 w-5 text-emerald-700" /> : <PackagePlus className="h-5 w-5 text-emerald-700" />}{editingMedicationId ? "Edit medication" : "Add medication stock"}</CardTitle>{editingMedicationId ? <Button type="button" size="sm" variant="ghost" onClick={resetMedicationEditor}><X className="h-4 w-4" />Cancel</Button> : null}</div></CardHeader><CardContent><form className="grid gap-3 sm:grid-cols-2" onSubmit={saveMedication}>{[
         ["generic_name", "Generic name"], ["brand_name", "Brand name"], ["strength", "Strength"], ["dosage_form", "Dosage form"], ["route", "Route"], ["storage_location", "Storage location"], ["batch_number", "Batch number"]
-      ].map(([key, label]) => <div key={key}><Label>{label}</Label><Input className="mt-1" value={medicationForm[key as keyof typeof medicationForm]} onChange={(event) => setMedicationForm((current) => ({ ...current, [key]: event.target.value }))} required={["generic_name", "strength", "dosage_form"].includes(key)} /></div>)}<div><Label>Expiry date</Label><Input className="mt-1" type="date" value={medicationForm.expiry_date} onChange={(event) => setMedicationForm((current) => ({ ...current, expiry_date: event.target.value }))} /></div><div><Label>Start expiry warning</Label><div className="mt-1 flex items-center gap-2"><Input type="number" min="0" max="3650" value={medicationForm.expiry_warning_days} onChange={(event) => setMedicationForm((current) => ({ ...current, expiry_warning_days: event.target.value }))} required /><span className="shrink-0 text-sm text-slate-600">days before</span></div></div><div><Label>Quantity</Label><Input className="mt-1" type="number" min="0" value={medicationForm.quantity_on_hand} onChange={(event) => setMedicationForm((current) => ({ ...current, quantity_on_hand: event.target.value }))} /></div><div><Label>Reorder level</Label><Input className="mt-1" type="number" min="0" value={medicationForm.reorder_level} onChange={(event) => setMedicationForm((current) => ({ ...current, reorder_level: event.target.value }))} /></div><div><Label>Unit price (₦)</Label><Input className="mt-1" type="number" min="0" value={medicationForm.unit_price} onChange={(event) => setMedicationForm((current) => ({ ...current, unit_price: event.target.value }))} /></div><Button className="sm:col-span-2" disabled={saving}><Plus className="h-4 w-4" />Add to formulary</Button></form></CardContent></Card> : null}
+      ].map(([key, label]) => <div key={key}><Label>{label}</Label><Input className="mt-1" value={medicationForm[key as keyof typeof medicationForm]} onChange={(event) => setMedicationForm((current) => ({ ...current, [key]: event.target.value }))} required={["generic_name", "strength", "dosage_form"].includes(key)} /></div>)}<div><Label>Expiry date</Label><Input className="mt-1" type="date" value={medicationForm.expiry_date} onChange={(event) => setMedicationForm((current) => ({ ...current, expiry_date: event.target.value }))} /></div><div><Label>Start expiry warning</Label><div className="mt-1 flex items-center gap-2"><Input type="number" min="0" max="3650" value={medicationForm.expiry_warning_days} onChange={(event) => setMedicationForm((current) => ({ ...current, expiry_warning_days: event.target.value }))} required /><span className="shrink-0 text-sm text-slate-600">days before</span></div></div><div><Label>Quantity</Label><Input className="mt-1" type="number" min="0" value={medicationForm.quantity_on_hand} onChange={(event) => setMedicationForm((current) => ({ ...current, quantity_on_hand: event.target.value }))} /></div><div><Label>Reorder level</Label><Input className="mt-1" type="number" min="0" value={medicationForm.reorder_level} onChange={(event) => setMedicationForm((current) => ({ ...current, reorder_level: event.target.value }))} /></div><div><Label>Unit price (₦)</Label><Input className="mt-1" type="number" min="0" value={medicationForm.unit_price} onChange={(event) => setMedicationForm((current) => ({ ...current, unit_price: event.target.value }))} /></div><Button className="sm:col-span-2" disabled={saving}>{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : editingMedicationId ? <Save className="h-4 w-4" /> : <Plus className="h-4 w-4" />}{editingMedicationId ? "Save changes" : "Add to formulary"}</Button></form></CardContent></Card> : null}
 
       {canPrescribe ? <Card><CardHeader><CardTitle className="flex items-center gap-2"><ReceiptText className="h-5 w-5 text-emerald-700" />New prescription</CardTitle></CardHeader><CardContent><form className="space-y-3" onSubmit={createPrescription}>
         <select className="h-10 w-full rounded-lg border bg-background px-3 text-sm" value={prescriptionForm.encounter_id} onChange={(event) => setPrescriptionForm((current) => ({ ...current, encounter_id: event.target.value }))} required><option value="">Patient encounter / Hospital ID</option>{(data?.encounters ?? []).map((encounter) => <option key={encounter.id} value={encounter.id}>{encounter.patients?.name} — {encounter.patients?.hospital_id ?? encounter.patients?.lab_id} · {encounter.encounter_number}</option>)}</select>
@@ -264,7 +295,7 @@ export function PharmacyWorkspace() {
     </div>
 
     <div className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
-      <Card><CardHeader><CardTitle>Medication stock</CardTitle></CardHeader><CardContent className="space-y-3"><div className="flex flex-wrap gap-2">{stockGroups.map(([group, medications]) => <button key={group} type="button" onClick={() => setStockGroup(group)} className={`rounded-full border px-3 py-1.5 text-xs font-medium ${activeStockGroup === group ? "border-emerald-500 bg-emerald-50 text-emerald-800" : "border-slate-200"}`}>{group} · {medications.length}</button>)}</div>{visibleStock.map((medication) => { const isLow = Number(medication.quantity_on_hand) <= Number(medication.reorder_level); const expiryDays = daysUntilExpiry(medication.expiry_date); const expiring = expiryDays !== null && expiryDays <= Number(medication.expiry_warning_days ?? 90); return <div key={medication.id} className="flex items-center justify-between gap-4 rounded-xl border p-3"><div><p className="font-semibold">{medication.generic_name} {medication.strength}</p><p className="text-xs text-slate-500">{medication.brand_name || medication.dosage_form} · {medication.batch_number || "No batch"} · {money(Number(medication.unit_price))}</p>{medication.expiry_date ? <p className={`mt-1 text-xs font-medium ${expiring ? "text-amber-700" : "text-slate-500"}`}>Expires {formatExpiryDate(medication.expiry_date)} · warning {medication.expiry_warning_days ?? 90} days before</p> : null}</div><div className="flex flex-col items-end gap-1"><Badge variant={isLow ? "default" : "secondary"} className={isLow ? "bg-rose-600 text-white" : undefined}>{isLow ? <AlertTriangle className="h-3 w-3" /> : null}{medication.quantity_on_hand} {medication.unit}</Badge>{expiring ? <Badge className={expiryDays !== null && expiryDays < 0 ? "bg-rose-600 text-white" : "bg-amber-500 text-white"}>{expiryDays !== null && expiryDays < 0 ? "Expired" : `${expiryDays}d left`}</Badge> : null}</div></div>})}{!visibleStock.length ? <div className="rounded-xl border border-dashed p-8 text-center text-sm text-slate-500">No medication in this group.</div> : null}</CardContent></Card>
+      <Card><CardHeader><CardTitle>Medication stock</CardTitle></CardHeader><CardContent className="space-y-3"><div className="flex flex-wrap gap-2">{stockGroups.map(([group, medications]) => <button key={group} type="button" onClick={() => setStockGroup(group)} className={`rounded-full border px-3 py-1.5 text-xs font-medium ${activeStockGroup === group ? "border-emerald-500 bg-emerald-50 text-emerald-800" : "border-slate-200"}`}>{group} · {medications.length}</button>)}</div>{visibleStock.map((medication) => { const isLow = Number(medication.quantity_on_hand) <= Number(medication.reorder_level); const expiryDays = daysUntilExpiry(medication.expiry_date); const expiring = expiryDays !== null && expiryDays <= Number(medication.expiry_warning_days ?? 90); return <div key={medication.id} className="flex items-center justify-between gap-4 rounded-xl border p-3"><div><p className="font-semibold">{medication.generic_name} {medication.strength}</p><p className="text-xs text-slate-500">{medication.brand_name || medication.dosage_form} · {medication.batch_number || "No batch"} · {money(Number(medication.unit_price))}</p>{medication.expiry_date ? <p className={`mt-1 text-xs font-medium ${expiring ? "text-amber-700" : "text-slate-500"}`}>Expires {formatExpiryDate(medication.expiry_date)} · warning {medication.expiry_warning_days ?? 90} days before</p> : null}</div><div className="flex flex-col items-end gap-1">{canManageStock ? <Button type="button" size="sm" variant="ghost" onClick={() => startMedicationEdit(medication)}><PencilLine className="h-4 w-4" />Edit</Button> : null}<Badge variant={isLow ? "default" : "secondary"} className={isLow ? "bg-rose-600 text-white" : undefined}>{isLow ? <AlertTriangle className="h-3 w-3" /> : null}{medication.quantity_on_hand} {medication.unit}</Badge>{expiring ? <Badge className={expiryDays !== null && expiryDays < 0 ? "bg-rose-600 text-white" : "bg-amber-500 text-white"}>{expiryDays !== null && expiryDays < 0 ? "Expired" : `${expiryDays}d left`}</Badge> : null}</div></div>})}{!visibleStock.length ? <div className="rounded-xl border border-dashed p-8 text-center text-sm text-slate-500">No medication in this group.</div> : null}</CardContent></Card>
       <Card><CardHeader><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><CardTitle>Prescription queue</CardTitle><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" disabled={reportBusy !== null} onClick={() => void printPrescriptionHistory()}>{reportBusy === "print" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}Print history</Button><Button size="sm" variant="outline" disabled={reportBusy !== null} onClick={() => void downloadPrescriptionHistory()}>{reportBusy === "download" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Download PDF</Button></div></div></CardHeader><CardContent className="space-y-3"><div className="flex flex-wrap gap-2">{prescriptionGroups.map(([group, prescriptions]) => <button key={group} type="button" onClick={() => setPrescriptionGroup(group)} className={`rounded-full border px-3 py-1.5 text-xs font-medium ${activePrescriptionGroup === group ? "border-emerald-500 bg-emerald-50 text-emerald-800" : "border-slate-200"}`}>{group} · {prescriptions.length}</button>)}</div>{visiblePrescriptions.map((prescription) => <div key={prescription.id} className="rounded-2xl border p-4"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="font-semibold">{prescription.patients?.name}</p><p className="text-xs font-medium text-emerald-700">{prescription.patients?.hospital_id ?? prescription.patients?.lab_id} · {prescription.clinical_encounters?.encounter_number}</p></div><Badge variant={prescription.status === "Dispensed" ? "secondary" : "default"}>{prescription.status === "Dispensed" ? <CheckCircle2 className="h-3 w-3" /> : null}{prescription.status}</Badge></div><div className="mt-3 space-y-2">{(prescription.prescription_items ?? []).map((item) => <div key={item.id} className="rounded-xl bg-slate-50 p-3 text-sm"><p className="font-medium">{item.medication_name}</p><p className="text-slate-600">{item.dose} · {item.frequency} · {item.duration} · Qty {item.quantity}</p></div>)}</div><div className="mt-3 flex items-center justify-between"><p className="text-xs text-slate-500">{formatDate(prescription.prescribed_at)}</p>{canDispense && prescription.status !== "Dispensed" ? <Button size="sm" onClick={() => dispense(prescription)}>Dispense all</Button> : null}</div></div>)}{!visiblePrescriptions.length ? <div className="rounded-xl border border-dashed p-10 text-center text-sm text-slate-500">No prescriptions in this group.</div> : null}</CardContent></Card>
     </div>
   </div>;
