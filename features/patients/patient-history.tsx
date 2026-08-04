@@ -1057,10 +1057,25 @@ export function PatientHistory({ patientId }: { patientId: string }) {
         </div>
       </section>
       <PatientClinicalRecord
+        labOrders={orders}
         patient={{
+          address: patient.address,
+          allergies: patient.allergies,
+          bloodGroup: patient.blood_group,
+          dateOfBirth: patient.dob ?? patient.date_of_birth,
+          email: patient.email,
+          emergencyContact: patient.emergency_contact,
+          genotype: patient.genotype,
           hospitalId: patient.hospital_id ?? patient.lab_id,
+          insuranceNumber: patient.insurance_number,
+          insuranceProvider: patient.insurance_provider,
+          lga: patient.lga,
+          medicalRecordNumber: patient.medical_record_number,
           name: patient.name,
-          phone: patient.phone
+          nationalId: patient.national_id,
+          phone: patient.phone,
+          sex: patient.sex,
+          state: patient.state
         }}
         patientId={patient.id}
       />

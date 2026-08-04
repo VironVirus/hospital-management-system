@@ -5,16 +5,38 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Activity, BedDouble, Download, FileText, HeartPulse, Loader2, Pill, Printer, ReceiptText, ScanSearch, Stethoscope } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { buildBillingDocumentHtml, type BillingDocumentRecord } from "@/features/billing/billing-document";
 import { buildRadiologyReportHtml } from "@/features/radiology/radiology-report-document";
+import { buildPatientCareLabTests, buildPatientCareReportHtml, type PatientCareReportPayload } from "@/features/patients/patient-care-report";
+import type { ReportOrderRow } from "@/features/reports/report-utils";
+import { useToast } from "@/hooks/use-toast";
 import { getHospitalClient, throwIfHospitalError } from "@/lib/hospital-client";
 import { downloadHtmlDocument, printHtmlDocument } from "@/lib/print";
 import type { Tables } from "@/types/database";
 import type { Admission, ClinicalNote, Diagnosis, Encounter, EncounterCharge, Prescription, RadiologyRequest, VitalSign } from "@/types/hospital";
 
-type PatientIdentity = { hospitalId: string; name: string; phone: string | null };
+type PatientIdentity = {
+  address?: string | null;
+  allergies?: string | null;
+  bloodGroup?: string | null;
+  dateOfBirth?: string | null;
+  email?: string | null;
+  emergencyContact?: string | null;
+  genotype?: string | null;
+  hospitalId: string;
+  insuranceNumber?: string | null;
+  insuranceProvider?: string | null;
+  lga?: string | null;
+  medicalRecordNumber?: string | null;
+  name: string;
+  nationalId?: string | null;
+  phone: string | null;
+  sex?: string | null;
+  state?: string | null;
+};
 type PatientInvoice = Tables<"invoices"> & {
   invoice_items: Tables<"invoice_items">[] | null;
   invoice_payments: Tables<"invoice_payments">[] | null;
@@ -47,19 +69,19 @@ async function fetchPatientClinicalRecord(patientId: string) {
   const [encountersResponse, admissionsResponse, vitalsResponse, notesResponse, diagnosesResponse, prescriptionsResponse, chargesResponse, radiologyResponse, ordersResponse, hospitalPaymentsResponse] = await Promise.all([
     hospital.from("clinical_encounters").select("*").eq("patient_id", patientId).order("started_at", { ascending: false }),
     hospital.from("admissions").select("id, patient_id, encounter_id, ward_id, bed_id, status, admission_reason, admitted_at, discharged_at, wards(id, name, code), beds(id, bed_number), clinical_encounters(id, encounter_number)").eq("patient_id", patientId).order("admitted_at", { ascending: false }),
-    hospital.from("vital_signs").select("*").eq("patient_id", patientId).order("measured_at", { ascending: false }).limit(20),
-    hospital.from("clinical_notes").select("*").eq("patient_id", patientId).order("authored_at", { ascending: false }).limit(40),
-    hospital.from("diagnoses").select("*").eq("patient_id", patientId).order("diagnosed_at", { ascending: false }).limit(40),
-    hospital.from("prescriptions").select("id, patient_id, encounter_id, status, notes, prescribed_at, dispensed_at, clinical_encounters(id, encounter_number), prescription_items(id, medication_id, medication_name, dose, frequency, duration, route, quantity, dispensed_quantity, instructions, unit_price)").eq("patient_id", patientId).order("prescribed_at", { ascending: false }).limit(40),
-    hospital.from("encounter_charges").select("id, patient_id, encounter_id, description, category, quantity, unit_price, total_amount, amount_paid, payment_status, charged_at, clinical_encounters(id, encounter_number)").eq("patient_id", patientId).order("charged_at", { ascending: false }).limit(200),
-    hospital.from("radiology_requests").select("id, facility_id, request_number, patient_id, encounter_id, service_id, clinical_indication, priority, status, scheduled_at, requested_at, completed_at, clinical_encounters(id, encounter_number), radiology_services(id, name, modality, unit_price), radiology_reports(*)").eq("patient_id", patientId).order("requested_at", { ascending: false }).limit(40),
-    hospital.from("orders").select("id").eq("patient_id", patientId).limit(250),
-    hospital.from("hospital_payments").select("*").eq("patient_id", patientId).order("received_at", { ascending: false }).limit(300)
+    hospital.from("vital_signs").select("*").eq("patient_id", patientId).order("measured_at", { ascending: false }),
+    hospital.from("clinical_notes").select("*").eq("patient_id", patientId).order("authored_at", { ascending: false }),
+    hospital.from("diagnoses").select("*").eq("patient_id", patientId).order("diagnosed_at", { ascending: false }),
+    hospital.from("prescriptions").select("id, patient_id, encounter_id, status, notes, prescribed_at, dispensed_at, clinical_encounters(id, encounter_number), prescription_items(id, medication_id, medication_name, dose, frequency, duration, route, quantity, dispensed_quantity, instructions, unit_price)").eq("patient_id", patientId).order("prescribed_at", { ascending: false }),
+    hospital.from("encounter_charges").select("id, patient_id, encounter_id, description, category, quantity, unit_price, total_amount, amount_paid, payment_status, charged_at, clinical_encounters(id, encounter_number)").eq("patient_id", patientId).order("charged_at", { ascending: false }),
+    hospital.from("radiology_requests").select("id, facility_id, request_number, patient_id, encounter_id, service_id, clinical_indication, priority, status, scheduled_at, requested_at, completed_at, clinical_encounters(id, encounter_number), radiology_services(id, name, modality, unit_price), radiology_reports(*)").eq("patient_id", patientId).order("requested_at", { ascending: false }),
+    hospital.from("orders").select("id").eq("patient_id", patientId),
+    hospital.from("hospital_payments").select("*").eq("patient_id", patientId).order("received_at", { ascending: false })
   ]);
   [encountersResponse, admissionsResponse, vitalsResponse, notesResponse, diagnosesResponse, prescriptionsResponse, chargesResponse, radiologyResponse, ordersResponse, hospitalPaymentsResponse].forEach((response) => throwIfHospitalError(response.error));
   const orderIds = ((ordersResponse.data ?? []) as Array<{ id: string }>).map((order) => order.id);
   const invoicesResponse = orderIds.length
-    ? await hospital.from("invoices").select("*, invoice_items(*), invoice_payments(*)").in("order_id", orderIds).order("issued_at", { ascending: false }).limit(250)
+    ? await hospital.from("invoices").select("*, invoice_items(*), invoice_payments(*)").in("order_id", orderIds).order("issued_at", { ascending: false })
     : { data: [], error: null };
   throwIfHospitalError(invoicesResponse.error);
   return {
@@ -90,8 +112,11 @@ function billingRecords(data: PatientRecordData, patient: PatientIdentity): Bill
   ].sort((left, right) => new Date(right.date).getTime() - new Date(left.date).getTime());
 }
 
-export function PatientClinicalRecord({ patient, patientId }: { patient: PatientIdentity; patientId: string }) {
+export function PatientClinicalRecord({ labOrders, patient, patientId }: { labOrders: ReportOrderRow[]; patient: PatientIdentity; patientId: string }) {
+  const { facilityName } = useAuth();
+  const { toast } = useToast();
   const [activeSection, setActiveSection] = useState<"clinical" | "medication" | "radiology" | "billing">("clinical");
+  const [patientReportBusy, setPatientReportBusy] = useState(false);
   const recordQuery = useQuery({ queryKey: ["hospital", "patient-record", patientId], queryFn: () => fetchPatientClinicalRecord(patientId) });
   if (recordQuery.isLoading) return <Card><CardContent className="flex items-center gap-3 p-6 text-sm text-slate-600"><Loader2 className="h-4 w-4 animate-spin" />Loading record...</CardContent></Card>;
   if (recordQuery.isError || !recordQuery.data) return <Card><CardHeader><CardTitle>Record unavailable</CardTitle></CardHeader></Card>;
@@ -103,6 +128,44 @@ export function PatientClinicalRecord({ patient, patientId }: { patient: Patient
   const outstanding = bills.reduce((sum, bill) => sum + Math.max(bill.total - bill.amountPaid, 0), 0);
   const patientStatus = activeAdmission ? `Admitted · ${activeAdmission.wards?.name}` : openEncounter ? "In consultation" : "Outpatient";
   const statementHtml = buildBillingDocumentHtml({ records: bills, title: "Patient billing statement" });
+  const patientCareReport = (): PatientCareReportPayload => ({
+    admissions: data.admissions,
+    bills,
+    diagnoses: data.diagnoses,
+    encounters: data.encounters,
+    generatedAt: new Date().toISOString(),
+    hospitalName: facilityName || "St Gianna Specialist Hospital",
+    labTests: buildPatientCareLabTests(labOrders),
+    notes: data.notes,
+    patient,
+    prescriptions: data.prescriptions,
+    radiology: data.radiology,
+    vitals: data.vitals
+  });
+  const printPatientReport = () => printHtmlDocument(buildPatientCareReportHtml(patientCareReport()));
+  const downloadPatientReport = async () => {
+    try {
+      setPatientReportBusy(true);
+      const [{ pdf }, { PatientCareReportDocument }] = await Promise.all([
+        import("@react-pdf/renderer"),
+        import("@/features/patients/patient-care-report-pdf")
+      ]);
+      const blob = await pdf(<PatientCareReportDocument report={patientCareReport()} />).toBlob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${patient.hospitalId}-patient-care-report.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast({ title: "Patient report downloaded", variant: "success" });
+    } catch (error) {
+      toast({ title: "Patient report unavailable", description: error instanceof Error ? error.message : "Please try again.", variant: "error" });
+    } finally {
+      setPatientReportBusy(false);
+    }
+  };
   const downloadRadiologyReport = async (request: RadiologyRequest) => {
     const [{ pdf }, { RadiologyReportDocument }] = await Promise.all([
       import("@react-pdf/renderer"),
@@ -120,7 +183,7 @@ export function PatientClinicalRecord({ patient, patientId }: { patient: Patient
   };
 
   return <section className="space-y-6">
-    <h2 className="text-xl font-semibold text-slate-950">Patient record</h2>
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><h2 className="text-xl font-semibold text-slate-950">Patient record</h2><div className="flex gap-2"><Button type="button" variant="outline" onClick={printPatientReport}><Printer className="h-4 w-4" />Print patient report</Button><Button type="button" variant="outline" disabled={patientReportBusy} onClick={() => void downloadPatientReport()}>{patientReportBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}Download PDF</Button></div></div>
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[
       [Activity, "Status", patientStatus, openEncounter?.encounter_number || "Current status"],
       [BedDouble, "Current ward", activeAdmission?.wards?.name ?? "Not admitted", activeAdmission ? `Since ${formatDate(activeAdmission.admitted_at)}` : "Outpatient"],
