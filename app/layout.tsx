@@ -28,6 +28,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var m=localStorage.getItem('st-gianna-theme-mode')||'auto';var d=false;if(m==='dark')d=true;else if(m==='system')d=matchMedia('(prefers-color-scheme: dark)').matches;else if(m==='auto'){var h=Number(new Intl.DateTimeFormat('en-GB',{hour:'2-digit',hour12:false,timeZone:'Africa/Lagos'}).format(new Date()));d=h>=19||h<6}document.documentElement.classList.toggle('dark',d);document.documentElement.style.colorScheme=d?'dark':'light'}catch(e){}})();` }} />
+      </head>
       <body className={`${inter.className} min-h-screen w-full antialiased`}>
         <Providers>{children}</Providers>
       </body>

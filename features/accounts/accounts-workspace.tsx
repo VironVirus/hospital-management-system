@@ -119,7 +119,7 @@ const initialExpenseFormState: ExpenseFormState = {
   title: ""
 };
 
-async function fetchAccountsData(facilityId: string): Promise<AccountsData> {
+async function fetchAccountsData(facilityId: string, includeInventory: boolean): Promise<AccountsData> {
   const database = getAppClient();
   const windowStart = new Date();
   windowStart.setMonth(windowStart.getMonth() - 11, 1);
@@ -130,7 +130,7 @@ async function fetchAccountsData(facilityId: string): Promise<AccountsData> {
     throw new Error("Service unavailable.");
   }
 
-  const [invoicesResponse, expensesResponse, transactionsResponse, inventoryResponse, chargesResponse, hospitalPaymentsResponse] =
+  const [invoicesResponse, expensesResponse, chargesResponse, hospitalPaymentsResponse] =
     await Promise.all([
       database
         .from("invoices")
@@ -142,23 +142,10 @@ async function fetchAccountsData(facilityId: string): Promise<AccountsData> {
         .limit(5000),
       database
         .from("expenses")
-        .select("*, inventory_items(id, name, category, unit)")
+        .select("*")
         .eq("facility_id", facilityId)
         .gte("expense_date", startIso.slice(0, 10))
         .order("expense_date", { ascending: false })
-        .limit(240),
-      database
-        .from("inventory_transactions")
-        .select("*")
-        .eq("facility_id", facilityId)
-        .gte("created_at", startIso)
-        .order("created_at", { ascending: false })
-        .limit(480),
-      database
-        .from("inventory_items")
-        .select("*")
-        .eq("facility_id", facilityId)
-        .order("updated_at", { ascending: false })
         .limit(240),
       database
         .from("encounter_charges")
@@ -182,14 +169,6 @@ async function fetchAccountsData(facilityId: string): Promise<AccountsData> {
     throw new Error(expensesResponse.error.message);
   }
 
-  if (transactionsResponse.error) {
-    throw new Error(transactionsResponse.error.message);
-  }
-
-  if (inventoryResponse.error) {
-    throw new Error(inventoryResponse.error.message);
-  }
-
   if (chargesResponse.error) {
     throw new Error(chargesResponse.error.message);
   }
@@ -198,13 +177,36 @@ async function fetchAccountsData(facilityId: string): Promise<AccountsData> {
     throw new Error(hospitalPaymentsResponse.error.message);
   }
 
+  let inventoryItems: Tables<"inventory_items">[] = [];
+  let inventoryTransactions: Tables<"inventory_transactions">[] = [];
+  if (includeInventory) {
+    const [transactionsResponse, inventoryResponse] = await Promise.all([
+      database
+        .from("inventory_transactions")
+        .select("*")
+        .eq("facility_id", facilityId)
+        .gte("created_at", startIso)
+        .order("created_at", { ascending: false })
+        .limit(480),
+      database
+        .from("inventory_items")
+        .select("*")
+        .eq("facility_id", facilityId)
+        .order("updated_at", { ascending: false })
+        .limit(240)
+    ]);
+    if (transactionsResponse.error) throw new Error(transactionsResponse.error.message);
+    if (inventoryResponse.error) throw new Error(inventoryResponse.error.message);
+    inventoryItems = (inventoryResponse.data ?? []) as Tables<"inventory_items">[];
+    inventoryTransactions = (transactionsResponse.data ?? []) as Tables<"inventory_transactions">[];
+  }
+
   return {
     expenses: (expensesResponse.data ?? []) as AccountExpenseRow[],
     hospitalCharges: (chargesResponse.data ?? []) as AccountHospitalCharge[],
     hospitalPayments: (hospitalPaymentsResponse.data ?? []) as AccountHospitalPayment[],
-    inventoryItems: (inventoryResponse.data ?? []) as Tables<"inventory_items">[],
-    inventoryTransactions:
-      (transactionsResponse.data ?? []) as Tables<"inventory_transactions">[],
+    inventoryItems,
+    inventoryTransactions,
     invoices: (invoicesResponse.data ?? []) as AccountInvoiceRow[]
   };
 }
@@ -249,11 +251,12 @@ export function AccountsWorkspace() {
 
   const canAccessAccounts = canAccessAccountsRole(role);
   const canManageAccounts = canManageAccountsRole(role);
+  const canViewStore = role === "Admin";
   const activeFacilityId = facilityId as string | undefined;
 
   const accountsQuery = useQuery({
-    queryKey: ["accounts-workspace", activeFacilityId],
-    queryFn: () => fetchAccountsData(activeFacilityId as string),
+    queryKey: ["accounts-workspace", activeFacilityId, canViewStore],
+    queryFn: () => fetchAccountsData(activeFacilityId as string, canViewStore),
     enabled: canAccessAccounts && Boolean(activeFacilityId),
     staleTime: 60_000,
     gcTime: 5 * 60_000,
@@ -696,6 +699,7 @@ export function AccountsWorkspace() {
         expenseRows: buildExpenseExportRows(filteredExpenses),
         incomeByCategory,
         incomeByTest,
+        includeInventory: canViewStore,
         inventoryCostRows: buildInventoryCostExportRows(inventoryCostRows),
         invoiceRows: buildInvoiceExportRows(filteredInvoices),
         serviceChargeRows: buildServiceChargeExportRows(filteredHospitalCharges),
@@ -808,7 +812,7 @@ export function AccountsWorkspace() {
         </Card>
       ) : null}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section className={canViewStore ? "grid gap-4 md:grid-cols-2 xl:grid-cols-4" : "grid gap-4 md:grid-cols-2"}>
         <SummaryTile
           title="Total billed"
           value={formatCurrency(summary.billed)}
@@ -836,14 +840,14 @@ export function AccountsWorkspace() {
           title="Manual expenses"
           value={formatCurrency(summary.manualExpenses)}
         />
-        <SummaryTile
+        {canViewStore ? <SummaryTile
           title="Inventory purchases"
           value={formatCurrency(summary.inventoryPurchaseCost)}
-        />
-        <SummaryTile
+        /> : null}
+        {canViewStore ? <SummaryTile
           title="Inventory usage"
           value={formatCurrency(summary.inventoryUsageCost)}
-        />
+        /> : null}
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
@@ -1117,7 +1121,7 @@ export function AccountsWorkspace() {
         </Card>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+      <section className={canViewStore ? "grid gap-6 xl:grid-cols-[0.9fr_1.1fr]" : "grid gap-6"}>
         <Card className="border-slate-200">
           <CardHeader>
             <CardTitle className="text-slate-950">Expense register</CardTitle>
@@ -1170,8 +1174,7 @@ export function AccountsWorkspace() {
             ))}
           </CardContent>
         </Card>
-
-        <Card className="border-slate-200">
+        {canViewStore ? <Card className="border-slate-200">
           <CardHeader>
             <CardTitle className="text-slate-950">Inventory-based monthly cost</CardTitle>
           </CardHeader>
@@ -1207,7 +1210,7 @@ export function AccountsWorkspace() {
               </div>
             ))}
           </CardContent>
-        </Card>
+        </Card> : null}
       </section>
     </div>
   );

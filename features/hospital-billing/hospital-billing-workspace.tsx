@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState, type FormEvent } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Banknote, CreditCard, FlaskConical, Loader2, Plus, Receipt, WalletCards } from "lucide-react";
+import { Banknote, CreditCard, Download, FlaskConical, Loader2, Plus, Printer, Receipt, WalletCards } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,11 +11,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { buildBillingDocumentHtml, encounterChargeToBillingRecord } from "@/features/billing/billing-document";
 import { useToast } from "@/hooks/use-toast";
 import { canAccessHospitalBillingRole, canManageHospitalBillingRole } from "@/lib/guards";
 import { getHospitalClient, throwIfHospitalError } from "@/lib/hospital-client";
 import { generateId } from "@/lib/online-core";
 import { getAppClient } from "@/lib/app-client";
+import { downloadHtmlDocument, printHtmlDocument } from "@/lib/print";
 import type { Encounter, EncounterCharge, PatientOption } from "@/types/hospital";
 
 function money(value: number) {
@@ -24,6 +26,18 @@ function money(value: number) {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-NG", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
+
+function buildChargeDocument(charge: EncounterCharge) {
+  return buildBillingDocumentHtml({
+    records: [encounterChargeToBillingRecord(charge)],
+    title: "Patient bill"
+  });
+}
+
+function billFilename(charge: EncounterCharge) {
+  const hospitalId = charge.patients?.hospital_id ?? charge.patients?.lab_id ?? "patient";
+  return `${hospitalId.replace(/[^a-z0-9-]+/gi, "-")}-bill.html`;
 }
 
 async function fetchBillingWorkspace() {
@@ -116,6 +130,6 @@ export function HospitalBillingWorkspace() {
       <Card><CardHeader><CardTitle className="flex items-center gap-2"><CreditCard className="h-5 w-5 text-amber-700" />Record payment</CardTitle></CardHeader><CardContent><form className="space-y-3" onSubmit={recordPayment}><select className="h-10 w-full rounded-lg border bg-background px-3 text-sm" value={paymentForm.charge_id} onChange={(event) => { const chargeId = event.target.value; const charge = data?.charges.find((item) => item.id === chargeId); setPaymentForm((current) => ({ ...current, charge_id: chargeId, amount: charge ? String(Number(charge.total_amount) - Number(charge.amount_paid)) : "" })); }} required><option value="">Outstanding patient charge</option>{outstandingCharges.map((charge) => <option key={charge.id} value={charge.id}>{charge.patients?.name} — {charge.description} · {money(Number(charge.total_amount) - Number(charge.amount_paid))}</option>)}</select><div className="grid gap-3 sm:grid-cols-2"><div><Label>Amount</Label><Input className="mt-1" type="number" min="0.01" step="0.01" max={selectedCharge ? Number(selectedCharge.total_amount) - Number(selectedCharge.amount_paid) : undefined} value={paymentForm.amount} onChange={(event) => setPaymentForm((current) => ({ ...current, amount: event.target.value }))} required /></div><div><Label>Method</Label><select className="mt-1 h-10 w-full rounded-lg border bg-background px-3 text-sm" value={paymentForm.payment_method} onChange={(event) => setPaymentForm((current) => ({ ...current, payment_method: event.target.value }))}>{["Cash", "Transfer", "POS", "Insurance", "Mobile Money"].map((item) => <option key={item}>{item}</option>)}</select></div></div><Input value={paymentForm.reference_number} onChange={(event) => setPaymentForm((current) => ({ ...current, reference_number: event.target.value }))} placeholder="Reference number" /><Textarea value={paymentForm.notes} onChange={(event) => setPaymentForm((current) => ({ ...current, notes: event.target.value }))} placeholder="Payment notes" /><Button className="w-full" disabled={saving}><Banknote className="h-4 w-4" />Record payment</Button></form></CardContent></Card>
     </div> : null}
 
-    <Card><CardHeader><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle className="flex items-center gap-2"><Receipt className="h-5 w-5 text-amber-700" />Patient account ledger</CardTitle></div><div className="flex flex-col gap-2 sm:flex-row"><Button asChild variant="outline"><Link href="/billing"><FlaskConical className="h-4 w-4" />Laboratory bills</Link></Button><Button asChild variant="outline"><Link href="/accounts"><WalletCards className="h-4 w-4" />Open full accounts</Link></Button></div></div></CardHeader><CardContent><div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{ledgerGroups.map((group) => <button key={group.status} type="button" onClick={() => setLedgerGroup(group.status)} className={`rounded-xl border p-3 text-left ${ledgerGroup === group.status ? "border-amber-400 bg-amber-50" : "border-slate-200"}`}><span className="block text-xs text-slate-500">{group.status}</span><strong className="text-lg">{group.records.length}</strong></button>)}</div><div className="space-y-3">{visibleCharges.map((charge) => <div key={charge.id} className="grid gap-3 rounded-2xl border p-4 md:grid-cols-[1.2fr_1fr_0.7fr_auto] md:items-center"><div><p className="font-semibold">{charge.patients?.name}</p><p className="text-xs font-medium text-amber-700">{charge.patients?.hospital_id ?? charge.patients?.lab_id}</p></div><div><p className="text-sm font-medium">{charge.description}</p><p className="text-xs text-slate-500">{charge.category} · {charge.clinical_encounters?.encounter_number ?? "No encounter"} · {formatDate(charge.charged_at)}</p></div><div className="text-sm"><p>{money(Number(charge.total_amount))}</p><p className="text-xs text-slate-500">Balance {money(Math.max(Number(charge.total_amount) - Number(charge.amount_paid), 0))}</p></div><Badge variant={charge.payment_status === "Paid" ? "secondary" : charge.payment_status === "Partial" ? "outline" : "default"}>{charge.payment_status}</Badge></div>)}{!visibleCharges.length ? <div className="rounded-xl border border-dashed p-10 text-center text-sm text-slate-500">No bills in this group.</div> : null}</div></CardContent></Card>
+    <Card><CardHeader><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><CardTitle className="flex items-center gap-2"><Receipt className="h-5 w-5 text-amber-700" />Patient account ledger</CardTitle></div>{role !== "Receptionist" ? <div className="flex flex-col gap-2 sm:flex-row"><Button asChild variant="outline"><Link href="/billing"><FlaskConical className="h-4 w-4" />Laboratory bills</Link></Button><Button asChild variant="outline"><Link href="/accounts"><WalletCards className="h-4 w-4" />Open full accounts</Link></Button></div> : null}</div></CardHeader><CardContent><div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">{ledgerGroups.map((group) => <button key={group.status} type="button" onClick={() => setLedgerGroup(group.status)} className={`rounded-xl border p-3 text-left ${ledgerGroup === group.status ? "border-amber-400 bg-amber-50" : "border-slate-200"}`}><span className="block text-xs text-slate-500">{group.status}</span><strong className="text-lg">{group.records.length}</strong></button>)}</div><div className="space-y-3">{visibleCharges.map((charge) => <div key={charge.id} className="grid gap-3 rounded-2xl border p-4 lg:grid-cols-[1.1fr_1fr_0.7fr_auto_auto] lg:items-center"><div><p className="font-semibold">{charge.patients?.name}</p><p className="text-xs font-medium text-amber-700">{charge.patients?.hospital_id ?? charge.patients?.lab_id}</p></div><div><p className="text-sm font-medium">{charge.description}</p><p className="text-xs text-slate-500">{charge.category} · {charge.clinical_encounters?.encounter_number ?? "No encounter"} · {formatDate(charge.charged_at)}</p></div><div className="text-sm"><p>{money(Number(charge.total_amount))}</p><p className="text-xs text-slate-500">Balance {money(Math.max(Number(charge.total_amount) - Number(charge.amount_paid), 0))}</p></div><Badge className="w-fit" variant={charge.payment_status === "Paid" ? "secondary" : charge.payment_status === "Partial" ? "outline" : "default"}>{charge.payment_status}</Badge><div className="flex gap-2"><Button type="button" variant="outline" size="sm" onClick={() => printHtmlDocument(buildChargeDocument(charge))}><Printer className="h-4 w-4" /><span className="sr-only sm:not-sr-only">Print</span></Button><Button type="button" variant="outline" size="sm" onClick={() => downloadHtmlDocument(buildChargeDocument(charge), billFilename(charge))}><Download className="h-4 w-4" /><span className="sr-only sm:not-sr-only">Download</span></Button></div></div>)}{!visibleCharges.length ? <div className="rounded-xl border border-dashed p-10 text-center text-sm text-slate-500">No bills in this group.</div> : null}</div></CardContent></Card>
   </div>;
 }

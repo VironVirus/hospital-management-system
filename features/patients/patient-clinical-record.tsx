@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Activity, BedDouble, Download, FileText, HeartPulse, Loader2, Pill, Printer, ReceiptText, ScanSearch, Stethoscope } from "lucide-react";
@@ -27,6 +28,11 @@ type HospitalPayment = {
   reference_number: string | null;
 };
 type PatientRecordData = Awaited<ReturnType<typeof fetchPatientClinicalRecord>>;
+
+const VitalsHistoryChart = dynamic(
+  () => import("@/features/patients/vitals-history-chart").then((module) => module.VitalsHistoryChart),
+  { ssr: false, loading: () => <Card><CardContent className="h-[380px] animate-pulse bg-slate-50" /></Card> }
+);
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("en-NG", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
@@ -121,6 +127,7 @@ export function PatientClinicalRecord({ patient, patientId }: { patient: Patient
       [HeartPulse, "Latest BP", latestVitals ? `${latestVitals.systolic_bp ?? "-"}/${latestVitals.diastolic_bp ?? "-"}` : "Not recorded", latestVitals ? formatDate(latestVitals.measured_at) : "No observations"],
       [ReceiptText, "Balance", money(outstanding), `${bills.length} bill${bills.length === 1 ? "" : "s"}`]
     ].map(([Icon, label, value, hint]) => { const MetricIcon = Icon as typeof Activity; return <Card key={String(label)}><CardContent className="p-4"><div className="flex items-start justify-between"><div><p className="text-xs uppercase tracking-wider text-slate-500">{String(label)}</p><p className="mt-2 text-xl font-semibold">{String(value)}</p><p className="mt-1 text-xs text-slate-500">{String(hint)}</p></div><MetricIcon className="h-5 w-5 text-teal-700" /></div></CardContent></Card>; })}</div>
+    <VitalsHistoryChart vitals={data.vitals} />
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{[
       ["clinical", "Clinical", data.diagnoses.length + data.notes.length],
       ["medication", "Medication & ward", data.prescriptions.length + data.admissions.length],

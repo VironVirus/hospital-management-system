@@ -9,6 +9,7 @@ import {
   BedDouble,
   Building2,
   CircleUserRound,
+  Clock3,
   ClipboardPlus,
   FileText,
   FlaskConical,
@@ -17,6 +18,7 @@ import {
   KeyRound,
   LogOut,
   Menu,
+  MonitorCog,
   MoonStar,
   Pill,
   ScanLine,
@@ -32,6 +34,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/components/auth-provider";
 import { useTheme } from "@/components/theme-provider";
+import { StaffDailyReportActions } from "@/components/staff-daily-report-actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -47,7 +50,7 @@ type NavigationItem = {
 };
 
 const navigation: NavigationItem[] = [
-  { href: "/hospital", label: "Hospital", icon: Hospital, roles: ["Admin", "Doctor", "Nurse"] as AppRole[], group: "Care" },
+  { href: "/hospital", label: "Hospital", icon: Hospital, roles: ["Admin", "Receptionist", "Doctor", "Nurse"] as AppRole[], group: "Care" },
   {
     href: "/clinical",
     label: "Clinical",
@@ -80,7 +83,7 @@ const navigation: NavigationItem[] = [
     href: "/inventory",
     label: "Store",
     icon: Store,
-    roles: ["Admin", "LabScientist", "Accountant", "Storekeeper", "Pharmacist"] as AppRole[],
+    roles: ["Admin", "Storekeeper"] as AppRole[],
     group: "Operations"
   },
   {
@@ -104,7 +107,7 @@ const navigation: NavigationItem[] = [
     roles: ["Admin", "Receptionist", "Accountant", "Doctor", "Nurse"] as AppRole[],
     group: "Operations"
   },
-  { href: "/dashboard", label: "Laboratory", icon: Activity, roles: ["Admin", "Receptionist", "LabScientist", "Verifier", "Accountant"] as AppRole[], group: "Diagnostics" },
+  { href: "/dashboard", label: "Laboratory", icon: Activity, roles: ["Admin", "LabScientist", "Verifier", "Accountant"] as AppRole[], group: "Diagnostics" },
   {
     href: "/orders",
     label: "Tests",
@@ -203,7 +206,7 @@ const mobileNavigationPriority: Route[] = [
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const { facilityName, profile, role, user, loading } = useAuth();
-  const { resolvedTheme, toggleTheme } = useTheme();
+  const { mode, resolvedTheme, setMode, toggleTheme } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const visibleNavigation =
@@ -321,27 +324,17 @@ export function AppShell({ children }: { children: ReactNode }) {
             </p>
             <Badge variant="outline">{loading ? "Loading..." : formatAppRole(role)}</Badge>
           </div>
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="h-9 flex-1 justify-start"
-              onClick={toggleTheme}
-            >
-              {resolvedTheme === "dark" ? (
-                <SunMedium className="h-4 w-4" />
-              ) : (
-                <MoonStar className="h-4 w-4" />
-              )}
-              {resolvedTheme === "dark" ? "Light mode" : "Dark mode"}
-            </Button>
-            <Button asChild variant="outline" className="h-9 flex-1 justify-start">
-              <Link href="/logout">
-                <LogOut className="h-4 w-4" />
-                Sign out
-              </Link>
-            </Button>
+          <div className="space-y-2">
+            <p className="text-xs font-medium uppercase tracking-[0.2em] text-slate-500">Appearance</p>
+            <div className="grid grid-cols-2 gap-2">
+              <Button type="button" size="sm" variant={mode === "auto" ? "default" : "outline"} onClick={() => setMode("auto")}><Clock3 className="h-4 w-4" />Automatic</Button>
+              <Button type="button" size="sm" variant={mode === "system" ? "default" : "outline"} onClick={() => setMode("system")}><MonitorCog className="h-4 w-4" />System</Button>
+              <Button type="button" size="sm" variant={mode === "light" ? "default" : "outline"} onClick={() => setMode("light")}><SunMedium className="h-4 w-4" />Light</Button>
+              <Button type="button" size="sm" variant={mode === "dark" ? "default" : "outline"} onClick={() => setMode("dark")}><MoonStar className="h-4 w-4" />Dark</Button>
+            </div>
           </div>
+          <StaffDailyReportActions className="w-full" />
+          <Button asChild variant="outline" className="h-9 w-full justify-start"><Link href="/logout"><LogOut className="h-4 w-4" />Sign out</Link></Button>
           <Button asChild variant="ghost" className="h-9 w-full justify-start">
             <Link href="/account">
               <KeyRound className="h-4 w-4" />
@@ -417,6 +410,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </div>
 
             <div className="flex items-center gap-2">
+              <StaffDailyReportActions className="hidden sm:flex" labels={false} />
               <Button
                 variant="outline"
                 size="icon"

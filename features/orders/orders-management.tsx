@@ -40,7 +40,6 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import {
   formatSampleStatus,
@@ -467,7 +466,7 @@ export function OrdersManagement() {
     useState<RecentOrderFilter>("all");
   const [recentPriorityFilter, setRecentPriorityFilter] =
     useState<(typeof priorityOptions)[number] | "all">("all");
-  const [showRecentPanel, setShowRecentPanel] = useState(true);
+  const [showRecentPanel, setShowRecentPanel] = useState(false);
   const [testSubnav, setTestSubnav] = useState<"catalogue" | "recent">("catalogue");
   const [selectedCategory, setSelectedCategory] = useState<TestCategoryOption | "">("");
   const [selectedCatalogueTestId, setSelectedCatalogueTestId] = useState("");
@@ -1348,15 +1347,24 @@ export function OrdersManagement() {
         </Card>
       </section>
 
-      <section
-        className={cn(
-          "grid gap-6",
-          showRecentPanel
-            ? "xl:grid-cols-[minmax(0,1fr)_360px] 2xl:grid-cols-[minmax(0,1fr)_380px]"
-            : "xl:grid-cols-1"
-        )}
-      >
-        <Card className="overflow-hidden border-blue-100 print-hidden">
+      <section className="space-y-4">
+        <div className="flex justify-end print-hidden">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setShowRecentPanel((current) => !current)}
+            aria-expanded={showRecentPanel}
+          >
+            {showRecentPanel ? (
+              <PanelRightClose className="h-4 w-4" />
+            ) : (
+              <PanelRightOpen className="h-4 w-4" />
+            )}
+            {showRecentPanel ? "Hide recent tests" : "Show recent tests"}
+          </Button>
+        </div>
+
+        <Card className={cn("overflow-hidden border-blue-100 print-hidden", showRecentPanel && "hidden")}>
           <CardHeader className="border-b border-blue-100 bg-[linear-gradient(135deg,_rgba(239,246,255,0.95),_rgba(255,255,255,1))]">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div className="max-w-3xl">
@@ -1374,20 +1382,6 @@ export function OrdersManagement() {
                 >
                   <Keyboard className="h-4 w-4" />
                   {frontDeskMode ? "Front desk mode on" : "Front desk mode"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="hidden xl:inline-flex"
-                  onClick={() => setShowRecentPanel((current) => !current)}
-                  aria-expanded={showRecentPanel}
-                >
-                  {showRecentPanel ? (
-                    <PanelRightClose className="h-4 w-4" />
-                  ) : (
-                    <PanelRightOpen className="h-4 w-4" />
-                  )}
-                  {showRecentPanel ? "Hide recent tests" : "Show recent tests"}
                 </Button>
               </div>
             </div>
@@ -1921,8 +1915,8 @@ export function OrdersManagement() {
 
         <Card
           className={cn(
-            "border-blue-100 print-hidden xl:self-start",
-            !showRecentPanel && "xl:hidden"
+            "border-blue-100 print-hidden",
+            !showRecentPanel && "hidden"
           )}
         >
           <CardHeader className="pb-3">
@@ -1937,7 +1931,7 @@ export function OrdersManagement() {
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="hidden xl:inline-flex"
+                className="inline-flex"
                 onClick={() => setShowRecentPanel(false)}
               >
                 <PanelRightClose className="h-4 w-4" />
@@ -2011,78 +2005,40 @@ export function OrdersManagement() {
               </div>
             ) : null}
 
-            <div className="space-y-3 xl:max-h-[720px] xl:overflow-y-auto xl:pr-1">
+            <div className="divide-y overflow-hidden rounded-xl border bg-white">
               {filteredRecentOrders.map((order) => (
                 <div
                   key={order.id}
-                  className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+                  className="flex min-w-0 items-center gap-2 px-3 py-2 transition hover:bg-blue-50/60"
                 >
-                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                    <div className="space-y-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-semibold text-slate-950">{order.order_number}</p>
-                      <Badge variant="secondary">
-                        {formatSampleStatus(order.status)}
-                      </Badge>
-                      <Badge variant="outline">{order.priority}</Badge>
-                    </div>
-                    <p className="text-sm text-slate-600">
-                      {order.patients?.name || "Unknown patient"} •{" "}
-                      {order.patients?.lab_id || "No Hospital ID"}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      {formatDateTime(order.created_at)}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-8 px-2.5 text-xs"
-                      onClick={() => setEditingOrderId(order.id)}
-                    >
-                      <PencilLine className="h-4 w-4" />
-                      Edit tests
-                    </Button>
-                    <Button asChild size="sm" variant="outline" className="h-8 px-2.5 text-xs">
-                      <Link href={`/billing?patientId=${order.patient_id}&orderId=${order.id}`}>
-                        <FileText className="h-4 w-4" />
-                        Bill
-                      </Link>
-                    </Button>
-                    <Button asChild size="sm" variant="outline" className="h-8 px-2.5 text-xs">
-                      <Link href={`/results?orderId=${order.id}`}>Results</Link>
-                    </Button>
-                  </div>
-                  </div>
-
-                  <Separator className="my-3" />
-
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {(order.order_tests ?? []).map((sample) => (
-                      <div
-                        key={sample.id}
-                        className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5"
-                      >
-                        <p className="text-sm font-medium text-slate-900">
-                          {sample.tests?.name || "Unknown test"}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-600">{sample.sample_code}</p>
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <Badge variant="outline">{formatSampleStatus(sample.status)}</Badge>
-                          <Button
-                            asChild
-                            size="sm"
-                            variant="ghost"
-                            className="h-7 px-2 text-xs"
-                          >
-                            <Link href={`/results?sampleId=${sample.id}`}>Edit result</Link>
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 text-left"
+                    onClick={() => {
+                      setEditingOrderId(order.id);
+                      setShowRecentPanel(false);
+                    }}
+                  >
+                    <span className="block truncate text-sm font-semibold text-slate-950">
+                      {order.order_number} · {order.patients?.name || "Unknown patient"} · {formatSampleStatus(order.status)}
+                    </span>
+                    <span className="block truncate text-xs text-slate-500">
+                      {(order.order_tests ?? []).map((sample) => sample.tests?.name || "Unknown test").join(", ") || "No tests"} · {order.patients?.lab_id || "No Hospital ID"} · {formatDateTime(order.created_at)}
+                    </span>
+                  </button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 shrink-0 px-2.5 text-xs"
+                    onClick={() => {
+                      setEditingOrderId(order.id);
+                      setShowRecentPanel(false);
+                    }}
+                  >
+                    <PencilLine className="h-4 w-4" />
+                    Edit
+                  </Button>
                 </div>
               ))}
             </div>

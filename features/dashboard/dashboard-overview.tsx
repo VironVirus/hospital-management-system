@@ -97,7 +97,7 @@ function isToday(value: string | null | undefined) {
   );
 }
 
-async function fetchDashboardData(facilityId: string): Promise<DashboardData> {
+async function fetchDashboardData(facilityId: string, includeInventory: boolean): Promise<DashboardData> {
   const database = getAppClient();
   const windowStart = new Date();
   windowStart.setDate(windowStart.getDate() - 29);
@@ -112,7 +112,6 @@ async function fetchDashboardData(facilityId: string): Promise<DashboardData> {
     worklistResponse,
     invoicesResponse,
     paymentsResponse,
-    inventoryResponse,
     patientsResponse
   ] = await Promise.all([
       database
@@ -139,13 +138,6 @@ async function fetchDashboardData(facilityId: string): Promise<DashboardData> {
         .order("received_at", { ascending: false })
         .limit(320),
       database
-        .from("inventory_items")
-        .select("*")
-        .eq("facility_id", facilityId)
-        .eq("is_active", true)
-        .order("updated_at", { ascending: false })
-        .limit(80),
-      database
         .from("patients")
         .select("id, facility_id, created_at")
         .eq("facility_id", facilityId)
@@ -166,16 +158,25 @@ async function fetchDashboardData(facilityId: string): Promise<DashboardData> {
     throw new Error(paymentsResponse.error.message);
   }
 
-  if (inventoryResponse.error) {
-    throw new Error(inventoryResponse.error.message);
-  }
-
   if (patientsResponse.error) {
     throw new Error(patientsResponse.error.message);
   }
 
+  let inventoryItems: InventoryItemRow[] = [];
+  if (includeInventory) {
+    const inventoryResponse = await database
+      .from("inventory_items")
+      .select("*")
+      .eq("facility_id", facilityId)
+      .eq("is_active", true)
+      .order("updated_at", { ascending: false })
+      .limit(80);
+    if (inventoryResponse.error) throw new Error(inventoryResponse.error.message);
+    inventoryItems = (inventoryResponse.data ?? []) as InventoryItemRow[];
+  }
+
   return {
-    inventoryItems: (inventoryResponse.data ?? []) as InventoryItemRow[],
+    inventoryItems,
     invoices: (invoicesResponse.data ?? []) as DashboardInvoiceRow[],
     patients: (patientsResponse.data ?? []) as DashboardPatientRow[],
     payments: (paymentsResponse.data ?? []) as DashboardPaymentRow[],
@@ -267,6 +268,7 @@ function DashboardAnalyticsLoading() {
 function ActivityNotificationsPanel({
   alertItems,
   invoices,
+  showInventory,
   worklist
 }: {
   alertItems: Array<{
@@ -274,6 +276,7 @@ function ActivityNotificationsPanel({
     item: InventoryItemRow;
   }>;
   invoices: DashboardInvoiceRow[];
+  showInventory: boolean;
   worklist: DashboardWorklistRow[];
 }) {
   const pendingVerification = worklist.filter(
@@ -313,7 +316,7 @@ function ActivityNotificationsPanel({
       title: "Unpaid invoices",
       value: formatCurrency(unpaidAmount),
     }
-  ];
+  ].filter((notification) => showInventory || notification.href !== "/inventory");
 
   return (
     <Card className="border-blue-100 shadow-sm">
@@ -355,14 +358,15 @@ function ActivityNotificationsPanel({
 }
 
 export function DashboardOverview() {
-  const { facilityId, loading } = useAuth();
+  const { facilityId, loading, role } = useAuth();
+  const showInventory = role === "Admin";
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportingCsv, setExportingCsv] = useState(false);
   const [exportingWorkbook, setExportingWorkbook] = useState(false);
 
   const dashboardQuery = useQuery({
-    queryKey: ["dashboard-overview", facilityId],
-    queryFn: () => fetchDashboardData(facilityId as string),
+    queryKey: ["dashboard-overview", facilityId, showInventory],
+    queryFn: () => fetchDashboardData(facilityId as string, showInventory),
     enabled: Boolean(facilityId),
     staleTime: 60_000,
     gcTime: 5 * 60_000,
@@ -580,10 +584,11 @@ export function DashboardOverview() {
       <ActivityNotificationsPanel
         alertItems={analytics.alertItems}
         invoices={dashboardQuery.data?.invoices ?? []}
+        showInventory={showInventory}
         worklist={dashboardQuery.data?.worklist ?? []}
       />
 
-      <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+      <section className={showInventory ? "grid gap-6 xl:grid-cols-[1.15fr_0.85fr]" : "grid gap-6"}>
         <ChartShell
           title="Today's worklist"
           actions={
@@ -628,7 +633,7 @@ export function DashboardOverview() {
           )}
         </ChartShell>
 
-        <ChartShell
+        {showInventory ? <ChartShell
           title="Inventory alerts"
         >
           {dashboardQuery.isLoading ? (
@@ -664,7 +669,7 @@ export function DashboardOverview() {
               ))}
             </div>
           )}
-        </ChartShell>
+        </ChartShell> : null}
       </section>
 
       <DashboardAnalyticsPanels

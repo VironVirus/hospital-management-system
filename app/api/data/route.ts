@@ -45,8 +45,8 @@ const readRoles: Partial<Record<string, AppRole[]>> = {
   sample_custody_logs: ["Admin", "Receptionist", "LabScientist", "Verifier"],
   order_test_results: ["Admin", "Receptionist", "LabScientist", "Verifier", "Doctor", "Nurse"],
   invoices: ["Admin", "Receptionist", "LabScientist", "Verifier", "Accountant", "Doctor", "Nurse", "Pharmacist", "Radiologist"], invoice_items: ["Admin", "Receptionist", "LabScientist", "Verifier", "Accountant", "Doctor", "Nurse", "Pharmacist", "Radiologist"], invoice_payments: ["Admin", "Receptionist", "LabScientist", "Verifier", "Accountant", "Doctor", "Nurse", "Pharmacist", "Radiologist"],
-  inventory_items: ["Admin", "LabScientist", "Accountant", "Storekeeper", "Pharmacist"],
-  inventory_transactions: ["Admin", "LabScientist", "Accountant", "Storekeeper", "Pharmacist"],
+  inventory_items: ["Admin", "Storekeeper"],
+  inventory_transactions: ["Admin", "Storekeeper"],
   expenses: ["Admin", "Accountant"], audit_logs: ["Admin"],
   lab_branding_settings: ["Admin", "Receptionist", "LabScientist", "Verifier"],
   wards: ["Admin", "Receptionist", "LabScientist", "Doctor", "Nurse", "Pharmacist", "Radiologist"], beds: ["Admin", "Receptionist", "LabScientist", "Doctor", "Nurse", "Pharmacist", "Radiologist"], admissions: ["Admin", "Receptionist", "LabScientist", "Doctor", "Nurse", "Pharmacist", "Radiologist"],
@@ -67,8 +67,8 @@ const mutationRoles: Partial<Record<string, AppRole[]>> = {
   orders: ["Admin", "Receptionist", "LabScientist"], order_tests: ["Admin", "Receptionist", "LabScientist", "Verifier"],
   sample_custody_logs: ["Admin", "Receptionist", "LabScientist", "Verifier"], order_test_results: ["Admin", "LabScientist", "Verifier"],
   invoices: ["Admin", "Accountant"], invoice_items: ["Admin", "Accountant"], invoice_payments: ["Admin", "Accountant"],
-  inventory_items: ["Admin", "Accountant", "Storekeeper", "Pharmacist", "LabScientist"],
-  inventory_transactions: ["Admin", "Accountant", "Storekeeper", "Pharmacist", "LabScientist"], expenses: ["Admin", "Accountant"],
+  inventory_items: ["Admin", "Storekeeper"],
+  inventory_transactions: ["Admin", "Storekeeper"], expenses: ["Admin", "Accountant"],
   audit_logs: ["Admin", "LabScientist", "Verifier", "Accountant"], lab_branding_settings: ["Admin"],
   wards: ["Admin"], beds: ["Admin"], clinical_encounters: ["Admin", "Receptionist", "Doctor", "Nurse"],
   admissions: ["Admin", "Doctor", "Nurse"], vital_signs: ["Admin", "Doctor", "Nurse"], clinical_notes: ["Admin", "Doctor", "Nurse"],
@@ -235,7 +235,6 @@ async function hydrate(table: string, rows: Record<string, unknown>[]) {
     await attachBelongs(orderTests, "tests", "tests", "test_id");
     await attachMany(rows, "invoice_payments", "invoice_payments", "invoice_id");
   }
-  if (table === "expenses") await attachBelongs(rows, "inventory_items", "inventory_items", "inventory_item_id");
   if (table === "audit_logs") {
     const profiles = await attachBelongs(rows, "profiles", "profiles", "actor_id");
     profiles.forEach((profile) => delete profile.password_hash);

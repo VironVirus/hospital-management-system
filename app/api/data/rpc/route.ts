@@ -268,7 +268,7 @@ export async function POST(request: Request) {
     }
 
     if (name === "apply_inventory_transaction") {
-      if (!["Admin", "Accountant", "Storekeeper", "Pharmacist", "LabScientist"].includes(currentSession.profile.role)) return forbidden();
+      if (!["Admin", "Storekeeper"].includes(currentSession.profile.role)) return forbidden();
       await withTransaction(async (connection) => {
         const [items] = await connection.query<RowDataPacket[]>("SELECT * FROM inventory_items WHERE id = ? AND facility_id = ? FOR UPDATE", [String(args.target_item_id), HOSPITAL_ID]);
         const item = items[0];

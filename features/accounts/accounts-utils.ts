@@ -309,6 +309,7 @@ export function exportAccountsWorkbook(args: {
   expenseRows: Array<Record<string, string | number>>;
   incomeByCategory: IncomeByCategoryRow[];
   incomeByTest: IncomeByTestRow[];
+  includeInventory: boolean;
   inventoryCostRows: Array<Record<string, string | number>>;
   invoiceRows: Array<Record<string, string | number>>;
   serviceChargeRows: Array<Record<string, string | number>>;
@@ -322,8 +323,10 @@ export function exportAccountsWorkbook(args: {
       "Total Collected": args.summary.collected,
       Outstanding: args.summary.outstanding,
       "Manual Expenses": args.summary.manualExpenses,
-      "Inventory Purchase Cost": args.summary.inventoryPurchaseCost,
-      "Inventory Usage Cost": args.summary.inventoryUsageCost,
+      ...(args.includeInventory ? {
+        "Inventory Purchase Cost": args.summary.inventoryPurchaseCost,
+        "Inventory Usage Cost": args.summary.inventoryUsageCost
+      } : {}),
       "Total Cost": args.summary.totalCost,
       "Net Cashflow": args.summary.netCashflow
     }
@@ -364,7 +367,7 @@ export function exportAccountsWorkbook(args: {
           }))
         )}
         ${buildSpreadsheetTable("Expenses", args.expenseRows)}
-        ${buildSpreadsheetTable("Inventory Costs", args.inventoryCostRows)}
+        ${args.includeInventory ? buildSpreadsheetTable("Inventory Costs", args.inventoryCostRows) : ""}
       </body>
     </html>
   `;

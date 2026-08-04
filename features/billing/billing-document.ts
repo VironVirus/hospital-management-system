@@ -1,3 +1,5 @@
+import type { EncounterCharge } from "@/types/hospital";
+
 export type BillingDocumentPayment = {
   amount: number;
   date: string;
@@ -24,6 +26,28 @@ export type BillingDocumentRecord = {
   status: string;
   total: number;
 };
+
+export function encounterChargeToBillingRecord(charge: EncounterCharge): BillingDocumentRecord {
+  return {
+    amountPaid: Number(charge.amount_paid),
+    date: charge.charged_at,
+    items: [
+      {
+        description: charge.description,
+        quantity: Number(charge.quantity),
+        total: Number(charge.total_amount),
+        unitPrice: Number(charge.unit_price)
+      }
+    ],
+    payments: [],
+    patientHospitalId: charge.patients?.hospital_id ?? charge.patients?.lab_id ?? "-",
+    patientName: charge.patients?.name ?? "Patient",
+    patientPhone: charge.patients?.phone,
+    reference: charge.clinical_encounters?.encounter_number ?? `Bill ${charge.id.slice(0, 8).toUpperCase()}`,
+    status: charge.payment_status,
+    total: Number(charge.total_amount)
+  };
+}
 
 function escapeHtml(value: string) {
   return value

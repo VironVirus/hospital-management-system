@@ -58,11 +58,11 @@ export function canAccessReportsRole(role: AppRole | null | undefined) {
 }
 
 export function canAccessInventoryRole(role: AppRole | null | undefined) {
-  return isAdminRole(role) || role === "LabScientist" || role === "Accountant" || role === "Storekeeper" || role === "Pharmacist";
+  return isAdminRole(role) || role === "Storekeeper";
 }
 
 export function canManageInventoryRole(role: AppRole | null | undefined) {
-  return isAdminRole(role) || role === "LabScientist" || role === "Accountant" || role === "Storekeeper" || role === "Pharmacist";
+  return isAdminRole(role) || role === "Storekeeper";
 }
 
 export function canAccessBillingRole(role: AppRole | null | undefined) {
