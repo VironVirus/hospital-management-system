@@ -34,7 +34,7 @@ const entityOptions: Array<{ label: string; value: EntityFilter }> = [
   { label: "Samples", value: "order_tests" },
   { label: "Results", value: "order_test_results" },
   { label: "Inventory", value: "inventory_items" },
-  { label: "Laboratory bills", value: "invoices" },
+  { label: "Bills", value: "invoices" },
   { label: "Hospital bills", value: "encounter_charges" }
 ];
 

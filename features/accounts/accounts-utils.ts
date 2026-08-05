@@ -21,6 +21,7 @@ export type AccountInvoiceRow = Tables<"invoices"> & {
     id: string;
     order_number: string;
     ordered_at: string;
+    patient_id?: string;
     patients: {
       id: string;
       hospital_id?: string | null;

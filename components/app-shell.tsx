@@ -8,6 +8,7 @@ import {
   Activity,
   BedDouble,
   Building2,
+  Calculator,
   CircleUserRound,
   Clock3,
   ClipboardPlus,
@@ -39,7 +40,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import { formatAppRole, type AppRole } from "@/lib/auth-types";
+import { appRoles, formatAppRole, type AppRole } from "@/lib/auth-types";
 
 type NavigationItem = {
   href: Route;
@@ -101,7 +102,7 @@ const navigation: NavigationItem[] = [
     group: "Diagnostics"
   },
   {
-    href: "/hospital-billing",
+    href: "/billing",
     label: "Patient Billing",
     icon: Wallet,
     roles: ["Admin", "Receptionist", "Accountant", "Doctor", "Nurse"] as AppRole[],
@@ -150,13 +151,7 @@ const navigation: NavigationItem[] = [
     roles: ["Admin", "Accountant"] as AppRole[],
     group: "Operations"
   },
-  {
-    href: "/billing",
-    label: "Laboratory Billing",
-    icon: Wallet,
-    roles: ["Admin", "Accountant"] as AppRole[],
-    group: "Operations"
-  },
+  { href: "/tools", label: "Tools", icon: Calculator, roles: appRoles, group: "Operations" },
   {
     href: "/admin",
     label: "Administration",
